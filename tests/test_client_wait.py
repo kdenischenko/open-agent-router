@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import subprocess
 import sys
-import urllib.request
 
 import httpx
 import pytest
@@ -51,7 +51,7 @@ def test_plain_get_keeps_short_timeout_and_drops_none() -> None:
     assert seen[0].extensions["timeout"]["read"] == 5
 
 
-# --- default client: urllib, no proxy, no redirects ------------------------------------------
+# --- default client: http.client, no proxy, no redirects ----------------------------------
 
 
 def test_cli_import_does_not_load_httpx() -> None:
@@ -127,19 +127,39 @@ def test_urllib_post_sends_json_and_drops_none_params() -> None:
     assert seen[1].path == "/api/v1/jobs?limit=5"
 
 
-def test_urllib_wait_uses_extended_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    timeouts: list[float] = []
-    original = urllib.request.OpenerDirector.open
+def test_wait_keeps_short_connect_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The long /wait read timeout must not slow down connecting to an unreachable host."""
+    seen: list[tuple[str, float | None]] = []
+    real_connection = http.client.HTTPConnection
 
-    def spy(self, fullurl, data=None, timeout=None):
-        timeouts.append(timeout)
-        return original(self, fullurl, data, timeout)
+    class Spy(real_connection):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            seen.append(("connect", self.timeout))
 
-    monkeypatch.setattr(urllib.request.OpenerDirector, "open", spy)
+        def request(self, *args, **kwargs):
+            seen.append(("read", self.sock.gettimeout() if self.sock is not None else None))
+            return super().request(*args, **kwargs)
+
+    monkeypatch.setattr(http.client, "HTTPConnection", Spy)
     with http_server(body=b'{"status": "running"}') as (url, _):
         client = GatewayClient(url, TOKEN)
         client.get("/api/v1/jobs/j-1/wait", timeout=100)
         client.get("/api/v1/jobs")
-    assert len(timeouts) == 2
-    assert timeouts[0] > 100
-    assert timeouts[1] == 5
+    assert seen == [("connect", 5.0), ("read", 115.0), ("connect", 5.0), ("read", 5.0)]
+
+
+@pytest.mark.parametrize(
+    ("token", "message"),
+    [
+        ("bad\ntoken", "invalid token: line breaks are not allowed"),
+        ("bad\rtoken", "invalid token: line breaks are not allowed"),
+        ("токен", "invalid token: only latin-1 characters are allowed"),  # non-ascii on purpose
+    ],
+)
+def test_client_reports_invalid_token(token: str, message: str) -> None:
+    with http_server(body=b"{}") as (url, seen), pytest.raises(GatewayError) as caught:
+        GatewayClient(url, token).get("/api/v1/snapshot")
+    assert seen == []
+    assert (caught.value.status, caught.value.code, caught.value.message) == (400, None, message)
+    assert token not in caught.value.message

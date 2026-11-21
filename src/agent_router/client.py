@@ -8,10 +8,7 @@ import math
 import sys
 import urllib.error
 import urllib.parse
-import urllib.request
 from typing import TYPE_CHECKING, Any
-
-from agent_router.statusline import _NoRedirect
 
 if TYPE_CHECKING:
     import httpx
@@ -45,10 +42,36 @@ class _UrllibResponse:
         return jsonlib.loads(self._body)
 
 
-class _UrllibClient:
-    def __init__(self) -> None:
-        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+def _http_connection(
+    parsed: urllib.parse.SplitResult, timeout: float
+) -> http.client.HTTPConnection:
+    """A direct connection: no proxy and no redirect following, like the urllib opener.
 
+    The netloc is passed whole so an invalid port is reported as a protocol error
+    instead of a ValueError from parsing it here.
+    """
+    if parsed.scheme == "https":
+        return http.client.HTTPSConnection(parsed.netloc, None, timeout=timeout)
+    return http.client.HTTPConnection(parsed.netloc, None, timeout=timeout)
+
+
+def _request_path(parsed: urllib.parse.SplitResult) -> str:
+    path = parsed.path or "/"
+    return f"{path}?{parsed.query}" if parsed.query else path
+
+
+def _invalid_token(token: str) -> str | None:
+    """Why the token cannot be sent as a header value, or None when it can."""
+    if "\n" in token or "\r" in token:
+        return "invalid token: line breaks are not allowed"
+    try:
+        token.encode("latin-1")
+    except UnicodeEncodeError:
+        return "invalid token: only latin-1 characters are allowed"
+    return None
+
+
+class _UrllibClient:
     def request(
         self,
         method: str,
@@ -65,24 +88,24 @@ class _UrllibClient:
             )
             if query:
                 url += ("&" if "?" in url else "?") + query
+        connect_timeout, read_timeout = timeout
         request_headers = dict(headers)
         data = None
         if json is not None:
             data = jsonlib.dumps(json, ensure_ascii=False).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
-        request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
+        parsed = urllib.parse.urlsplit(url)
+        connection = _http_connection(parsed, connect_timeout)
         try:
-            response = self._opener.open(request, timeout=timeout[1])
-        except urllib.error.HTTPError as exc:
-            try:
-                body = exc.read()
-            finally:
-                exc.close()
-            return _UrllibResponse(exc.code, body)
-        try:
+            connection.connect()
+            # the long read timeout of a /wait must not delay connecting
+            if connection.sock is not None:
+                connection.sock.settimeout(read_timeout)
+            connection.request(method, _request_path(parsed), body=data, headers=request_headers)
+            response = connection.getresponse()
             return _UrllibResponse(response.status, response.read())
         finally:
-            response.close()
+            connection.close()
 
 
 class GatewayClient:
@@ -100,6 +123,9 @@ class GatewayClient:
         self.client = client or _UrllibClient()
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict:
+        invalid_token = _invalid_token(self.token)
+        if invalid_token is not None:
+            raise GatewayError(400, None, invalid_token)
         timeout = kwargs.pop("timeout", None)
         httpx = sys.modules.get("httpx")
         if isinstance(self.client, _UrllibClient):
