@@ -199,6 +199,9 @@ the hard cap; kimi, opencode and cline stream their output (`True`). After an ad
 final line a lingering process is killed within `tasks.exit_grace_s` (60 s). Long prompts or shim
 (`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with a "read the task
 from the file" instruction; shim arguments are validated against a safe character set.
+OpenCode runs with `--standalone` so its session uses a private server in the child process tree;
+without it, stopping the `opencode run` client would leave the session running in the background
+service.
 
 Adapters (`adapters/`) build argv/stdin and parse output:
 
@@ -208,9 +211,9 @@ Adapters (`adapters/`) build argv/stdin and parse output:
 - **claude** — `claude -p --output-format json --model <m> --permission-mode <mode>`, prompt via
   stdin; read maps to `plan`, write to `acceptEdits`; one JSON object with `result`, `usage`,
   `total_cost_usd`; spend source `journal`.
-- **opencode** — `opencode run --format json --archived --model <m>`, prompt via stdin; read maps
-  to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens and cost;
-  spend source `counter`.
+- **opencode** — `opencode run --format json --archived --standalone --model <m>`, prompt via
+  stdin; read maps to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens
+  and cost; spend source `counter`.
 - **cline** — `cline --json -P <provider> -m <model> [--plan | --auto-approve true] -- <prompt>`;
   read maps to `--plan`, write to `--auto-approve`; the `run_result` event carries tokens and
   cost; spend source `journal`.

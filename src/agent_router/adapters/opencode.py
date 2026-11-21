@@ -1,4 +1,4 @@
-"""OpenCode adapter: `opencode run --format json --archived --model <model>`, prompt via stdin."""
+"""OpenCode adapter: `opencode run --format json --archived --standalone --model <model>`."""
 
 from __future__ import annotations
 
@@ -25,7 +25,16 @@ class OpenCodeAdapter:
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path
     ) -> Invocation:
-        argv = [executable(exe), "run", "--format", "json", "--archived", "--model", model]
+        argv = [
+            executable(exe),
+            "run",
+            "--format",
+            "json",
+            "--archived",
+            "--standalone",
+            "--model",
+            model,
+        ]
         argv += ["--agent", "plan"] if mode == "read" else ["--auto"]
         return Invocation(tuple(argv), stdin_text=text)
 

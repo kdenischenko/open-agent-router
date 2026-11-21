@@ -134,8 +134,17 @@ def test_kimi_prompt_of_exactly_max_chars_stays_argument() -> None:
     assert inv.argv[2] == text and "--add-dir" not in inv.argv
 
 
-def test_opencode_argv_read_and_write() -> None:
-    base = (str(EXE.path), "run", "--format", "json", "--archived", "--model", "prov/model-1")
+def test_opencode_argv_uses_standalone_in_read_and_write() -> None:
+    base = (
+        str(EXE.path),
+        "run",
+        "--format",
+        "json",
+        "--archived",
+        "--standalone",
+        "--model",
+        "prov/model-1",
+    )
     read = opencode.build("TEXT", "read", "prov/model-1", EXE, PROMPT_FILE)
     write = opencode.build("TEXT", "write", "prov/model-1", EXE, PROMPT_FILE)
     assert read.argv == (*base, "--agent", "plan")
