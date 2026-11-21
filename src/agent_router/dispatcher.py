@@ -32,7 +32,7 @@ from agent_router.jobs import (
     WrongState,
     can_transition,
     new_job_id,
-    validate_request,
+    validate_request_directory,
 )
 from agent_router.jobstore import JobStore
 from agent_router.policy import (
@@ -77,6 +77,7 @@ REAP_RETRY_PAUSE_S = 0.5  # pause before retrying the failed first process query
 QUEUE_PAGE = 50
 _READ_MAX_BYTES = 20 * 2**20 + 4096
 _RECOVER_LIST = 1000
+_CWD_CHANGED = "job directory changed after validation"
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +96,14 @@ class _Active:
 
 def _repo_key(root: Path | None) -> str | None:
     return None if root is None else os.path.normcase(str(root))
+
+
+def _cwd_matches(job: Job, checked: Path) -> bool:
+    try:
+        current = Path(job.request.cwd).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return _repo_key(current) == _repo_key(checked)
 
 
 def _read(path: Path) -> str:
@@ -231,6 +240,7 @@ class Dispatcher:
         self._active: dict[str, _Active] = {}
         self._active_lock = threading.Lock()
         self._writers: dict[str, str] = {}  # repository → writer job
+        self._checked_cwds: dict[str, Path] = {}  # resolved at intake; not persisted
         self._stopped = False
         self._views_lock = threading.Lock()
         self._views: list[RouteView] | None = None
@@ -330,6 +340,8 @@ class Dispatcher:
             self.jobs.update(job)
         else:
             self.jobs.start_attempt(job, attempt)
+        if status in TERMINAL:
+            self._checked_cwds.pop(job.id, None)
         self._announce(job, before)
 
     def _announce(self, job: Job, before: Status | None) -> None:
@@ -358,7 +370,8 @@ class Dispatcher:
     # --- calls from request threads --------------------------------------------------
 
     def submit(self, req: JobRequest) -> Job:
-        root = validate_request(req, self.config)  # filesystem and git checks run outside the lock
+        # filesystem and git checks run outside the lock
+        checked = validate_request_directory(req, self.config)
         tier = req.tier or "standard"
         pending = (
             self.config.classifier.mode == "active"
@@ -371,7 +384,7 @@ class Dispatcher:
             status="queued",
             tier=tier,
             tier_source="caller" if req.tier is not None else "default",
-            repo_root=root,
+            repo_root=checked.repo_root,
             created_at=self.clock.now(),
             prompt_sha256=hashlib.sha256(req.prompt.encode("utf-8")).hexdigest(),
             prompt_chars=len(req.prompt),
@@ -381,6 +394,7 @@ class Dispatcher:
             if self.jobs.count_waiting() >= self.config.tasks.max_queued:
                 raise RequestRejected("queue_full", "queue is full, try again later")
             self.jobs.create(job)
+            self._checked_cwds[job.id] = checked.cwd
             self._announce(job, None)
             if self.classify_executor is not None and not self._stopped:
                 # a classifier queue failure must not reject the job
@@ -585,18 +599,22 @@ class Dispatcher:
         if write and _repo_key(job.repo_root) in self._writers:
             return  # repository held by another writer: the job waits without holding up others
         try:
-            root = validate_request(job.request, self.config)
+            current = validate_request_directory(job.request, self.config)
         except RequestRejected as exc:
             if not self._stopped:
                 self._fail(job, exc.code, exc.message)  # do not touch the job root
             return
         if self._stopped:
             return  # after the shutdown flag, the step must not touch the store
-        if root != job.repo_root:  # the accepted directory may belong to another repository
-            job.repo_root = root
-            self.jobs.update(job)
-            if write and _repo_key(root) in self._writers:
-                return
+        checked = self._checked_cwds.get(job.id)
+        changed = checked is not None and _repo_key(checked) != _repo_key(current.cwd)
+        if changed or _repo_key(job.repo_root) != _repo_key(current.repo_root):
+            self._fail(job, "cwd_changed", _CWD_CHANGED)
+            return
+        if checked is None:
+            # A restarted dispatcher has no intake path in memory; the stored root still anchors it
+            checked = current.cwd
+            self._checked_cwds[job.id] = checked
         attempts = self.jobs.attempts(job.id)
         if len(attempts) >= self.config.tasks.max_attempts:
             self._exhausted(job, attempts[-1])
@@ -618,7 +636,12 @@ class Dispatcher:
         if self._stopped:
             return  # shutdown arrived mid-check: the job stays queued
         self._start(
-            job, choice, len(attempts) + 1, _repo_key(job.repo_root) if write else None, decision
+            job,
+            checked,
+            choice,
+            len(attempts) + 1,
+            _repo_key(job.repo_root) if write else None,
+            decision,
         )
 
     def _decide(self, job: Job, routes: list[RouteView], explicit: bool) -> Decision:
@@ -711,7 +734,13 @@ class Dispatcher:
         return float(self.config.tasks.idle_timeout_s)
 
     def _start(
-        self, job: Job, choice: Choice, n: int, repo: str | None, decision: Decision
+        self,
+        job: Job,
+        cwd: Path,
+        choice: Choice,
+        n: int,
+        repo: str | None,
+        decision: Decision,
     ) -> None:
         route = choice.route
         job.route = route.id
@@ -747,7 +776,7 @@ class Dispatcher:
         if repo is not None:
             self._writers[repo] = job.id
         exe = self._exes.get(route.backend or "") or ResolvedExecutable(None, False)
-        arguments = (job, attempt, route, exe, text, prompt_file, active.cancel)
+        arguments = (job, cwd, attempt, route, exe, text, prompt_file, active.cancel)
         try:
             future = self.executor.submit(self._work, *arguments)
         except Exception as exc:  # executor is shut down: the attempt never started
@@ -802,6 +831,7 @@ class Dispatcher:
     def _work(
         self,
         job: Job,
+        cwd: Path,
         attempt: Attempt,
         route: Route,
         exe: ResolvedExecutable,
@@ -815,11 +845,11 @@ class Dispatcher:
         tokens: _Tokens = (None, None, None)
         try:
             result, duration, tail, tokens = self._attempt(
-                job, attempt, route, exe, text, prompt_file, cancel
+                job, cwd, attempt, route, exe, text, prompt_file, cancel
             )
         except Exception as exc:  # safety net: failure outside harness launch (store write)
             detail = f"attempt failed: {type(exc).__name__}: {exc}"
-            error = _safe_error(detail, Path(job.request.cwd))
+            error = _safe_error(detail, cwd)
             result = AttemptResult("error", error=error)
         attempt.finished_at = self.clock.now()
         attempt.outcome = result.outcome
@@ -836,6 +866,7 @@ class Dispatcher:
     def _attempt(
         self,
         job: Job,
+        cwd: Path,
         attempt: Attempt,
         route: Route,
         exe: ResolvedExecutable,
@@ -846,8 +877,10 @@ class Dispatcher:
         """Before snapshot → harness launch → after measurement, whatever happens at launch."""
         if cancel.is_set():
             return AttemptResult("cancelled"), None, "", (None, None, None)
-        cwd = Path(job.request.cwd).resolve()
         in_git = job.repo_root is not None
+        if not _cwd_matches(job, cwd):
+            failed = AttemptResult("error", error=_CWD_CHANGED, changed=() if in_git else None)
+            return failed, None, "", (None, None, None)
         if in_git:
             try:
                 head_before = worktree.head(cwd)
@@ -879,12 +912,22 @@ class Dispatcher:
                 survived=attempt.pid is not None and not self._reap(attempt),
             )
         if in_git:  # the harness may have changed the tree even on a launch/parsing failure
-            try:
-                changed, moved = self._changes(cwd, attempt)
-                result = replace(result, changed=changed, head_moved=moved)
-            except Exception as exc:  # measurement failed: changes are unknown, not "none"
-                result = replace(result, changed=(), changes_unknown=True)
-                tail = _measurement_tail(tail, exc)
+            if not _cwd_matches(job, cwd):
+                result = replace(
+                    result,
+                    outcome="error",
+                    error=_CWD_CHANGED,
+                    changed=(),
+                    changes_unknown=True,
+                )
+                tail = _measurement_tail(tail, worktree.WorktreeError(_CWD_CHANGED))
+            else:
+                try:
+                    changed, moved = self._changes(cwd, attempt)
+                    result = replace(result, changed=changed, head_moved=moved)
+                except Exception as exc:  # measurement failed: changes are unknown, not "none"
+                    result = replace(result, changed=(), changes_unknown=True)
+                    tail = _measurement_tail(tail, exc)
         return result, duration, tail, tokens
 
     def _launch(
@@ -1150,6 +1193,7 @@ class Dispatcher:
         moved = False
         unknown = False
         in_git = job.repo_root is not None
+        checked = self._checked_cwds.get(job.id)
         violations = list(job.violations)
         unfinished = [a for a in attempts if a.finished_at is None]
         for attempt in unfinished or attempts[-1:]:
@@ -1161,7 +1205,12 @@ class Dispatcher:
                 violations.append("orphan_process")
             if in_git and attempt.tree_before is not None:
                 try:
-                    files, head_moved = self._changes(Path(job.request.cwd).resolve(), attempt)
+                    if checked is not None and not _cwd_matches(job, checked):
+                        raise worktree.WorktreeError(_CWD_CHANGED)
+                    # Without the in-memory intake path, stay inside the stored repository
+                    cwd = checked or job.repo_root
+                    assert cwd is not None
+                    files, head_moved = self._changes(cwd, attempt)
                     changed.update(files)
                     moved = moved or head_moved
                 except Exception as exc:  # tree not measured: changes unknown

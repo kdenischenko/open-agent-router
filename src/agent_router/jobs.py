@@ -252,8 +252,16 @@ def check_cwd(cwd: Path, tasks: TaskSettings) -> Path:
     return resolved
 
 
-def validate_request(req: JobRequest, config: Config) -> Path | None:
-    """Intake checks. Returns the git working tree root or None."""
+@dataclass(frozen=True)
+class CheckedDirectory:
+    """The directory and repository root accepted by request validation."""
+
+    cwd: Path
+    repo_root: Path | None
+
+
+def validate_request_directory(req: JobRequest, config: Config) -> CheckedDirectory:
+    """Intake checks. Returns the resolved directory and its git working tree root."""
     tasks = config.tasks
     if not isinstance(req.prompt, str) or not req.prompt.strip():
         raise RequestRejected("bad_prompt", "empty prompt")
@@ -292,4 +300,9 @@ def validate_request(req: JobRequest, config: Config) -> Path | None:
         ) from exc
     if req.mode == "write" and root is None:
         raise RequestRejected("not_a_git_repo", "write mode requires a directory inside git")
-    return root
+    return CheckedDirectory(resolved, root)
+
+
+def validate_request(req: JobRequest, config: Config) -> Path | None:
+    """Intake checks. Returns the git working tree root or None."""
+    return validate_request_directory(req, config).repo_root

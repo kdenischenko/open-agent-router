@@ -9,6 +9,7 @@ import json
 import logging
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -2340,7 +2341,7 @@ def test_shutdown_signals_stop_while_tick_is_busy(make_rig, monkeypatch) -> None
     rig.runner.add(step)
     first = rig.submit(rig.plain("первый"))  # non-ascii on purpose
     entered, release = threading.Event(), threading.Event()
-    real = dispatcher_module.validate_request
+    real = dispatcher_module.validate_request_directory
     try:
         rig.tick()
         assert step.started.wait(5)
@@ -2351,7 +2352,7 @@ def test_shutdown_signals_stop_while_tick_is_busy(make_rig, monkeypatch) -> None
             release.wait(10)
             return real(request, config)
 
-        monkeypatch.setattr(dispatcher_module, "validate_request", slow)
+        monkeypatch.setattr(dispatcher_module, "validate_request_directory", slow)
         ticker = threading.Thread(target=rig.dispatcher.tick)
         ticker.start()
         assert entered.wait(5)
@@ -2484,8 +2485,86 @@ def test_bench_tick_with_full_slots(make_rig) -> None:
 # --- writer lock and changed files ------------------------------------------
 
 
-def test_writer_lock_uses_current_repo_of_cwd(make_rig) -> None:
-    """After submission the job directory sits in a different repository: the lock follows it."""
+def _link_dir(link: Path, target: Path) -> None:
+    """Directory link: a junction on Windows, a symlink on POSIX."""
+    if sys.platform == "win32":
+        done = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        if done.returncode != 0 or not link.exists():
+            pytest.skip("failed to create junction")
+    else:
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("failed to create symbolic link")
+
+
+def _swap_link(link: Path, target: Path) -> None:
+    if sys.platform == "win32":
+        link.rmdir()
+    else:
+        link.unlink()
+    _link_dir(link, target)
+
+
+def test_linked_cwd_swap_before_tick_fails_without_launch(make_rig) -> None:
+    rig = make_rig()
+    first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
+    link = rig.root / "связь"  # non-ascii on purpose
+    _link_dir(link, first)
+    job = rig.submit(link, "write")
+    _swap_link(link, second)
+
+    rig.tick()
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "cwd_changed")
+    assert done.repo_root == first.resolve()
+    assert rig.runner.calls == [] and rig.attempts(job) == []
+
+
+def test_linked_cwd_swap_before_worker_does_not_launch(make_rig) -> None:
+    executor = ManualExecutor()
+    rig = make_rig(executor)
+    first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
+    link = rig.root / "связь"  # non-ascii on purpose
+    _link_dir(link, first)
+    job = rig.submit(link, "write", route="a/main")
+    rig.tick()
+    _swap_link(link, second)
+
+    executor.run_all()
+    rig.tick()
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "executor_error")
+    assert done.error_message == "job directory changed after validation"
+    assert rig.runner.calls == []
+    assert [attempt.outcome for attempt in rig.attempts(job)] == ["error"]
+
+
+def test_linked_cwd_swap_before_measurement_marks_changes_unknown(make_rig) -> None:
+    rig = make_rig()
+    first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
+    link = rig.root / "связь"  # non-ascii on purpose
+    _link_dir(link, first)
+    rig.runner.add(Step(action=lambda _cwd: _swap_link(link, second)))
+    job = rig.submit(link, route="a/main")
+
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "executor_error")
+    assert done.error_message == "job directory changed after validation"
+    assert done.violations == ("changes_unknown",) and done.changed_files == ()
+    assert [call.cwd for call in rig.runner.calls] == [first.resolve()]
+
+
+def test_writer_lock_rejects_repo_change_after_intake(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
     outer = rig.repo("внешний")  # non-ascii on purpose
@@ -2494,9 +2573,12 @@ def test_writer_lock_uses_current_repo_of_cwd(make_rig) -> None:
     first = rig.submit(inner, "write")  # at submission the root is the outer repo
     make_git_repo(inner)
     second = rig.submit(inner, "write")  # now the inner repository
+
     rig.tick()
-    assert sorted(rig.status(job) for job in (first, second)) == ["queued", "running"]
-    assert rig.job(first).repo_root == worktree.repo_root(inner)
+
+    assert (rig.status(first), rig.status(second)) == ("failed", "running")
+    assert rig.job(first).error_code == "cwd_changed"
+    assert rig.job(first).repo_root == outer.resolve()
 
 
 def test_changed_files_accumulate_across_attempts(make_rig) -> None:
@@ -2510,6 +2592,22 @@ def test_changed_files_accumulate_across_attempts(make_rig) -> None:
     assert [a.outcome for a in rig.attempts(job)] == ["limit", "ok"]
     assert done.changed_files == ("новый файл.txt",)  # non-ascii on purpose
     assert "read_mode_files_changed" in done.violations
+
+
+def test_recover_linked_cwd_swap_marks_changes_unknown(make_rig) -> None:
+    rig = make_rig()
+    first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
+    link = rig.root / "связь"  # non-ascii on purpose
+    _link_dir(link, first)
+    job = orphan(rig, link, "write")
+    rig.dispatcher._checked_cwds[job.id] = first.resolve()
+    _swap_link(link, second)
+
+    rig.dispatcher.recover()
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("partial", "gateway_restarted")
+    assert done.violations == ("changes_unknown",) and done.changed_files == ()
 
 
 def test_recover_dirty_reader_gets_read_violation(make_rig) -> None:
@@ -2588,18 +2686,18 @@ def test_tick_starts_next_job_when_consider_raises(make_rig, monkeypatch) -> Non
     rig = make_rig()
     first = rig.submit(rig.plain("первая"))  # non-ascii on purpose
     second = rig.submit(rig.plain("вторая"))  # non-ascii on purpose
-    real = dispatcher_module.validate_request
+    real = dispatcher_module.validate_request_directory
 
     def check(req, config):
         if Path(req.cwd).name == "первая":  # non-ascii on purpose
             raise RuntimeError("git is not responding")
         return real(req, config)
 
-    monkeypatch.setattr(dispatcher_module, "validate_request", check)
+    monkeypatch.setattr(dispatcher_module, "validate_request_directory", check)
     rig.tick()
     assert [rig.status(first), rig.status(second)] == ["queued", "running"]
     assert rig.attempts(first) == []
-    monkeypatch.setattr(dispatcher_module, "validate_request", real)
+    monkeypatch.setattr(dispatcher_module, "validate_request_directory", real)
     rig.tick()
     assert rig.status(first) == "running"
 
@@ -2674,7 +2772,7 @@ def test_repeated_failure_is_logged_once(make_rig, monkeypatch, caplog) -> None:
     caplog.set_level(logging.ERROR, logger="agent_router.dispatcher")
     rig = make_rig(routes=CONFIRM_ROUTES)
     job = rig.submit(rig.plain())
-    real = dispatcher_module.validate_request
+    real = dispatcher_module.validate_request_directory
     broken = [True]
 
     def check(req, config):
@@ -2682,7 +2780,7 @@ def test_repeated_failure_is_logged_once(make_rig, monkeypatch, caplog) -> None:
             raise RuntimeError("git is not responding")
         return real(req, config)
 
-    monkeypatch.setattr(dispatcher_module, "validate_request", check)
+    monkeypatch.setattr(dispatcher_module, "validate_request_directory", check)
     rig.tick(3)
     assert rig.status(job) == "queued"
     assert len(dispatcher_errors(caplog)) == 1  # the same failure — one record
@@ -2731,14 +2829,14 @@ class HeldStep:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.errors: list[BaseException] = []
-        real = dispatcher_module.validate_request
+        real = dispatcher_module.validate_request_directory
 
         def slow(request, config):
             self.entered.set()
             self.release.wait(15)
             return real(request, config)
 
-        monkeypatch.setattr(dispatcher_module, "validate_request", slow)
+        monkeypatch.setattr(dispatcher_module, "validate_request_directory", slow)
         dispatcher = rig.dispatcher
 
         def run() -> None:

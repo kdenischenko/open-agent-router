@@ -57,8 +57,11 @@ Flow per dispatcher tick:
    `classifier.wait_s` elapses, then its tier is resolved (see Classifier). A write job waits
    if another job holds the single-writer lock on its repository.
 3. The request is re-validated; rejections (for example `cwd_not_allowed`, `queue_full`)
-   finish the job as `failed`. After `tasks.max_attempts` (default 3) it fails with
-   `attempts_exhausted`.
+   finish the job as `failed`. The job directory and its repository root are resolved once at
+   intake and reused for the writer lock, the before snapshot, the harness launch and the after
+   measurement. If either resolves elsewhere later, the job fails with `cwd_changed`; an attempt
+   in progress ends with an error and unknown changes. After `tasks.max_attempts` (default 3) it
+   fails with `attempts_exhausted`.
 4. The policy chooses a route. With no route: `declined` if a confirmation was refused earlier,
    otherwise `failed` with code `no_route` and per-route exclusion reasons.
 5. A `confirm` route moves the job to `awaiting_approval` with a deadline
