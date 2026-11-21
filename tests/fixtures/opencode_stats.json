@@ -1,0 +1,53 @@
+{
+  "range": {"from": 0, "to": 0},
+  "sessions": 3,
+  "subagents": 0,
+  "prompts": 7,
+  "steps": 11,
+  "tokens": {
+    "input": 1200,
+    "output": 300,
+    "reasoning": 40,
+    "cache": {"read": 100, "write": 20}
+  },
+  "cost": 12.5,
+  "activeDays": 2,
+  "streak": 1,
+  "activity": [{"date": "2026-10-05", "steps": 11}],
+  "models": [
+    {
+      "model": {"id": "glm-5.3-flash", "providerID": "opencode-go", "variant": "default"},
+      "steps": 4,
+      "tokens": {
+        "input": 400,
+        "output": 100,
+        "reasoning": 10,
+        "cache": {"read": 30, "write": 5}
+      },
+      "cost": 1.25
+    },
+    {
+      "model": {"id": "glm-5.3", "providerID": "opencode-go", "variant": "default"},
+      "steps": 5,
+      "tokens": {
+        "input": 500,
+        "output": 120,
+        "reasoning": 20,
+        "cache": {"read": 40, "write": 10}
+      },
+      "cost": 2.75
+    },
+    {
+      "model": {"id": "kimi-for-coding", "providerID": "kimi-code", "variant": "default"},
+      "steps": 2,
+      "tokens": {
+        "input": 300,
+        "output": 80,
+        "reasoning": 10,
+        "cache": {"read": 30, "write": 5}
+      },
+      "cost": 8.5
+    }
+  ],
+  "tools": {"mode": "detail", "totals": {}, "usage": []}
+}

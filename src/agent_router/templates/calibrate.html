@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+{% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/calibrate" class="panel calibration-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div id="provider-field" class="calibration-field" hidden>
+    <label for="provider">Provider</label>
+    <select id="provider">
+      <option value="" disabled selected>Choose a pool</option>
+      {% for pool in pools %}
+      <option value="{{ loop.index0 }}">{{ pool.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <label for="target">Window</label>
+  <select id="target" name="target" required>
+    <option value="" disabled selected>Choose a window</option>
+    {% for pool in pools %}
+      {% set pool_index = loop.index0 %}
+      <optgroup label="{{ pool.title }}" data-pool="{{ pool_index }}">
+      {% for window in pool.windows %}
+        <option value="{{ pool_index }}:{{ loop.index0 }}" data-kind="{{ window.kind }}">{{ window.id }}</option>
+      {% endfor %}
+      </optgroup>
+    {% endfor %}
+  </select>
+  <label for="percent">Used, %</label>
+  <input id="percent" name="percent" type="number" min="0" max="100" step="any" required>
+  <label for="resets_date">Reset date, local time</label>
+  <div class="calibration-moment">
+    <input id="resets_date" name="resets_date" type="date">
+    <input id="resets_time" name="resets_time" type="time" aria-label="Reset time, optional">
+  </div>
+  <label for="resets_in">Or reset in, e.g. 3h20m</label>
+  <input id="resets_in" name="resets_in" type="text">
+  <p id="rolling-hint" class="hint" hidden></p>
+  <button type="submit">Record observation</button>
+</form>
+{% endblock %}

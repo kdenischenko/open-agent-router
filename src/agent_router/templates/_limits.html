@@ -1,0 +1,39 @@
+<div id="limits">
+  <table>
+    <caption>Limit usage by pool and window</caption>
+    <thead>
+      <tr>
+        <th scope="col">Pool</th>
+        <th scope="col">Window</th>
+        <th scope="col">Usage</th>
+        <th scope="col">Expected</th>
+        <th scope="col">Behind</th>
+        <th scope="col">Reset</th>
+        <th scope="col">Source</th>
+        <th scope="col">Age</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pool in pools %}
+        {% for window in pool.windows %}
+        <tr>
+          <th scope="row">{{ pool.title }}</th>
+          <td>{{ window.id }}</td>
+          <td>{% if window.used is none %}—{% else %}{{ '%.1f%%'|format(window.used * 100) }}{% endif %}</td>
+          <td>{% if window.expected is none %}—{% else %}{{ '%.1f%%'|format(window.expected * 100) }}{% endif %}</td>
+          <td>{% if window.lag is none %}—{% else %}{{ '%.1f%%'|format(window.lag * 100) }}{% endif %}</td>
+          <td>{% if window.resets_at %}{{ local(window.resets_at) }}{% elif window.kind == 'fixed' and not window.anchored %}set the reset time{% else %}—{% endif %}</td>
+          <td>{{ window.source or '—' }}{% if window.estimated %} (estimate){% endif %}</td>
+          <td>{{ window.age_s|age }}</td>
+          <td>
+            {% if pool.block %}Closed until {{ local(pool.block.until) }}: {{ pool.block.reason }}<br>{% endif %}
+            {% if window.blocked %}Window exhausted. {% endif %}
+            {{ window.note or '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

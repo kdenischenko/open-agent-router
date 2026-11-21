@@ -1,0 +1,43 @@
+<div id="jobs">
+  {% if classifier %}
+  <p>
+    {% if classifier.compared %}
+    Classifier: {{ classifier.matched }} of {{ classifier.compared }} hints matched ({{ classifier.percent }}%)
+    {% else %}
+    Classifier: no comparisons yet
+    {% endif %}
+  </p>
+  {% endif %}
+  {% if tasks_disabled %}
+  <p>Jobs are disabled: the job dispatcher is not running.</p>
+  {% elif not jobs %}
+  <p>No jobs yet.</p>
+  {% else %}
+  <div class="job-list">
+    {% for job in jobs %}
+    <article class="panel job" data-status="{{ job.status }}">
+      <h2><a href="/jobs/{{ job.id }}"><code>{{ job.id }}</code></a></h2>
+      <p>Status: <strong>{{ job.status }}</strong></p>
+      <p>Route: {{ job.approval_route or job.route or 'not chosen yet' }}</p>
+      {% if job.reason %}<p>Reason: {{ job.reason }}</p>{% endif %}
+      {% if job.status == 'awaiting_approval' %}
+      <form method="post" action="/jobs/{{ job.id }}/approve" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit">Approve</button>
+      </form>
+      <form method="post" action="/jobs/{{ job.id }}/deny" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit">Deny</button>
+      </form>
+      {% endif %}
+      {% if job.status in ['queued', 'awaiting_approval', 'running'] %}
+      <form method="post" action="/jobs/{{ job.id }}/cancel" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit">Cancel</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

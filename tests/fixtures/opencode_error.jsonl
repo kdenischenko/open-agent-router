@@ -1,0 +1,1 @@
+{"type": "error", "timestamp": 0, "sessionID": "ses_<id>", "error": {"type": "provider.no-route", "message": "Model unavailable: opencode-go/no-such-model"}}

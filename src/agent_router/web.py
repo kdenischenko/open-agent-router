@@ -1,0 +1,444 @@
+"""Server-rendered pages of the web dashboard."""
+
+from __future__ import annotations
+
+import hmac
+from functools import partial
+from pathlib import Path
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
+from pydantic import ValidationError
+from starlette.datastructures import FormData
+from starlette.responses import HTMLResponse, PlainTextResponse, Response
+from starlette.templating import Jinja2Templates
+
+from agent_router import api
+from agent_router.clock import format_age, format_local
+from agent_router.config import TIERS
+from agent_router.jobs import TERMINAL, Attempt, Job
+from agent_router.periods import parse_moment
+from agent_router.service import Gateway, decision_json
+
+TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
+TEMPLATES.env.filters["age"] = format_age
+TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
+
+
+def _field(form: FormData, name: str) -> str:
+    value = form.get(name)
+    return value if isinstance(value, str) else ""
+
+
+def web_router(deps: Gateway) -> APIRouter:
+    router = APIRouter()
+    local = partial(format_local, tz=deps.tz)
+
+    def session_id(request: Request) -> str | None:
+        sid = request.cookies.get("ar_session")
+        return sid if deps.panel.valid(sid) else None
+
+    def login_redirect() -> RedirectResponse:
+        return RedirectResponse("/login", status_code=303)
+
+    def message_page(
+        request: Request,
+        sid: str | None,
+        message: str,
+        href: str,
+        link_text: str,
+        *,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "message.html",
+            {
+                "title": "Notice",
+                "message": message,
+                "link_href": href,
+                "link_text": link_text,
+                "csrf": None if sid is None else deps.panel.csrf_for(sid),
+            },
+            status_code=status_code,
+        )
+
+    def csrf_failed(request: Request, sid: str) -> HTMLResponse:
+        return message_page(
+            request, sid, "invalid CSRF token", "/", "Back to the dashboard", status_code=403
+        )
+
+    def calibration_page(
+        request: Request,
+        sid: str,
+        *,
+        error: str | None = None,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "calibrate.html",
+            {
+                "title": "Manual calibration",
+                "pools": deps.config.pools,
+                "csrf": deps.panel.csrf_for(sid),
+                "error": error,
+            },
+            status_code=status_code,
+        )
+
+    @router.get("/login")
+    def get_login(request: Request) -> Response:
+        if session_id(request) is not None:
+            return RedirectResponse("/", status_code=303)
+        return TEMPLATES.TemplateResponse(request, "login.html", {"title": "Log in", "error": None})
+
+    @router.post("/login")
+    async def post_login(request: Request) -> Response:
+        form = await request.form()
+        given = _field(form, "token").encode("utf-8")
+        expected = deps.tokens.admin.encode("utf-8")
+        if not given or not hmac.compare_digest(given, expected):
+            return TEMPLATES.TemplateResponse(
+                request,
+                "login.html",
+                {"title": "Log in", "error": "admin token not accepted"},
+                status_code=401,
+            )
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(
+            "ar_session",
+            deps.panel.issue(),
+            httponly=True,
+            samesite="strict",
+            path="/",
+            secure=False,
+            max_age=deps.config.panel_session_days * 86400,
+        )
+        return response
+
+    @router.post("/logout")
+    async def post_logout(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        deps.panel.logout()
+        response = login_redirect()
+        response.delete_cookie("ar_session", path="/", httponly=True, samesite="strict")
+        return response
+
+    def jobs_page(
+        request: Request,
+        sid: str,
+        jobs: list | None,
+        *,
+        fragment: bool = False,
+    ) -> HTMLResponse:
+        classifier = None
+        if deps.config.classifier.kind != "none":
+            matched, compared = (0, 0) if deps.jobs is None else deps.jobs.classifier_agreement()
+            classifier = {
+                "matched": matched,
+                "compared": compared,
+                "percent": round(100 * matched / compared) if compared else 0,
+            }
+        context = {
+            "title": "Jobs",
+            "jobs": jobs or [],
+            "tasks_disabled": jobs is None,
+            "classifier": classifier,
+            "csrf": deps.panel.csrf_for(sid),
+        }
+        template = "_jobs.html" if fragment else "jobs.html"
+        return TEMPLATES.TemplateResponse(request, template, context)
+
+    def job_list() -> list | None:
+        if deps.dispatcher is None:
+            return None
+        found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
+        return sorted(found, key=lambda job: job.status != "awaiting_approval")
+
+    def advice_context(snapshot: dict, sid: str) -> dict:
+        decisions = [
+            decision_json(tier, deps.advise(tier, None)) | {"title": TIER_TITLES[tier]}
+            for tier in TIERS
+        ]
+        return {
+            "decisions": decisions,
+            "closed_pools": [pool for pool in snapshot["pools"] if pool["block"]],
+            "csrf": deps.panel.csrf_for(sid),
+            "local": local,
+        }
+
+    def recorded_line(request: Request, snapshot: dict) -> str | None:
+        """The confirmation line for a just-recorded pair, or None when the params are absent."""
+        pool_id = request.query_params.get("recorded_pool")
+        window_id = request.query_params.get("recorded_window")
+        if not pool_id or not window_id:
+            return None
+        pool = next((item for item in deps.config.pools if item.id == pool_id), None)
+        if pool is None or not any(window.id == window_id for window in pool.windows):
+            return None
+        found = next(
+            (
+                window
+                for item in snapshot["pools"]
+                if item["id"] == pool_id
+                for window in item["windows"]
+                if window["id"] == window_id
+            ),
+            None,
+        )
+        if found is None or found.get("used") is None:
+            return None
+        line = f"Recorded {pool.title} / {window_id}: used {found['used'] * 100:.0f}%"
+        resets_at = found.get("resets_at")
+        if resets_at:
+            line += f", reset {local(resets_at)}"
+        return line
+
+    @router.get("/")
+    def get_index(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        snapshot = deps.snapshot_view()
+        awaiting_count = None
+        if deps.dispatcher is not None:
+            awaiting_count = len(
+                deps.dispatcher.jobs.list("awaiting_approval", max(1, deps.config.tasks.max_queued))
+            )
+        context = {
+            "title": "Limits",
+            "pools": snapshot["pools"],
+            "awaiting_count": awaiting_count,
+            "recorded": recorded_line(request, snapshot),
+        } | advice_context(snapshot, sid)
+        return TEMPLATES.TemplateResponse(request, "index.html", context)
+
+    @router.get("/fragments/limits")
+    def get_limits(request: Request) -> Response:
+        if session_id(request) is None:
+            return login_redirect()
+        snapshot = deps.snapshot_view()
+        return TEMPLATES.TemplateResponse(
+            request, "_limits.html", {"pools": snapshot["pools"], "local": local}
+        )
+
+    @router.get("/fragments/advice")
+    def get_advice(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        snapshot = deps.snapshot_view()
+        return TEMPLATES.TemplateResponse(request, "_advice.html", advice_context(snapshot, sid))
+
+    @router.get("/jobs")
+    def get_jobs(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return jobs_page(request, sid, job_list())
+
+    @router.get("/fragments/jobs")
+    def get_jobs_fragment(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return jobs_page(request, sid, job_list(), fragment=True)
+
+    def job_context(job: Job, attempts: list[Attempt], sid: str) -> dict:
+        prompt_chars = job.prompt_chars if job.prompt_chars is not None else len(job.request.prompt)
+        return {
+            "title": f"Job {job.id}",
+            "job": job,
+            "prompt": job.request.prompt[:2000],
+            "prompt_truncated": prompt_chars > 2000,
+            "prompt_chars": prompt_chars,
+            "attempts": attempts,
+            "last_rating": deps.dispatcher.jobs.last_rating(job.id),
+            "csrf": deps.panel.csrf_for(sid),
+            "local": local,
+            "terminal": job.status in TERMINAL,
+        }
+
+    @router.get("/jobs/{job_id}")
+    def get_job(request: Request, job_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        return TEMPLATES.TemplateResponse(
+            request, "job.html", job_context(job, deps.dispatcher.jobs.attempts(job_id), sid)
+        )
+
+    @router.get("/fragments/jobs/{job_id}")
+    def get_job_fragment(request: Request, job_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        return TEMPLATES.TemplateResponse(
+            request, "_job.html", job_context(job, deps.dispatcher.jobs.attempts(job_id), sid)
+        )
+
+    async def post_job_action(request: Request, job_id: str, action: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        if deps.dispatcher is None:
+            return PlainTextResponse(
+                "jobs are disabled: the job dispatcher is not running", status_code=503
+            )
+        try:
+            getattr(deps.dispatcher, action)(job_id)
+        except KeyError:
+            return message_page(
+                request, sid, "job not found", f"/jobs/{job_id}", "Back to the job", status_code=404
+            )
+        except api.WrongState as exc:
+            return message_page(
+                request, sid, str(exc), f"/jobs/{job_id}", "Back to the job", status_code=409
+            )
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @router.post("/jobs/{job_id}/approve")
+    async def post_job_approve(request: Request, job_id: str) -> Response:
+        return await post_job_action(request, job_id, "approve")
+
+    @router.post("/jobs/{job_id}/deny")
+    async def post_job_deny(request: Request, job_id: str) -> Response:
+        return await post_job_action(request, job_id, "deny")
+
+    @router.post("/jobs/{job_id}/cancel")
+    async def post_job_cancel(request: Request, job_id: str) -> Response:
+        return await post_job_action(request, job_id, "cancel")
+
+    @router.post("/jobs/{job_id}/rate")
+    async def post_job_rate(request: Request, job_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        if deps.dispatcher is None:
+            return PlainTextResponse(
+                "jobs are disabled: the job dispatcher is not running", status_code=503
+            )
+        try:
+            api.rate(
+                deps,
+                job_id,
+                api.RatingBody(
+                    value=_field(form, "value"),
+                    should_tier=_field(form, "should_tier") or None,
+                    by="dashboard",
+                ),
+            )
+        except api.ApiError as exc:
+            return message_page(
+                request,
+                sid,
+                exc.message,
+                f"/jobs/{job_id}",
+                "Back to the job",
+                status_code=exc.status,
+            )
+        except ValidationError:
+            return message_page(
+                request,
+                sid,
+                "check the rating values",
+                f"/jobs/{job_id}",
+                "Back to the job",
+                status_code=422,
+            )
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @router.post("/pools/{pool_id}/unblock")
+    async def post_pool_unblock(request: Request, pool_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        if deps.dispatcher is None:
+            return PlainTextResponse(
+                "jobs are disabled: the job dispatcher is not running", status_code=503
+            )
+        if deps.pool(pool_id) is None:
+            return PlainTextResponse("pool not found", status_code=404)
+        deps.dispatcher.unblock(pool_id)
+        return RedirectResponse("/", status_code=303)
+
+    @router.get("/calibrate")
+    def get_calibration(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return calibration_page(request, sid)
+
+    @router.post("/calibrate")
+    async def post_calibration(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        target = _field(form, "target")
+        if not target:
+            return calibration_page(request, sid, error="choose a pool and window", status_code=422)
+        reset_date, reset_time = _field(form, "resets_date"), _field(form, "resets_time")
+        resets_in = _field(form, "resets_in") or None
+        if reset_time and not reset_date:
+            return calibration_page(request, sid, error="set the reset date", status_code=422)
+        if reset_date and resets_in:
+            return calibration_page(
+                request,
+                sid,
+                error="set either the reset date or reset in, not both",
+                status_code=422,
+            )
+        try:
+            resets_at = parse_moment(f"{reset_date} {reset_time}", deps.tz) if reset_date else None
+            pool_index, window_index = (int(part) for part in target.split(":"))
+            if pool_index < 0 or window_index < 0:
+                raise ValueError
+            pool = deps.config.pools[pool_index]
+            window = pool.windows[window_index]
+            body = api.ObservationBody(
+                pool=pool.id,
+                window=window.id,
+                percent=float(_field(form, "percent")),
+                resets_at=resets_at,
+                resets_in=resets_in,
+            )
+            api.calibrate(deps, body)
+        except api.ApiError as exc:
+            return calibration_page(request, sid, error=exc.message, status_code=exc.status)
+        except (ValidationError, ValueError, IndexError):
+            return calibration_page(
+                request, sid, error="check the calibration field values", status_code=422
+            )
+        query = urlencode({"recorded_pool": pool.id, "recorded_window": window.id})
+        return RedirectResponse(f"/?{query}", status_code=303)
+
+    return router

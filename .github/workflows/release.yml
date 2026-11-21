@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+          python-version: "3.12"
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Format
+        run: uv run ruff format --check
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Check tag version
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}".Substring(1)
+          $projectVersion = (Select-String -Path pyproject.toml -Pattern '^version = "([^"]+)"$').Matches.Groups[1].Value
+          if ($tagVersion -ne $projectVersion) {
+            Write-Error "tag version $tagVersion does not match pyproject.toml version $projectVersion"
+            exit 1
+          }
+
+      - name: Build
+        run: uv build
+
+      - name: Smoke test the wheel
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          $wheel = (Get-ChildItem "$env:GITHUB_WORKSPACE/dist/*.whl").FullName
+          $env:AGENT_ROUTER_HOME = Join-Path $env:RUNNER_TEMP "agent-router-home"
+          $run = @("run", "--isolated", "--no-project", "--python", "3.12", "--with", $wheel)
+          uv @run agent-router --help
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv @run agent-router init
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv @run python -c "import agent_router, pathlib; from agent_router.config import home_dir, load_config; load_config(home_dir() / 'config.toml'); root = pathlib.Path(agent_router.__file__).parent; assert any((root / 'static').iterdir()) and any((root / 'templates').iterdir())"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Publish
+        run: uv publish --trusted-publishing always

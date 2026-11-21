@@ -1,0 +1,173 @@
+<svg class="rich-terminal" viewBox="0 0 1238 806.4" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
+
+    .ar-cycle-matrix {
+        font-family: Fira Code, monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
+
+    .ar-cycle-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
+
+    .ar-cycle-r1 { fill: #98a84b;font-weight: bold }
+.ar-cycle-r2 { fill: #c5c8c6 }
+
+    text[clip-path] {
+        animation: ar-reveal 0.25s ease-out both;
+    }
+    @keyframes ar-reveal {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        text[clip-path] { animation: none; }
+    }
+    </style>
+
+    <defs>
+    <clipPath id="ar-cycle-clip-terminal">
+      <rect x="0" y="0" width="1219.0" height="755.4" />
+    </clipPath>
+    <clipPath id="ar-cycle-line-0">
+    <rect x="0" y="1.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-1">
+    <rect x="0" y="25.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-2">
+    <rect x="0" y="50.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-3">
+    <rect x="0" y="74.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-4">
+    <rect x="0" y="99.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-5">
+    <rect x="0" y="123.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-6">
+    <rect x="0" y="147.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-7">
+    <rect x="0" y="172.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-8">
+    <rect x="0" y="196.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-9">
+    <rect x="0" y="221.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-10">
+    <rect x="0" y="245.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-11">
+    <rect x="0" y="269.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-12">
+    <rect x="0" y="294.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-13">
+    <rect x="0" y="318.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-14">
+    <rect x="0" y="343.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-15">
+    <rect x="0" y="367.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-16">
+    <rect x="0" y="391.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-17">
+    <rect x="0" y="416.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-18">
+    <rect x="0" y="440.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-19">
+    <rect x="0" y="465.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-20">
+    <rect x="0" y="489.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-21">
+    <rect x="0" y="513.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-22">
+    <rect x="0" y="538.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-23">
+    <rect x="0" y="562.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-24">
+    <rect x="0" y="587.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-25">
+    <rect x="0" y="611.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-26">
+    <rect x="0" y="635.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-27">
+    <rect x="0" y="660.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-28">
+    <rect x="0" y="684.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="ar-cycle-line-29">
+    <rect x="0" y="709.1" width="1220" height="24.65"/>
+            </clipPath>
+    </defs>
+
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1236" height="804.4" rx="8"/><text class="ar-cycle-title" fill="#c5c8c6" text-anchor="middle" x="618" y="27">agent-router</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
+        
+    <g transform="translate(9, 41)" clip-path="url(#ar-cycle-clip-terminal)">
+    
+    <g class="ar-cycle-matrix">
+    <text class="ar-cycle-r1" x="0" y="20" textLength="1220" clip-path="url(#ar-cycle-line-0)" style="animation-delay: 0.00s">$&#160;agent-router&#160;run&#160;--no-wait&#160;--mode&#160;write&#160;--tier&#160;standard&#160;--caller&#160;claude-code&#160;--cwd&#160;demo/workspace&#160;</text><text class="ar-cycle-r2" x="1220" y="20" textLength="12.2" clip-path="url(#ar-cycle-line-0)" style="animation-delay: 0.00s">
+</text><text class="ar-cycle-r1" x="0" y="44.4" textLength="280.6" clip-path="url(#ar-cycle-line-1)" style="animation-delay: 0.15s">--prompt-file&#160;prompt.md</text><text class="ar-cycle-r2" x="1220" y="44.4" textLength="12.2" clip-path="url(#ar-cycle-line-1)" style="animation-delay: 0.15s">
+</text><text class="ar-cycle-r2" x="0" y="68.8" textLength="170.8" clip-path="url(#ar-cycle-line-2)" style="animation-delay: 0.30s">j_c77ee0633dd6</text><text class="ar-cycle-r2" x="1220" y="68.8" textLength="12.2" clip-path="url(#ar-cycle-line-2)" style="animation-delay: 0.30s">
+</text><text class="ar-cycle-r2" x="1220" y="93.2" textLength="12.2" clip-path="url(#ar-cycle-line-3)" style="animation-delay: 0.45s">
+</text><text class="ar-cycle-r1" x="0" y="117.6" textLength="451.4" clip-path="url(#ar-cycle-line-4)" style="animation-delay: 0.60s">$&#160;agent-router&#160;approve&#160;j_c77ee0633dd6</text><text class="ar-cycle-r2" x="1220" y="117.6" textLength="12.2" clip-path="url(#ar-cycle-line-4)" style="animation-delay: 0.60s">
+</text><text class="ar-cycle-r2" x="0" y="142" textLength="1183.4" clip-path="url(#ar-cycle-line-5)" style="animation-delay: 0.75s">[agent-router]&#160;job&#160;j_c77ee0633dd6,&#160;status&#160;queued,&#160;route&#160;kimi-cli/k3.1-pro,&#160;route&#160;choice&#160;ahead&#160;of&#160;</text><text class="ar-cycle-r2" x="1220" y="142" textLength="12.2" clip-path="url(#ar-cycle-line-5)" style="animation-delay: 0.75s">
+</text><text class="ar-cycle-r2" x="0" y="166.4" textLength="744.2" clip-path="url(#ar-cycle-line-6)" style="animation-delay: 0.90s">pace&#160;by&#160;4&#160;pp&#160;(month:&#160;46%&#160;elapsed,&#160;50%&#160;used),&#160;files&#160;changed:&#160;0</text><text class="ar-cycle-r2" x="1220" y="166.4" textLength="12.2" clip-path="url(#ar-cycle-line-6)" style="animation-delay: 0.90s">
+</text><text class="ar-cycle-r2" x="0" y="190.8" textLength="756.4" clip-path="url(#ar-cycle-line-7)" style="animation-delay: 1.05s">approved:&#160;follow&#160;the&#160;job&#160;with&#160;agent-router&#160;wait&#160;j_c77ee0633dd6</text><text class="ar-cycle-r2" x="1220" y="190.8" textLength="12.2" clip-path="url(#ar-cycle-line-7)" style="animation-delay: 1.05s">
+</text><text class="ar-cycle-r2" x="1220" y="215.2" textLength="12.2" clip-path="url(#ar-cycle-line-8)" style="animation-delay: 1.20s">
+</text><text class="ar-cycle-r1" x="0" y="239.6" textLength="414.8" clip-path="url(#ar-cycle-line-9)" style="animation-delay: 1.35s">$&#160;agent-router&#160;wait&#160;j_c77ee0633dd6</text><text class="ar-cycle-r2" x="1220" y="239.6" textLength="12.2" clip-path="url(#ar-cycle-line-9)" style="animation-delay: 1.35s">
+</text><text class="ar-cycle-r2" x="0" y="264" textLength="768.6" clip-path="url(#ar-cycle-line-10)" style="animation-delay: 1.50s">added&#160;input&#160;validation&#160;to&#160;the&#160;signup&#160;form&#160;in&#160;src/signup_form.py</text><text class="ar-cycle-r2" x="1220" y="264" textLength="12.2" clip-path="url(#ar-cycle-line-10)" style="animation-delay: 1.50s">
+</text><text class="ar-cycle-r2" x="0" y="288.4" textLength="1220" clip-path="url(#ar-cycle-line-11)" style="animation-delay: 1.65s">[agent-router]&#160;job&#160;j_c77ee0633dd6,&#160;status&#160;completed,&#160;route&#160;kimi-cli/k3.1-pro,&#160;route&#160;choice&#160;ahead&#160;of&#160;</text><text class="ar-cycle-r2" x="1220" y="288.4" textLength="12.2" clip-path="url(#ar-cycle-line-11)" style="animation-delay: 1.65s">
+</text><text class="ar-cycle-r2" x="0" y="312.8" textLength="744.2" clip-path="url(#ar-cycle-line-12)" style="animation-delay: 1.80s">pace&#160;by&#160;4&#160;pp&#160;(month:&#160;46%&#160;elapsed,&#160;50%&#160;used),&#160;files&#160;changed:&#160;1</text><text class="ar-cycle-r2" x="1220" y="312.8" textLength="12.2" clip-path="url(#ar-cycle-line-12)" style="animation-delay: 1.80s">
+</text><text class="ar-cycle-r2" x="0" y="337.2" textLength="671" clip-path="url(#ar-cycle-line-13)" style="animation-delay: 1.95s">rate:&#160;agent-router&#160;rate&#160;j_c77ee0633dd6&#160;good|bad|partial</text><text class="ar-cycle-r2" x="1220" y="337.2" textLength="12.2" clip-path="url(#ar-cycle-line-13)" style="animation-delay: 1.95s">
+</text><text class="ar-cycle-r2" x="1220" y="361.6" textLength="12.2" clip-path="url(#ar-cycle-line-14)" style="animation-delay: 2.10s">
+</text><text class="ar-cycle-r1" x="0" y="386" textLength="475.8" clip-path="url(#ar-cycle-line-15)" style="animation-delay: 2.25s">$&#160;agent-router&#160;rate&#160;j_c77ee0633dd6&#160;good</text><text class="ar-cycle-r2" x="1220" y="386" textLength="12.2" clip-path="url(#ar-cycle-line-15)" style="animation-delay: 2.25s">
+</text><text class="ar-cycle-r2" x="0" y="410.4" textLength="463.6" clip-path="url(#ar-cycle-line-16)" style="animation-delay: 2.40s">rating&#160;recorded:&#160;j_c77ee0633dd6&#160;—&#160;good</text><text class="ar-cycle-r2" x="1220" y="410.4" textLength="12.2" clip-path="url(#ar-cycle-line-16)" style="animation-delay: 2.40s">
+</text><text class="ar-cycle-r2" x="1220" y="434.8" textLength="12.2" clip-path="url(#ar-cycle-line-17)" style="animation-delay: 2.55s">
+</text><text class="ar-cycle-r1" x="0" y="459.2" textLength="256.2" clip-path="url(#ar-cycle-line-18)" style="animation-delay: 2.70s">$&#160;agent-router&#160;status</text><text class="ar-cycle-r2" x="1220" y="459.2" textLength="12.2" clip-path="url(#ar-cycle-line-18)" style="animation-delay: 2.70s">
+</text><text class="ar-cycle-r2" x="0" y="483.6" textLength="231.8" clip-path="url(#ar-cycle-line-19)" style="animation-delay: 2.85s">claude-pro&#160;—&#160;Claude</text><text class="ar-cycle-r2" x="1220" y="483.6" textLength="12.2" clip-path="url(#ar-cycle-line-19)" style="animation-delay: 2.85s">
+</text><text class="ar-cycle-r2" x="0" y="508" textLength="634.4" clip-path="url(#ar-cycle-line-20)" style="animation-delay: 3.00s">&#160;&#160;5h:&#160;used&#160;40.0%;&#160;reset:&#160;15.01&#160;14:00;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="508" textLength="12.2" clip-path="url(#ar-cycle-line-20)" style="animation-delay: 3.00s">
+</text><text class="ar-cycle-r2" x="0" y="532.4" textLength="854" clip-path="url(#ar-cycle-line-21)" style="animation-delay: 3.15s">&#160;&#160;week:&#160;used&#160;20.0%;&#160;expected&#160;33.9%;&#160;reset:&#160;20.01&#160;00:00;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="532.4" textLength="12.2" clip-path="url(#ar-cycle-line-21)" style="animation-delay: 3.15s">
+</text><text class="ar-cycle-r2" x="0" y="556.8" textLength="256.2" clip-path="url(#ar-cycle-line-22)" style="animation-delay: 3.30s">kimi-code&#160;—&#160;Kimi&#160;Code</text><text class="ar-cycle-r2" x="1220" y="556.8" textLength="12.2" clip-path="url(#ar-cycle-line-22)" style="animation-delay: 3.30s">
+</text><text class="ar-cycle-r2" x="0" y="581.2" textLength="585.6" clip-path="url(#ar-cycle-line-23)" style="animation-delay: 3.45s">&#160;&#160;5h:&#160;used&#160;10.0%;&#160;reset:&#160;unknown;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="581.2" textLength="12.2" clip-path="url(#ar-cycle-line-23)" style="animation-delay: 3.45s">
+</text><text class="ar-cycle-r2" x="0" y="605.6" textLength="866.2" clip-path="url(#ar-cycle-line-24)" style="animation-delay: 3.60s">&#160;&#160;month:&#160;used&#160;50.0%;&#160;expected&#160;46.4%;&#160;reset:&#160;01.02&#160;00:00;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="605.6" textLength="12.2" clip-path="url(#ar-cycle-line-24)" style="animation-delay: 3.60s">
+</text><text class="ar-cycle-r2" x="0" y="630" textLength="841.8" clip-path="url(#ar-cycle-line-25)" style="animation-delay: 3.75s">&#160;&#160;via&#160;gateway&#160;since&#160;the&#160;last&#160;observation:&#160;1&#160;job,&#160;0.3&#160;min,&#160;7360&#160;tokens</text><text class="ar-cycle-r2" x="1220" y="630" textLength="12.2" clip-path="url(#ar-cycle-line-25)" style="animation-delay: 3.75s">
+</text><text class="ar-cycle-r2" x="0" y="654.4" textLength="305" clip-path="url(#ar-cycle-line-26)" style="animation-delay: 3.90s">opencode-go&#160;—&#160;OpenCode&#160;Go</text><text class="ar-cycle-r2" x="1220" y="654.4" textLength="12.2" clip-path="url(#ar-cycle-line-26)" style="animation-delay: 3.90s">
+</text><text class="ar-cycle-r2" x="0" y="678.8" textLength="585.6" clip-path="url(#ar-cycle-line-27)" style="animation-delay: 4.05s">&#160;&#160;5h:&#160;used&#160;30.0%;&#160;reset:&#160;unknown;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="678.8" textLength="12.2" clip-path="url(#ar-cycle-line-27)" style="animation-delay: 4.05s">
+</text><text class="ar-cycle-r2" x="0" y="703.2" textLength="610" clip-path="url(#ar-cycle-line-28)" style="animation-delay: 4.20s">&#160;&#160;week:&#160;used&#160;40.0%;&#160;reset:&#160;unknown;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="703.2" textLength="12.2" clip-path="url(#ar-cycle-line-28)" style="animation-delay: 4.20s">
+</text><text class="ar-cycle-r2" x="0" y="727.6" textLength="866.2" clip-path="url(#ar-cycle-line-29)" style="animation-delay: 4.35s">&#160;&#160;month:&#160;used&#160;60.0%;&#160;expected&#160;46.4%;&#160;reset:&#160;01.02&#160;00:00;&#160;source:&#160;manual</text><text class="ar-cycle-r2" x="1220" y="727.6" textLength="12.2" clip-path="url(#ar-cycle-line-29)" style="animation-delay: 4.35s">
+</text><text class="ar-cycle-r2" x="1220" y="752" textLength="12.2" clip-path="url(#ar-cycle-line-30)" style="animation-delay: 4.50s">
+</text>
+    </g>
+    </g>
+</svg>

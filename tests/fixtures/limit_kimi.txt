@@ -1,0 +1,2 @@
+error: usage limit reached for the current billing window.
+The limit resets at 2026-11-13T15:00:00Z.

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="open-agent-router — One gateway for all your AI coding subscriptions">
+  <defs>
+    <linearGradient id="ar-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="18" fill="url(#ar-bg)" stroke="#30363d" stroke-width="1.5"/>
+  <circle cx="96" cy="150" r="30" fill="#58a6ff" fill-opacity="0.15" stroke="#58a6ff" stroke-width="2.5"/>
+  <circle cx="96" cy="150" r="10" fill="#58a6ff"/>
+    <path d="M 128 150 C 196 150 200 58 264 58" fill="none" stroke="#58a6ff" stroke-width="3" stroke-opacity="0.7"/>
+    <rect x="264" y="41" width="116" height="34" rx="8" fill="#58a6ff" fill-opacity="0.14" stroke="#58a6ff" stroke-width="2"/>
+    <circle cx="283" cy="58" r="4.5" fill="#58a6ff"/>
+    <path d="M 128 150 C 196 150 200 122 264 122" fill="none" stroke="#bc8cff" stroke-width="3" stroke-opacity="0.7"/>
+    <rect x="264" y="105" width="116" height="34" rx="8" fill="#bc8cff" fill-opacity="0.14" stroke="#bc8cff" stroke-width="2"/>
+    <circle cx="283" cy="122" r="4.5" fill="#bc8cff"/>
+    <path d="M 128 150 C 196 150 200 186 264 186" fill="none" stroke="#56d364" stroke-width="3" stroke-opacity="0.7"/>
+    <rect x="264" y="169" width="116" height="34" rx="8" fill="#56d364" fill-opacity="0.14" stroke="#56d364" stroke-width="2"/>
+    <circle cx="283" cy="186" r="4.5" fill="#56d364"/>
+    <path d="M 128 150 C 196 150 200 250 264 250" fill="none" stroke="#ffa657" stroke-width="3" stroke-opacity="0.7"/>
+    <rect x="264" y="233" width="116" height="34" rx="8" fill="#ffa657" fill-opacity="0.14" stroke="#ffa657" stroke-width="2"/>
+    <circle cx="283" cy="250" r="4.5" fill="#ffa657"/>
+  <text x="440" y="134" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="48" font-weight="700" fill="#e6edf3">open-agent-router</text>
+  <text x="440" y="186" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="23" fill="#8b949e">One gateway for all your AI coding subscriptions</text>
+  <rect x="440" y="208" width="128" height="5" rx="2.5" fill="#58a6ff"/>
+</svg>

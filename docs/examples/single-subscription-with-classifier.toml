@@ -1,0 +1,84 @@
+# one kimi code subscription with a local classifier watching in shadow mode
+# all limits and reset times here are made up; set them to your real plan
+# for direct cli use: one pool, so no caller is mapped in [callers]; a mapped one has no route
+
+[server]
+port = 8787
+
+[tasks]
+# leave empty and run: agent-router init --allowed-root <dir> for each project
+allowed_roots = []
+denied_roots = []
+
+[callers]
+# one pool, so callers are not mapped: otherwise delegation from these harnesses has no route
+claude-code = ""
+kimi-code = ""
+opencode = ""
+cline = ""
+
+[backends.kimi]
+executable = ""
+
+# shadow mode: the classifier only tags tasks, routing still follows tiers
+[classifier]
+mode = "shadow"
+primary = "tev1"
+min_confidence = 0.6
+write_floor = "standard"
+vram_budget_mb = 5300
+
+  [[classifier.models]]
+  id = "tev1"
+  kind = "systemone"
+  url = "http://127.0.0.1:11434"
+  model = "tev1:4b-q4_K_M"
+  timeout_s = 3
+
+[storage]
+backend = "sqlite"
+
+# the only subscription: percent of the plan, monthly billing cycle
+[[pools]]
+id = "kimi-code"
+title = "Kimi Code"
+unit = "percent"
+reserve = 0.15
+reserve_tier = "strong"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  # made-up reset anchor, move it to the real billing day of your plan
+  anchor = 2026-11-01T00:00:00Z
+
+[[routes]]
+id = "kimi-cli/k3.1-pro"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/k3.1-pro"
+model_key = "kimi-k3.1-pro"
+tiers = ["standard", "strong"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+[[routes]]
+id = "kimi-cli/kimi-for-coding"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/kimi-for-coding"
+tiers = ["cheap", "standard"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = true

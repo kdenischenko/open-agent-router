@@ -1,0 +1,94 @@
+[project]
+name = "open-agent-router"
+version = "0.1.0"
+description = "Local gateway that routes coding-agent jobs between AI subscriptions by remaining quota"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kdenischenko" }]
+keywords = [
+    "ai",
+    "coding-agent",
+    "llm",
+    "router",
+    "gateway",
+    "quota",
+    "mcp",
+    "claude-code",
+    "opencode",
+    "kimi",
+    "cline",
+    "orchestration",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
+dependencies = [
+    "fastapi>=0.162.5,<0.163",
+    "uvicorn>=0.54.0",
+    "jinja2>=3.1.6",
+    "typer>=0.29.1,<0.30",
+    "httpx>=0.28.1",
+    "platformdirs>=4.14.5",
+    "python-multipart>=0.0.33",
+    "mcp>=2.3,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/kdenischenko/open-agent-router"
+Issues = "https://github.com/kdenischenko/open-agent-router/issues"
+Changelog = "https://github.com/kdenischenko/open-agent-router/blob/main/CHANGELOG.md"
+
+[project.scripts]
+agent-router = "agent_router.cli:main"
+agent-router-statusline = "agent_router.statusline:main"
+
+[project.entry-points."agent_router.harnesses"]
+kimi = "agent_router.adapters.kimi:HARNESS"
+opencode = "agent_router.adapters.opencode:HARNESS"
+claude = "agent_router.adapters.claude:HARNESS"
+cline = "agent_router.adapters.cline:HARNESS"
+
+[project.entry-points."agent_router.counters"]
+opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_router"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["docs", "integrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent_router", "helpers"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Depends", "fastapi.Query", "fastapi.Form", "fastapi.Header", "fastapi.Cookie"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["bench: speed measurements, not part of the gates"]
+addopts = "-m 'not bench'"
+# starlette suggests httpx2; the project uses httpx
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

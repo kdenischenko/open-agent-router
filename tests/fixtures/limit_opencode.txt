@@ -1,0 +1,1 @@
+{"type": "error", "timestamp": 0, "sessionID": "ses_<id>", "error": {"type": "provider.quota-exceeded", "message": "Subscription allowance is used up for this period"}}

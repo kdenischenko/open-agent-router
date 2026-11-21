@@ -1,0 +1,111 @@
+# kimi code plus opencode go: two subscriptions, heavy work on kimi
+# all limits and reset times here are made up; set them to your real plan
+
+[server]
+port = 8787
+
+[tasks]
+# leave empty and run: agent-router init --allowed-root <dir> for each project
+allowed_roots = []
+denied_roots = []
+
+[callers]
+# no claude pool here, so the claude-code caller is not mapped
+claude-code = ""
+kimi-code = "kimi-code"
+opencode = "opencode-go"
+# cline runs on the opencode go plan, so its jobs skip that pool
+cline = "opencode-go"
+
+[backends.kimi]
+executable = ""
+
+[backends.opencode]
+executable = ""
+
+[backends.cline]
+executable = ""
+
+[storage]
+backend = "sqlite"
+
+# kimi subscription: percent of the plan, keep a reserve for strong tasks
+[[pools]]
+id = "kimi-code"
+title = "Kimi Code"
+unit = "percent"
+reserve = 0.15
+reserve_tier = "strong"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  # made-up reset anchor, move it to the real billing day of your plan
+  anchor = 2026-11-01T00:00:00Z
+
+# opencode go plan: hard usd limits read from the local opencode stats
+[[pools]]
+id = "opencode-go"
+title = "OpenCode Go"
+unit = "usd"
+counter = "opencode_stats"
+counter_provider = "opencode-go"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+  limit_usd = 10  # made up
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 50  # made up
+  # made-up reset anchor, move it to the real billing day of your plan
+  anchor = 2026-11-01T00:00:00Z
+
+[[routes]]
+id = "kimi-cli/k3.1-pro"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/k3.1-pro"
+model_key = "kimi-k3.1-pro"
+tiers = ["standard", "strong"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+[[routes]]
+id = "kimi-cli/kimi-for-coding"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/kimi-for-coding"
+tiers = ["cheap", "standard"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+# cheap small model on the go plan takes the bulk of routine tasks
+[[routes]]
+id = "opencode-cli/glm-5.3-flash"
+pool = "opencode-go"
+backend = "opencode"
+model = "opencode-go/glm-5.3-flash"
+tiers = ["cheap"]
+quality = 2
+modes = ["read", "write"]
+confirm = true
+enabled = true

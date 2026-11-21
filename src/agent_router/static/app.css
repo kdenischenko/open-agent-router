@@ -1,0 +1,74 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 1400px;
+  padding: 1rem;
+}
+
+header,
+nav,
+.inline {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
+
+header {
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.panel {
+  border: 1px solid #8886;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.login-form,
+.calibration-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 36rem;
+}
+
+.advice-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.error {
+  color: #c33;
+}
+
+#limits {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #8886;
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.calibration-field {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.calibration-moment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

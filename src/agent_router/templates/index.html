@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+{% if recorded %}<p class="recorded">{{ recorded }}</p>{% endif %}
+{% include "_limits.html" %}
+<section>
+  <h2>Jobs</h2>
+  <p><a href="/jobs">Open the job list</a></p>
+  {% if awaiting_count is not none %}
+  <p><a href="/jobs">Awaiting approval: {{ awaiting_count }}</a></p>
+  {% else %}
+  <p>Jobs are disabled: the job dispatcher is not running.</p>
+  {% endif %}
+</section>
+{% include "_advice.html" %}
+{% endblock %}

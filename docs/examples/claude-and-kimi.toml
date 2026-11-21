@@ -1,0 +1,108 @@
+# claude pro plus kimi code: two subscriptions, pro reserved for strong tasks
+# all limits and reset times here are made up; set them to your real plan
+
+[server]
+port = 8787
+
+[tasks]
+# leave empty and run: agent-router init --allowed-root <dir> for each project
+allowed_roots = []
+denied_roots = []
+
+[callers]
+claude-code = "claude-pro"
+kimi-code = "kimi-code"
+# no opencode or cline pool here, so those callers are not mapped
+opencode = ""
+cline = ""
+
+[backends.claude]
+executable = ""
+
+[backends.kimi]
+executable = ""
+
+# the Claude Code status line reports the limits of this pool
+[statusline]
+pool = "claude-pro"
+
+[storage]
+backend = "sqlite"
+
+# claude pro: percent of the plan, fixed 5h guard plus weekly pacing
+[[pools]]
+id = "claude-pro"
+title = "Claude Pro"
+unit = "percent"
+reserve = 0.15
+reserve_tier = "strong"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "fixed"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "week"
+  duration = "7d"
+  kind = "fixed"
+  role = "pace"
+  # made-up reset anchor, move it to the real reset day of your plan
+  anchor = 2026-11-16T00:00:00Z
+
+# kimi code: percent of the plan, monthly billing cycle
+[[pools]]
+id = "kimi-code"
+title = "Kimi Code"
+unit = "percent"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  # made-up reset anchor, move it to the real billing day of your plan
+  anchor = 2026-11-01T00:00:00Z
+
+# the pro model is the strong fallback, so keep it off cheap tasks
+[[routes]]
+id = "claude-cli/sonnet"
+pool = "claude-pro"
+backend = "claude"
+model = "sonnet"
+tiers = ["standard", "strong"]
+quality = 5
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+[[routes]]
+id = "kimi-cli/k3.1-pro"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/k3.1-pro"
+model_key = "kimi-k3.1-pro"
+tiers = ["standard", "strong"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+# everyday work stays on the cheaper kimi model
+[[routes]]
+id = "kimi-cli/kimi-for-coding"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/kimi-for-coding"
+tiers = ["cheap", "standard"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = true

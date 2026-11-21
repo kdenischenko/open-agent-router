@@ -1,0 +1,202 @@
+# adjust windows and limits to your plan
+
+[server]
+port = 8787
+
+[tasks]
+allowed_roots = []
+denied_roots = []
+max_parallel = 3
+max_queued = 200
+max_attempts = 3
+default_timeout_s = 1800
+approval_timeout_s = 600
+limit_backoff_s = 1800
+limit_backoff_max_s = 18000
+max_prompt_chars = 200000
+exit_grace_s = 60
+
+[callers]
+claude-code = "claude-pro"
+kimi-code = "kimi-code"
+opencode = "opencode-go"
+# cline runs on the opencode go plan, so its jobs skip that pool
+cline = "opencode-go"
+
+[backends.claude]
+executable = ""
+
+[backends.cline]
+executable = ""
+
+[backends.kimi]
+executable = ""
+
+[backends.opencode]
+executable = ""
+
+[statusline]
+pool = "claude-pro"
+
+[classifier]
+kind = "none"
+# mode = "shadow"
+# primary = "tev1"
+# min_confidence = 0.6
+# write_floor = "standard"
+# vram_budget_mb = 5300
+#
+# [[classifier.models]]
+# id = "tev1"
+# kind = "systemone"
+# model = "tev1:4b-q4_K_M"
+# timeout_s = 3
+
+[storage]
+backend = "sqlite"
+
+# [[sinks]]
+# type = "jsonl"
+# path = "events.jsonl"
+
+[[pools]]
+id = "claude-pro"
+title = "Claude Pro"
+unit = "percent"
+reserve = 0.15
+reserve_tier = "strong"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "fixed"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "week"
+  duration = "7d"
+  kind = "fixed"
+  role = "pace"
+
+[[pools]]
+id = "kimi-code"
+title = "Kimi Code"
+unit = "percent"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+
+[[pools]]
+id = "opencode-go"
+title = "OpenCode Go"
+unit = "usd"
+counter = "opencode_stats"
+counter_provider = "opencode-go"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+  limit_usd = 10  # set your plan limit
+
+  [[pools.windows]]
+  id = "week"
+  duration = "7d"
+  kind = "rolling"
+  role = "guard"
+  limit_usd = 10  # set your plan limit
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 10  # set your plan limit
+
+[[routes]]
+id = "claude-cli/sonnet"
+pool = "claude-pro"
+backend = "claude"
+model = "sonnet"
+tiers = ["standard", "strong"]
+quality = 5
+modes = ["read", "write"]
+confirm = true
+enabled = false
+
+[[routes]]
+id = "kimi-cli/k3.1-pro"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/k3.1-pro"
+model_key = "kimi-k3.1-pro"
+tiers = ["standard", "strong"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+[[routes]]
+id = "kimi-cli/kimi-for-coding"
+pool = "kimi-code"
+backend = "kimi"
+model = "kimi-code/kimi-for-coding"
+tiers = ["cheap", "standard"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+[[routes]]
+id = "opencode-cli/glm-5.3-flash"
+pool = "opencode-go"
+backend = "opencode"
+model = "opencode-go/glm-5.3-flash"
+tiers = ["cheap"]
+quality = 2
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+# OpenCode CLI on the OpenCode Go pool: model is "<provider>/<model>"
+[[routes]]
+id = "opencode-cli/glm-5.3"
+pool = "opencode-go"
+backend = "opencode"
+model = "opencode-go/glm-5.3"
+model_key = "glm-5.3"
+tiers = ["standard"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+# Cline CLI on the OpenCode Go pool: model is "<provider>/<model>"
+[[routes]]
+id = "cline/glm-5.3"
+pool = "opencode-go"
+backend = "cline"
+model = "opencode-go/glm-5.3"
+model_key = "glm-5.3"
+tiers = ["standard"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = false
+
+# One model across several subscriptions: pool preference order
+[models."kimi-k3.1-pro"]
+prefer = ["kimi-code", "opencode-go"]
+
+[models."glm-5.3"]
+prefer = ["opencode-go"]

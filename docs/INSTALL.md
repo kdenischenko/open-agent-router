@@ -1,0 +1,401 @@
+# Install agent-router from scratch
+
+Follow this guide if you downloaded the repository and want to install the gateway. When you finish,
+you will have a running gateway, verified harnesses, and the delegation skill in each orchestrator.
+If you installed the released package with `uv tool install open-agent-router`, run
+`uv tool update-shell` once if `agent-router` is not found, skip steps 1 and 2 and start at
+step 3.
+Windows is supported; the commands use PowerShell. Linux and macOS are experimental:
+CI runs the tests on Linux and macOS as experimental jobs that may fail, but the gateway has not
+been checked live there.
+
+## 0. What you need first
+
+- Python 3.12, [uv](https://docs.astral.sh/uv/), and git.
+- At least one harness, installed and signed in using its own method:
+
+| Harness | Executable | Authentication | Pool in config |
+|---|---|---|---|
+| Kimi Code | `kimi` | `kimi login` | `kimi-code` |
+| OpenCode | `opencode` | `opencode auth login`, OpenCode Go provider | `opencode-go` |
+| Cline CLI | `cline` or `cline-cli` | `cline auth <provider>` sets the provider (OpenCode Go here), key and model; see the [official Cline CLI documentation](https://docs.cline.bot/usage/cli-overview) | `opencode-go` |
+| Claude Code | `claude` | Sign in with a subscription | `claude-pro` |
+
+Check that each command responds to `--version`. The gateway does not store or pass keys. It starts
+harnesses, and they access models using their own authentication.
+
+## 1. Download and build
+
+```powershell
+git clone https://github.com/kdenischenko/open-agent-router.git agent-router
+cd agent-router
+uv sync
+```
+
+## 2. Add the `agent-router` command to PATH
+
+Delegation skills call `agent-router` by name, so the command must be in PATH, not only in `.venv`.
+The package is named `open-agent-router` and `uv tool list` shows it under that name, while the
+command is `agent-router`.
+
+```powershell
+uv tool install --editable .
+agent-router --help
+```
+
+To install with dependency versions pinned to `uv.lock`, export them as constraints first:
+
+```powershell
+uv export --no-hashes --no-dev --no-emit-project -o constraints.txt
+uv tool install --constraints constraints.txt <source>
+```
+
+Use `.` as `<source>` to install the cloned repository, or `open-agent-router` to install the
+released version from PyPI. The `--editable` option makes `git pull`
+update the installed version immediately. If `agent-router` is not found, run `uv tool update-shell`
+and open a new terminal. `agent-router <command> --help` describes a command and its options; the
+“Commands” section in [README](../README.md) has examples.
+
+## 3. Create the config and tokens
+
+```powershell
+agent-router init --allowed-root C:/work/projects
+```
+
+Install and sign in to at least one harness CLI (Kimi Code, OpenCode, Cline or Claude Code)
+before running `init`. The `opencode-go` limits in the template are placeholders; replace them
+with your plan limits. After `agent-router serve`, run `agent-router advice --tier standard` to
+see which routes can take a job. `agent-router wait <job-id>` exits 4 while the job is still
+running; run it again or use `--timeout`.
+
+Pass `--allowed-root` for every directory the gateway may run jobs in. It is added to
+`tasks.allowed_roots` in `config.toml`: on the first run `init` creates the file from the
+template, on later runs it updates the existing config — nothing is overwritten. A running
+gateway reads `config.toml` only at start, so restart `agent-router serve` after adding a root. Without the
+option, an empty `allowed_roots` denies all jobs and `init` prints the command with your
+current directory. Ready-made configs for typical setups are in [`docs/examples/`](examples/). To use one,
+run `agent-router init` once, copy the example over the `config.toml` at the path printed by
+`init`, and adjust its limits. Then run `agent-router init --allowed-root <dir>` again for each
+of your directories: an example starts with an empty `allowed_roots`.
+
+The command prints the gateway home directory (on Windows,
+`%LOCALAPPDATA%\agent-router\agent-router`), the path to `config.toml`, the paths to two tokens, the
+harnesses it found in PATH or in `[backends]`, hints about routes and limits to fix, and the next
+steps with the dashboard address. The commands for a first job appear once a route that takes
+read jobs is enabled and a directory is allowed. If `config.toml` is invalid, `init` prints the error and exits
+with code 1.
+Tokens are not printed, and CLI commands read them automatically. The dashboard asks for the
+admin token once: paste the contents of `admin.token`, for example the output of
+`Get-Content <path to admin.token>`. Do not publish the tokens.
+
+Set `AGENT_ROUTER_HOME` to use a different gateway home directory. This is useful for a trial
+installation alongside your working one. In that case, set a different `server.port` in its config
+and set the same variable in every terminal where you run `agent-router`.
+
+## 4. Configure `config.toml`
+
+Open the file whose path was printed by `init`. At minimum, configure the following:
+
+1. **Job directories.** An empty `allowed_roots` denies all jobs. Instead of editing the file,
+   `agent-router init --allowed-root C:/work/projects` adds a directory — also to an existing
+   config:
+
+   ```toml
+   [tasks]
+   allowed_roots = ["C:/work/projects"]
+   denied_roots = ["C:/work/projects/secret-repo"]
+   ```
+
+2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
+   others are commented out. Uncomment a route after you install its harness, and set
+   `enabled = true` on the routes you want to use (`cline/glm-5.3` and `claude-cli/sonnet` start
+   disabled). Write the route model as the harness understands it: `kimi-code/k3.1-pro` for Kimi,
+   `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
+   `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
+   the setup; see [SECURITY](../SECURITY.md).
+
+3. **Harness not in PATH.** Specify the path explicitly:
+
+   ```toml
+   [backends.claude]
+   executable = "C:/Users/<you>/AppData/Roaming/npm/claude.cmd"
+   ```
+
+4. **Limits.** The `[[pools.windows]]` windows in the template are examples. Every
+   `limit_usd = 10  # set your plan limit` is a placeholder: replace it with the limit of your
+   `opencode-go` plan. Leave any extra pools in place: they are not used without routes.
+
+5. **Prices for Cline.** Cline does not report job costs, so without a price table its spending is
+   not counted toward the `opencode-go` limit share. Create `prices-opencode-go.toml` next to
+   `config.toml` (USD per 1 million tokens, `[input, output]`; get prices from your provider).
+   Replace the zeros with your actual prices:
+
+   ```toml
+   "glm-5.3" = [0.0, 0.0]  # put your prices per 1M tokens: [input, output]
+   "glm-5.3-flash" = [0.0, 0.0]  # put your prices per 1M tokens: [input, output]
+   ```
+
+   The key is the model name without the provider prefix and the `#effort` suffix
+   (`opencode-go/glm-5.3#high` → `glm-5.3`); if it is missing, the route's `model_key` is tried.
+
+   Go has one shared limit, but models consume it at different rates (price / model monthly limit).
+   `price_file` contains raw provider prices, while model weights are set in the pool:
+   `limit_base_usd` is the base (the model limit used to calculate the windows), and monthly limits
+   are set in `[pools.model_limits]` by `model_key`. `model_limits_date` records when the limits were
+   checked against the console. `doctor` shows its age and models without a limit.
+
+   Add these keys to the existing `opencode-go` pool in `config.toml`; a second `[[pools]]` block
+   with the same id fails with a duplicate id error. Put `[pools.model_limits]` after the pool's
+   windows:
+
+   ```toml
+   [[pools]]
+   id = "opencode-go"
+   price_file = "prices-opencode-go.toml"
+   limit_base_usd = 180
+   model_limits_date = "2026-11-16"
+   # the other keys and [[pools.windows]] of the pool stay as they are
+
+   [pools.model_limits]
+   "glm-5.3-flash" = 180
+   "glm-5.3" = 120
+   ```
+
+6. **Dashboard sign-in.** The dashboard (`http://127.0.0.1:8787/`) uses the administrative token
+   and sets a signed cookie that survives gateway restarts. `server.panel_session_days` controls the
+   session length (default 30, from 1 to 365). Signing out of the dashboard or changing `admin.token`
+   immediately signs out all browsers.
+
+   ```toml
+   [server]
+   panel_session_days = 30
+   ```
+
+7. **Classifier (optional).** A model assesses the job tier (`cheap|standard|strong`). It can be
+   local — [Ollama](https://ollama.com) with downloaded models (`ollama pull <model>`) or any
+   OpenAI-compatible server — or a cloud provider over `https` with a key from an environment
+   variable. Multi-model form:
+
+   ```toml
+   [classifier]
+   mode = "shadow"          # only record votes; "active" lets the classifier choose the tier
+   primary = "tev1"         # the vote that decides in active mode and is recorded in the job
+   min_confidence = 0.6     # below this, use the default standard tier
+   write_floor = "standard" # writing jobs must not be below this tier
+   vram_budget_mb = 5300    # total size_vram of live local Ollama models; doctor warns if exceeded
+
+   [[classifier.models]]
+   id = "tev1"
+   kind = "systemone"       # decision model via /v1/systemone
+   model = "tev1:4b-q4_K_M"
+   timeout_s = 3
+
+   [[classifier.models]]
+   id = "lfm3"
+   kind = "ollama"          # chat model via /api/chat
+   model = "lfm3:1.7b-q4_K_M"
+   timeout_s = 5
+   ```
+
+   A model can have its own `min_confidence` and `live = false` (only for `classifier eval`). The
+   third kind, `openai`, talks to any OpenAI-compatible chat completions server. A model outside
+   loopback needs `url = "https://..."` and `api_key_env = "<VARIABLE>"`. Examples for every kind,
+   the privacy note and measured results are in [CLASSIFIER.md](CLASSIFIER.md). The old
+   single-model form (`kind`, `url`, `model`, and `timeout_s` directly in `[classifier]`) still
+   works; do not mix it with `[[classifier.models]]`. `kind = "none"` disables the classifier.
+   Enable `active` mode after a week of `shadow` data and checking
+   `agent-router classifier report`. If the classifier does not respond within `wait_s` (by
+   default, the `primary` timeout plus 0.5 seconds), the job starts with `standard`.
+
+For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
+harness” in [README](../README.md).
+
+## 5. Start the gateway
+
+In a separate terminal that remains open:
+
+```powershell
+agent-router serve
+```
+
+The gateway listens only on `127.0.0.1:8787` (the port is `server.port`).
+
+**Start automatically when you sign in to Windows without a console window.** Administrator rights
+are not required. Create `start-hidden.vbs` in the gateway home directory:
+
+```vb
+Set sh = CreateObject("WScript.Shell")
+' change if `uv tool dir --bin` prints another directory
+exePath = sh.ExpandEnvironmentStrings("%USERPROFILE%") & "\.local\bin\agent-router.exe"
+home = sh.ExpandEnvironmentStrings("%AGENT_ROUTER_HOME%")
+If home = "%AGENT_ROUTER_HOME%" Then home = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\agent-router\agent-router"
+sh.Environment("Process")("AGENT_ROUTER_HOME") = home
+sh.Run "cmd /c """"" & exePath & """ serve >> """ & home & "\serve.log"" 2>&1""", 0, False
+```
+
+Then put it in your Startup folder and run it now (`<gateway home directory>` is the path printed by
+`init`):
+
+```powershell
+$src = "<gateway home directory>\start-hidden.vbs"
+Copy-Item $src "$([Environment]::GetFolderPath('Startup'))\agent-router.vbs" -Force
+wscript.exe $src
+```
+
+> **If you install through an agent in a desktop app** (Claude Desktop and other MSIX packages):
+> Windows redirects everything the agent creates in `AppData` to
+> `%LOCALAPPDATA%\Packages\<package>\LocalCache\…`. This directory is not visible from outside, and
+> autostart will not find it. Before `init`, choose a directory outside `AppData` and set it
+> permanently: `setx AGENT_ROUTER_HOME "$HOME\.agent-router"`, then open a new terminal.
+
+Gateway output is written to `serve.log` next to the config. To stop the gateway, end the
+`agent-router.exe` process. To remove autostart, delete `agent-router.vbs` from the Startup folder.
+
+## 6. Verify
+
+Run `doctor` first. `doctor --live` is optional: a fresh setup has `confirm = true` on every route,
+so it has nothing to probe until a route has `confirm = false`.
+
+```powershell
+agent-router doctor
+agent-router doctor --live
+```
+
+`doctor` shows whether the config loaded, the database is accessible, which harnesses were found,
+which routes are enabled, and whether the gateway responds. The warning “route … is enabled, but
+harness … not found” means you need `[backends.<name>] executable`, or you should disable the route.
+
+`--live` runs one short read job per harness in the first directory from `allowed_roots` and uses
+a small amount of the limit. It probes only enabled routes that allow `read` and have no
+`confirm`. If no routes qualify, it prints
+`no routes to probe (disabled, confirm or write-only routes are skipped)` and exits `1`.
+To probe a harness, set `confirm = false` on one of its routes and limit that route to
+`modes = ["read"]`. The expected result is then `Live <route>: completed` for each harness.
+
+## 7. Calibrate limits
+
+The gateway chooses a route based on usage in each window. Until a window is calibrated, `status`
+shows “no data”, and the route choice is blind. Check the percentages in your subscription interface
+and record each pool window:
+
+```powershell
+agent-router calibrate kimi-code 5h 20
+agent-router calibrate kimi-code month 35 --resets-in 12d
+agent-router calibrate opencode-go 5h 10
+agent-router calibrate opencode-go week 25
+agent-router calibrate opencode-go month 40 --resets-in 20d
+agent-router status
+```
+
+- A `kind = "fixed"` window (month, Claude 5h and week) takes a reset time no further than one
+  window ahead: `--resets-in 12d` or `--resets-at 2026-12-01` (a date alone means midnight; add a
+  local time as `"2026-12-01 14:00"`; `01.12.2026` also works). A reset more than five minutes
+  past that is rejected. Specify it once: later calibrations without a reset time keep the last
+  one, moved forward by the window length. With no reset time ever recorded, `status` shows
+  `reset: unknown`, and the router ranks that pool after pools with a known pace. The
+  dashboard's Calibrate page asks for the provider first, then its window and the reset date.
+- A `kind = "rolling"` window (`5h` and `week` for OpenCode Go, `5h` for Kimi Code) has no reset
+  time: calibrate it without a reset, and record it again once the window length has passed.
+- After recording, the CLI prints `Recorded: <pool> / <window>, <percent>%, resets <local time>`
+  (the reset kept from an earlier calibration when none was given; without the reset tail when
+  no reset is known), and the dashboard opens with a `Recorded ...` line above the limits.
+- For `opencode-go`, after calibration the gateway automatically adds spending from the OpenCode
+  counter and the Cline job log.
+
+Repeat calibration from time to time. Between calibrations the stored usage moves only where the
+gateway can see it:
+
+- a USD pool (`opencode-go`) adds the cost of gateway jobs and the counters above;
+- `claude-pro` follows the Claude Code status line while it is connected (section 10);
+- a percent pool without a feed (`kimi-code`) keeps the last recorded value.
+
+`status` shows `via gateway since the last observation: <n> jobs, <min> min, <tokens> tokens`
+under a pool that ran gateway jobs after its last observation. That line means the stored
+percentage is behind; calibrate the pool again once it grows.
+
+## 8. First job
+
+```powershell
+agent-router advice --tier standard
+agent-router run --no-wait --cwd C:/work/projects/my-repo --mode read "Describe the structure of this repository"
+agent-router approve <job-id>
+agent-router wait <job-id>
+```
+
+`advice` shows which routes are suitable and why the others are excluded. `run --no-wait`
+prints the job id. The template routes have `confirm = true`, so the job waits until you
+approve it with `agent-router approve` or on the dashboard; a route with `confirm = false`
+starts at once. Without `--no-wait`, `run` waits up to 100 seconds and prints
+`job awaits approval: agent-router approve <id> before <time>, then agent-router wait <id>`
+when the job awaits approval; for longer jobs, use `agent-router wait <id> --timeout 1500`.
+Without a decision the approval expires after `tasks.approval_timeout_s` (default 600 s): the
+job ends as `declined` with error `approval_expired` and does not move to another route.
+A writing job uses `--mode write`; check its changes yourself with `git diff`. Rate the result
+with `agent-router rate <id> good|bad|partial`. Ratings are used by `classifier report` and
+`agent-router export`. The dashboard job page refreshes itself, shows the error, and lets
+you rate a finished job.
+
+## 9. Delegation skill for orchestrators
+
+To let an agent delegate jobs through the gateway, copy your harness's skill into its skills
+directory. The skills are not part of the PyPI package: run this from the root of a clone of the
+repository (remove unused lines from `$targets`):
+
+```powershell
+$targets = @{
+  "claude-code" = "$HOME/.claude/skills"
+  "kimi-code"   = "$HOME/.kimi-code/skills"
+  "opencode"    = "$HOME/.config/opencode/skills"
+  "cline"       = "$HOME/.cline/skills"
+}
+foreach ($h in $targets.Keys) {
+  New-Item -ItemType Directory -Force $targets[$h] | Out-Null
+  Copy-Item -Recurse -Force "integrations/$h/agent-router-delegate" $targets[$h]
+}
+```
+
+The directory is created first: without it, `Copy-Item` would copy the skill under the name `skills`.
+The skill is visible from the next harness session. Each skill passes `--caller <harness>`, and the
+gateway uses `[callers]` to map the caller to its own pool, so that the job is not routed back
+to the caller's subscription. When the gateway picks the route itself, it never sends a
+delegated job back to the caller's own pool (an explicit `--route` is not checked); in a
+one-pool setup leave the callers unmapped (`""`), or the jobs have no route.
+
+As an alternative, orchestrators that support MCP can use the built-in MCP server
+instead of a skill: `agent-router mcp` serves the job operations over stdio and needs
+the running gateway. Registration for each harness is in [MCP.md](MCP.md).
+
+## 10. Claude Code status line (optional)
+
+The status line sends Claude Pro limit percentages to the gateway, so you do not need to calibrate
+the `claude-pro` pool manually:
+
+```powershell
+agent-router doctor --statusline-snippet
+```
+
+Insert the printed `statusLine` key into `~/.claude/settings.json`. If you already have a status line,
+it will be replaced. After this, `doctor` shows the age of the last signal. The signal reports Claude
+limits only, so `[statusline] pool` must name the pool of your Claude Code routes (`claude-pro` in
+the template); the examples without Claude Code leave `[statusline]` out.
+
+## Not available yet
+
+- Routing from within Cline and OpenCode (as a model provider) is planned.
+- Cline runs with the owner's data directory: every run through the gateway adds a job to Cline's
+  history.
+
+## Troubleshooting
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more failure cases and detailed recovery steps.
+
+| Symptom | What to do |
+|---|---|
+| `no config at …: run agent-router init first` | `init` was not run for this gateway home directory (`AGENT_ROUTER_HOME`) |
+| `config error: …` | A TOML typo or an invalid value; the error text names the field |
+| Code `5`, “gateway unavailable” | `agent-router serve` is not running, or another port is used (`AGENT_ROUTER_URL`) |
+| Code `6`, “request denied” | The directory is outside `allowed_roots`, the route is disabled, or the queue is full |
+| `Live …: failed` | Run the harness manually with the same model: authentication usually has not been completed |
+| `status`: “no data” | The window is not calibrated (step 7) |
+| `shim argument contains an unsafe character '#'` | OpenCode is installed as `opencode.cmd` (npm), and a model with effort `#variant` is not passed through `.cmd`. Specify the `.exe` directly: `[backends.opencode] executable = ".../npm/node_modules/@opencode/cli/bin/opencode.exe"` (the path is in the last line of `opencode.cmd`) |
+| `variant unavailable for opencode-go/<model>: <variant>` | The model does not have this effort. See the model's `reasoning_options` in `~/.cache/opencode/models.json`; if empty, do not add a `#…` suffix |

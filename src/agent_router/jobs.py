@@ -1,0 +1,295 @@
+"""Gateway job: request, statuses and their transitions, intake checks."""
+
+from __future__ import annotations
+
+import os
+import secrets
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Literal
+
+from agent_router.config import TIERS, Config, Mode, SpendSource, TaskSettings, Tier
+from agent_router.worktree import TreeSnapshot, WorktreeError, repo_root
+
+Status = Literal[
+    "queued",
+    "awaiting_approval",
+    "running",
+    "completed",
+    "partial",
+    "failed",
+    "declined",
+    "cancelled",
+]
+STATUSES: tuple[Status, ...] = (
+    "queued",
+    "awaiting_approval",
+    "running",
+    "completed",
+    "partial",
+    "failed",
+    "declined",
+    "cancelled",
+)
+TERMINAL: frozenset[Status] = frozenset({"completed", "partial", "failed", "declined", "cancelled"})
+MODES: tuple[Mode, ...] = ("read", "write")
+KINDS: tuple[str, ...] = ("code", "review", "research", "other")
+TierSource = Literal["caller", "default", "classifier"]
+TIMEOUT_MIN_S = 30
+TIMEOUT_MAX_S = 7200
+
+# Allowed status transitions; no others exist.
+_TRANSITIONS: dict[Status, frozenset[Status]] = {
+    "queued": frozenset({"running", "awaiting_approval", "failed", "declined", "cancelled"}),
+    "awaiting_approval": frozenset({"queued", "declined", "cancelled"}),
+    "running": frozenset({"completed", "partial", "failed", "queued", "cancelled"}),
+}
+
+
+@dataclass(frozen=True)
+class JobRequest:
+    prompt: str
+    cwd: Path
+    mode: Mode = "read"
+    tier: Tier | None = None
+    kind: str | None = None
+    caller: str | None = None
+    route: str | None = None
+    timeout_s: int | None = None
+
+
+@dataclass
+class Job:
+    id: str
+    request: JobRequest
+    status: Status
+    tier: Tier
+    tier_source: TierSource
+    repo_root: Path | None
+    route: str | None = None
+    reason: str | None = None
+    approval_route: str | None = None  # route awaiting a human decision
+    approval_deadline: datetime | None = None
+    approved_route: str | None = None  # locked in after approval
+    had_refusal: bool = False  # a refusal means no routes left -> declined
+    excluded_routes: frozenset[str] = frozenset()
+    excluded_pools: frozenset[str] = frozenset()
+    cancel_requested: bool = False
+    text: str | None = None
+    changed_files: tuple[str, ...] | None = None
+    violations: tuple[str, ...] = ()
+    error_code: str | None = None
+    error_message: str | None = None
+    classifier_tier: Tier | None = None
+    classifier_confidence: float | None = None
+    runner: str = "local"
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    finished_at: datetime | None = None
+    prompt_sha256: str | None = None  # hex sha256 of the UTF-8 prompt; same prompt, same hash
+    prompt_chars: int | None = None  # prompt length in characters
+    tier_pending: bool = False  # tier undecided: awaiting the primary vote or the wait_s deadline
+
+
+@dataclass(frozen=True)
+class Rating:
+    """Job quality rating; the note text is not stored, only its hash and length."""
+
+    job_id: str
+    value: Literal["good", "bad", "partial"]
+    should_tier: Tier | None
+    by: str | None
+    note_sha256: str | None
+    note_chars: int | None
+    at: datetime
+
+
+RATING_VALUES: tuple[str, ...] = ("good", "bad", "partial")
+
+
+@dataclass(frozen=True)
+class Vote:
+    """A single classifier's vote on a job; the prompt text is not part of it."""
+
+    classifier_id: str
+    model: str
+    tier: Tier | None
+    confidence: float | None
+    latency_ms: int
+    error: str | None
+    offline: bool = False
+
+
+@dataclass(frozen=True)
+class VoteRow:
+    """A vote joined to its job and the job's latest rating (for reports and export)."""
+
+    job_id: str
+    classifier_id: str
+    model: str
+    tier: Tier | None
+    confidence: float | None
+    latency_ms: int
+    error: str | None
+    offline: bool
+    at: datetime
+    job_tier: Tier | None
+    tier_source: str | None
+    mode: str | None
+    created_at: datetime
+    rating_value: str | None
+    rating_should_tier: Tier | None
+
+
+@dataclass
+class Attempt:
+    job_id: str
+    n: int
+    route: str
+    pool: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    outcome: str | None = None
+    duration_s: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
+    head_before: str | None = None
+    tree_before: TreeSnapshot | None = None
+    log_tail: str | None = None
+    pid: int | None = None
+    exe_name: str | None = None
+    proc_started: float | None = None
+    result: AttemptResult | None = None  # full outcome; None — unfinished or an old-format row
+    spend_source: SpendSource | None = None
+    decision: dict | None = None  # snapshot of the route decision; None — an old row
+    cost_estimated: bool = False  # cost_usd estimated from price_file, not reported by the harness
+
+
+Outcome = Literal["ok", "limit", "error", "timeout", "cancelled"]
+OUTCOMES: tuple[Outcome, ...] = ("ok", "limit", "error", "timeout", "cancelled")
+
+
+@dataclass(frozen=True)
+class AttemptResult:
+    """Attempt outcome: the worker thread hands it to the dispatcher, which sets the job status."""
+
+    outcome: Outcome
+    text: str = ""
+    error: str | None = None
+    limit_reset_at: datetime | None = None
+    changed: tuple[str, ...] | None = None  # None: directory outside git, changes not counted
+    head_moved: bool = False
+    changes_unknown: bool = False  # measuring the tree after the attempt failed
+    survived: bool = False  # the harness process survived the stop
+
+
+class RequestRejected(Exception):
+    """Request failed intake validation; `code` is the error code for the 422 response."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
+class WrongState(Exception):
+    """Action does not fit the job's current status (409 response)."""
+
+
+def can_transition(a: Status, b: Status) -> bool:
+    return b in _TRANSITIONS.get(a, frozenset())
+
+
+def new_job_id() -> str:
+    return "j_" + secrets.token_hex(6)
+
+
+def _canonical(path: Path) -> str:
+    return os.path.normcase(str(path.resolve()))
+
+
+def _inside(path: str, root: str) -> bool:
+    if path == root:
+        return True
+    prefix = root if root.endswith(os.sep) else root + os.sep
+    return path.startswith(prefix)
+
+
+def is_network_path(text: str) -> bool:
+    """Path starting with two separators: a UNC or device path."""
+    return len(text) >= 2 and text[0] in "\\/" and text[1] in "\\/"
+
+
+def check_cwd(cwd: Path, tasks: TaskSettings) -> Path:
+    """Job directory exists, is inside allowed roots and outside denied ones.
+
+    Returns the directory with symlinks and `..` resolved; otherwise raises
+    RequestRejected("cwd_not_allowed"). The dispatcher repeats the check before each attempt.
+    """
+    raw = str(cwd)
+    if is_network_path(raw):
+        raise RequestRejected("cwd_not_allowed", "network and device paths are not accepted")
+    if not Path(raw).is_absolute():
+        raise RequestRejected("cwd_not_allowed", "an absolute directory path is required")
+    try:
+        resolved = Path(raw).resolve()
+        is_dir = resolved.is_dir()
+    except (OSError, RuntimeError, ValueError) as exc:
+        message = f"job directory is not accessible: {type(exc).__name__}"
+        raise RequestRejected("cwd_not_allowed", message) from exc
+    if not is_dir:
+        raise RequestRejected("cwd_not_allowed", "no such directory")
+    canonical = os.path.normcase(str(resolved))
+    if is_network_path(canonical):
+        raise RequestRejected("cwd_not_allowed", "network and device paths are not accepted")
+    if not tasks.allowed_roots:
+        raise RequestRejected("cwd_not_allowed", "allowed_roots is empty: jobs are not accepted")
+    if not any(_inside(canonical, _canonical(root)) for root in tasks.allowed_roots):
+        raise RequestRejected("cwd_not_allowed", "directory outside allowed roots")
+    if any(_inside(canonical, _canonical(root)) for root in tasks.denied_roots):
+        raise RequestRejected("cwd_not_allowed", "directory inside a denied root")
+    return resolved
+
+
+def validate_request(req: JobRequest, config: Config) -> Path | None:
+    """Intake checks. Returns the git working tree root or None."""
+    tasks = config.tasks
+    if not isinstance(req.prompt, str) or not req.prompt.strip():
+        raise RequestRejected("bad_prompt", "empty prompt")
+    if len(req.prompt) > tasks.max_prompt_chars:
+        raise RequestRejected(
+            "bad_prompt", f"prompt longer than {tasks.max_prompt_chars} characters"
+        )
+    if req.mode not in MODES:
+        raise RequestRejected("bad_mode", f"unknown mode: {req.mode}")
+    if req.tier is not None and req.tier not in TIERS:
+        raise RequestRejected("bad_tier", f"unknown tier: {req.tier}")
+    if req.kind is not None and req.kind not in KINDS:
+        raise RequestRejected("bad_kind", f"unknown job kind: {req.kind}")
+    if req.caller is not None and req.caller not in config.callers:
+        raise RequestRejected("bad_caller", f"unknown caller: {req.caller}")
+    if req.route is not None:
+        route = next((r for r in config.routes if r.id == req.route), None)
+        if route is None:
+            raise RequestRejected("bad_route", f"unknown route: {req.route}")
+        if not route.enabled:
+            raise RequestRejected("bad_route", f"route is disabled: {req.route}")
+    if req.timeout_s is not None:
+        timeout = req.timeout_s
+        if isinstance(timeout, bool) or not isinstance(timeout, int):
+            raise RequestRejected("bad_timeout", "timeout_s must be an integer number of seconds")
+        if not TIMEOUT_MIN_S <= timeout <= TIMEOUT_MAX_S:
+            raise RequestRejected(
+                "bad_timeout", f"timeout_s out of range {TIMEOUT_MIN_S}..{TIMEOUT_MAX_S}"
+            )
+    resolved = check_cwd(req.cwd, tasks)
+    try:
+        root = repo_root(resolved)
+    except WorktreeError as exc:  # git failure, not "outside git": attempts would skip snapshots
+        raise RequestRejected(
+            "git_unavailable", f"git is not responding in the job directory: {exc}"
+        ) from exc
+    if req.mode == "write" and root is None:
+        raise RequestRejected("not_a_git_repo", "write mode requires a directory inside git")
+    return root

@@ -1,0 +1,49 @@
+<div id="advice">
+  <section>
+    <h2>Closed pools</h2>
+    {% if closed_pools %}
+    {% for pool in closed_pools %}
+    <article class="panel">
+      <h3>{{ pool.title }}</h3>
+      <p>Closed until {{ local(pool.block.until) }}: {{ pool.block.reason }}</p>
+      <form method="post" action="/pools/{{ pool.id }}/unblock">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit">Unblock</button>
+      </form>
+    </article>
+    {% endfor %}
+    {% else %}
+    <p>No closed pools.</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>Where to send now</h2>
+    <div class="advice-grid">
+      {% for decision in decisions %}
+      <article class="panel" data-tier="{{ decision.tier }}">
+        <h3>{{ decision.title }} <code>{{ decision.tier }}</code></h3>
+        <h4>Recommended routes</h4>
+        {% if decision.chosen %}
+        <ol>
+          {% for item in decision.chosen %}
+          <li><code>{{ item.route }}</code> — {{ item.reason }}</li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p>No routes available.</p>
+        {% endif %}
+        <h4>Excluded routes</h4>
+        {% if decision.excluded %}
+        <ul>
+          {% for item in decision.excluded %}
+          <li><code>{{ item.route }}</code> — {{ item.reason }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>No excluded routes.</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+</div>

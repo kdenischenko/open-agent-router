@@ -1,0 +1,473 @@
+"""Harness diagnostics and live probes through a mocked gateway."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from agent_router import cli
+from agent_router import runner as runner_module
+from agent_router.client import GatewayError, GatewayUnavailable
+from agent_router.runner import ResolvedExecutable
+from helpers import full_config_text, write_config
+
+
+class FakeGateway:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, object]] = []
+        self.statuses: dict[str, str] = {}
+        self.errors: dict[str, str] = {}
+        self.cancel_statuses: dict[str, int] = {}
+        self.statuses_after_cancel: dict[str, str] = {}
+        self.cancel_unavailable: set[str] = set()
+
+    def get(self, path: str, **params) -> dict:
+        self.calls.append(("GET", path, params))
+        if path == "/api/v1/events/stats":
+            return {"seq": 0, "subscribers": {}}
+        job_id = path.removeprefix("/api/v1/jobs/").removesuffix("/wait")
+        job = {
+            "id": job_id,
+            "status": self.statuses.get(job_id, "completed"),
+            "route": job_id,
+        }
+        if job_id in self.errors:
+            job["error"] = {"code": self.errors[job_id]}
+        return job
+
+    def post(self, path: str, body: dict | None = None) -> dict:
+        self.calls.append(("POST", path, body))
+        if path == "/api/v1/jobs":
+            assert body is not None
+            job_id = body["route"]
+            return {"job_id": job_id, "status": "queued"}
+        job_id = path.removeprefix("/api/v1/jobs/").removesuffix("/cancel")
+        assert path == f"/api/v1/jobs/{job_id}/cancel"
+        if job_id in self.cancel_unavailable:
+            raise GatewayUnavailable("no connection")
+        if job_id in self.cancel_statuses:
+            if job_id in self.statuses_after_cancel:
+                self.statuses[job_id] = self.statuses_after_cancel[job_id]
+            status = self.cancel_statuses[job_id]
+            raise GatewayError(status, "cancel_failed", f"cancel returned HTTP {status}")
+        return {"id": job_id, "status": "cancelled"}
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.delenv("AGENT_ROUTER_URL", raising=False)
+
+
+@pytest.fixture
+def runner() -> CliRunner:
+    return CliRunner()
+
+
+@pytest.fixture
+def gateway(monkeypatch: pytest.MonkeyPatch, config, tokens) -> FakeGateway:
+    fake = FakeGateway()
+    monkeypatch.setattr(cli, "make_client", lambda base_url, token: fake)
+    return fake
+
+
+@pytest.fixture
+def fake_harnesses(monkeypatch: pytest.MonkeyPatch) -> None:
+    resolved = {
+        "claude": ResolvedExecutable(None, False),
+        "kimi": ResolvedExecutable(Path("kimi.cmd"), True),
+        "opencode": ResolvedExecutable(Path("opencode"), False),
+    }
+    versions = {"kimi": "kimi 2.0.0", "opencode": "opencode 3.0.0"}
+    monkeypatch.setattr(
+        cli,
+        "resolve_executable",
+        lambda name: resolved.get(name, ResolvedExecutable(None, False)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cli, "_harness_version", lambda exe: versions.get(Path(str(exe.path)).stem), raising=False
+    )
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
+
+
+def test_doctor_table_lists_three_harnesses_with_details(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
+) -> None:
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Harness" in result.stdout
+    assert "Enabled routes" in result.stdout
+    assert "claude" in result.stdout
+    assert "kimi.cmd" in result.stdout
+    assert "shim" in result.stdout
+    assert "kimi 2.0.0" in result.stdout
+    assert "kimi-cli/k3.1-pro" in result.stdout
+    assert "kimi-cli/kimi-for-coding" in result.stdout
+    assert "opencode" in result.stdout
+    assert "executable" in result.stdout
+    assert "opencode 3.0.0" in result.stdout
+    assert "opencode-cli/glm-5.3-flash" in result.stdout
+
+
+def test_doctor_warns_about_empty_allowed_roots(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
+) -> None:
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Warning: tasks.allowed_roots is empty" in result.stdout
+
+
+def test_doctor_warns_about_enabled_route_with_missing_harness(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    write_config(home, full_config_text(confirm=False).replace("enabled = false", "enabled = true"))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    warnings = [line for line in result.stdout.splitlines() if "Warning:" in line]
+    assert any("claude-cli/sonnet" in line and "not found" in line for line in warnings)
+
+
+def test_doctor_lists_cline(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "cline | no | — | — | —" in result.stdout.splitlines()
+
+    write_config(home, full_config_text(confirm=False).replace("enabled = false", "enabled = true"))
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    expected = "Warning: route cline/glm-5.3 is enabled, but harness cline not found"
+    assert expected in result.stdout.splitlines()
+
+
+def test_doctor_version_uses_closed_stdin_timeout_and_no_console_window(
+    runner: CliRunner, gateway: FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, stdout=b"test 1.0\n", stderr=b"")
+
+    monkeypatch.setattr(
+        cli,
+        "resolve_executable",
+        lambda name: ResolvedExecutable(Path(name), False),
+        raising=False,
+    )
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert len(calls) == 4  # claude, cline, kimi, opencode
+    for argv, kwargs in calls:
+        assert argv[1:] == ["--version"]
+        assert kwargs["stdin"] == subprocess.DEVNULL
+        assert kwargs["timeout"] == 10
+        assert kwargs["capture_output"] is True
+        assert kwargs["check"] is False
+        assert kwargs["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def test_doctor_live_submits_one_read_job_per_harness_and_waits(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    text = full_config_text(confirm=False).replace(
+        "allowed_roots = []", f"allowed_roots = [{json.dumps(str(tmp_path))}]"
+    )
+    text = text.replace("enabled = false", "enabled = true")
+    # the first route (claude) asks for confirmation: live probes skip it
+    text = text.replace("confirm = false", "confirm = true", 1)
+    write_config(home, text)
+    gateway.statuses["opencode-cli/glm-5.3-flash"] = "failed"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    posts = [call for call in gateway.calls if call[:2] == ("POST", "/api/v1/jobs")]
+    assert [call[2]["route"] for call in posts] == [
+        "kimi-cli/k3.1-pro",
+        "opencode-cli/glm-5.3-flash",
+        "cline/glm-5.3",
+    ]
+    assert all(call[2]["mode"] == "read" for call in posts)
+    assert all(call[2]["cwd"] == str(tmp_path) for call in posts)
+    assert all(call[2]["prompt"] for call in posts)
+    waits = [call for call in gateway.calls if call[0] == "GET" and call[1].endswith("/wait")]
+    assert [call[1] for call in waits] == [
+        "/api/v1/jobs/kimi-cli/k3.1-pro/wait",
+        "/api/v1/jobs/opencode-cli/glm-5.3-flash/wait",
+        "/api/v1/jobs/cline/glm-5.3/wait",
+    ]
+    assert all(call[2] == {"timeout": 100} for call in waits)
+    assert "kimi-cli/k3.1-pro" in result.stdout
+    assert "completed" in result.stdout
+    assert "opencode-cli/glm-5.3-flash" in result.stdout
+    # no error code in the response, so the line has no parentheses
+    assert "Live opencode-cli/glm-5.3-flash: failed\n" in result.stdout
+
+
+def _enable_live_probes(home: Path, tmp_path: Path) -> None:
+    text = full_config_text(confirm=False).replace(
+        "allowed_roots = []", f"allowed_roots = [{json.dumps(str(tmp_path))}]"
+    )
+    write_config(home, text.replace("enabled = false", "enabled = true"))
+
+
+def test_doctor_live_skips_probes_when_allowed_roots_empty(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
+) -> None:
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 0
+    assert "Warning: allowed_roots is empty — live probes skipped" in result.stdout
+    assert ("POST", "/api/v1/jobs") not in [call[:2] for call in gateway.calls]
+
+
+def test_doctor_live_without_probes_fails(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path, tmp_path: Path
+) -> None:
+    # allowed_roots is set, but every route is disabled, so there is nothing to probe
+    text = full_config_text(confirm=False).replace(
+        "allowed_roots = []", f"allowed_roots = [{json.dumps(str(tmp_path))}]"
+    )
+    write_config(home, text.replace("enabled = true", "enabled = false"))
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code != 0
+    assert "no routes to probe" in result.output
+    assert ("POST", "/api/v1/jobs") not in [call[:2] for call in gateway.calls]
+
+
+def test_doctor_live_failed_probe_reports_error_code(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    gateway.statuses["opencode-cli/glm-5.3-flash"] = "failed"
+    gateway.errors["opencode-cli/glm-5.3-flash"] = "bad_route"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    assert "Live kimi-cli/k3.1-pro: completed" in result.stdout
+    assert "Live opencode-cli/glm-5.3-flash: failed (bad_route)" in result.stdout
+
+
+def test_doctor_live_running_probe_is_cancelled(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    gateway.statuses["opencode-cli/glm-5.3-flash"] = "running"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    assert (
+        "POST",
+        "/api/v1/jobs/opencode-cli/glm-5.3-flash/cancel",
+        None,
+    ) in gateway.calls
+    expected = "Live opencode-cli/glm-5.3-flash: did not complete within 100 s — cancelled"
+    assert expected in result.stdout
+
+
+def test_doctor_live_all_completed_exits_zero(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 0
+    assert "Live kimi-cli/k3.1-pro: completed" in result.stdout
+    assert "Live opencode-cli/glm-5.3-flash: completed" in result.stdout
+
+
+def test_doctor_live_cancel_conflict_reports_final_status(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    route = "kimi-cli/k3.1-pro"
+    gateway.statuses[route] = "running"
+    gateway.cancel_statuses[route] = 409
+    gateway.statuses_after_cancel[route] = "completed"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 0
+    assert f"Live {route}: completed" in result.stdout
+    assert "Live opencode-cli/glm-5.3-flash: completed" in result.stdout
+    assert ("GET", f"/api/v1/jobs/{route}", {}) in gateway.calls
+
+
+def test_doctor_live_cancel_conflict_with_running_job_fails(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    route = "kimi-cli/k3.1-pro"
+    gateway.statuses[route] = "running"
+    gateway.cancel_statuses[route] = 409
+    gateway.statuses_after_cancel[route] = "running"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    assert f"Live {route}: running — cancel failed, job still running" in result.stdout
+
+
+def test_doctor_live_awaiting_approval_line(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    route = "opencode-cli/glm-5.3-flash"
+    gateway.statuses[route] = "awaiting_approval"
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    assert f"Live {route}: awaiting approval — cancelled" in result.stdout
+
+
+def test_doctor_live_other_gateway_error_still_fails(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    route = "opencode-cli/glm-5.3-flash"
+    gateway.statuses[route] = "running"
+    gateway.cancel_statuses[route] = 500
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 1
+    assert "request denied: cancel returned HTTP 500" in result.output
+
+
+def test_doctor_live_cancel_without_gateway_is_clear_error(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+    tmp_path: Path,
+) -> None:
+    _enable_live_probes(home, tmp_path)
+    route = "kimi-cli/k3.1-pro"
+    gateway.statuses[route] = "running"
+    gateway.cancel_unavailable.add(route)
+
+    result = runner.invoke(cli.app, ["doctor", "--live"])
+
+    assert result.exit_code == 5
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "gateway unavailable" in result.output
+
+
+def _weighted_config(home: Path, *, limits: str, prices: str | None) -> None:
+    lines = 'limit_base_usd = 180\nmodel_limits_date = "2026-11-16"\n'
+    if prices is not None:
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "prices.toml").write_text(prices, encoding="utf-8")
+        lines += 'price_file = "prices.toml"\n'
+    text = full_config_text(confirm=False).replace(
+        'counter_provider = "opencode-go"\n',
+        f'counter_provider = "opencode-go"\n{lines}\n[pools.model_limits]\n{limits}',
+    )
+    write_config(home, text)
+
+
+def test_doctor_warns_about_model_without_limit(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    _weighted_config(home, limits='"glm-5.3" = 120\n', prices=None)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    warnings = [line for line in result.stdout.splitlines() if "Warning:" in line]
+    assert any("opencode-cli/glm-5.3-flash" in line and "model_limits" in line for line in warnings)
+
+
+def test_doctor_silent_when_every_model_has_limit_and_price(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    _weighted_config(
+        home,
+        limits='"glm-5.3-flash" = 180\n"glm-5.3" = 120\n',
+        prices='"glm-5.3-flash" = [0.1, 0.5]\n"glm-5.3" = [1.0, 4.0]\n',
+    )
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    warnings = [line for line in result.stdout.splitlines() if "Warning:" in line]
+    assert not any("model_limits" in line or "no price" in line for line in warnings)
+
+
+def test_doctor_warns_about_route_without_price(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    _weighted_config(home, limits='"glm-5.3-flash" = 180\n', prices='"glm-5.3" = [1.0, 4.0]\n')
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    warnings = [line for line in result.stdout.splitlines() if "Warning:" in line]
+    assert any("opencode-cli/glm-5.3-flash" in line and "no price" in line for line in warnings)
+
+
+def test_doctor_shows_model_limits_date_age(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    _weighted_config(home, limits='"glm-5.3-flash" = 180\n', prices=None)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    lines = [line for line in result.stdout.splitlines() if "2026-11-16" in line]
+    assert lines and "opencode-go" in lines[0] and "days ago" in lines[0]

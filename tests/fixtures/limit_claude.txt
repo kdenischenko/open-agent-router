@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": "Claude usage limit reached. Your limit will reset at 2026-11-13 15:00:00+00:00.", "session_id": "<session id>", "total_cost_usd": 0, "usage": {"input_tokens": 0, "output_tokens": 0}}

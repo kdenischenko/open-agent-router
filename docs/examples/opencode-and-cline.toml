@@ -1,0 +1,76 @@
+# opencode go plan shared by opencode and cline through the same pool
+# all limits and reset times here are made up; set them to your real plan
+# for direct cli use: one pool, so no caller is mapped in [callers]; a mapped one has no route
+
+[server]
+port = 8787
+
+[tasks]
+# leave empty and run: agent-router init --allowed-root <dir> for each project
+allowed_roots = []
+denied_roots = []
+
+[callers]
+# one pool, so callers are not mapped: otherwise delegation from these harnesses has no route
+claude-code = ""
+kimi-code = ""
+opencode = ""
+cline = ""
+
+[backends.opencode]
+executable = ""
+
+[backends.cline]
+executable = ""
+
+[storage]
+backend = "sqlite"
+
+# one usd pool backs both callers; spend is read from local opencode stats
+[[pools]]
+id = "opencode-go"
+title = "OpenCode Go"
+unit = "usd"
+counter = "opencode_stats"
+counter_provider = "opencode-go"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "rolling"
+  role = "guard"
+  limit_usd = 10  # made up
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 50  # made up
+  # made-up reset anchor, move it to the real billing day of your plan
+  anchor = 2026-11-01T00:00:00Z
+
+# cheap small model for routine tasks
+[[routes]]
+id = "opencode-cli/glm-5.3-flash"
+pool = "opencode-go"
+backend = "opencode"
+model = "opencode-go/glm-5.3-flash"
+tiers = ["cheap"]
+quality = 2
+modes = ["read", "write"]
+confirm = true
+enabled = true
+
+# cline talks to the same plan; model is "<provider>/<model>"
+[[routes]]
+id = "cline/glm-5.3"
+pool = "opencode-go"
+backend = "cline"
+model = "opencode-go/glm-5.3"
+model_key = "glm-5.3"
+tiers = ["standard"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = true
