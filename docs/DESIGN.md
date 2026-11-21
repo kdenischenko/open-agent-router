@@ -162,7 +162,8 @@ confidence recomputed from token logprobs) and `openai` (POST to `{url}/chat/com
 JSON-schema `response_format`; confidence from token logprobs when the server returns them,
 otherwise the model's own). A URL is either loopback or `https` with `api_key_env`: the key is
 read from that environment variable at every request and sent as a bearer token; a missing key
-ends the vote with `no_api_key` without a request. The classifier receives the prompt, cut to
+ends the vote with `no_api_key` without a request. A loopback URL is reached directly, without
+the environment proxy; an `https` URL keeps using it. The classifier receives the prompt, cut to
 its first 3000 and last 1000 characters when longer than 4000. Examples and measurements are in
 [CLASSIFIER.md](CLASSIFIER.md).
 

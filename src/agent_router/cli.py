@@ -790,8 +790,6 @@ def classifier_eval(
     since: str | None = typer.Option(None, "--since", help="Start time in ISO 8601 format"),
 ) -> None:
     """Evaluate classifier models offline on stored prompts."""
-    import httpx
-
     from agent_router import classifier
 
     home = home_dir()
@@ -822,8 +820,8 @@ def classifier_eval(
                 add_vote=jobs.add_vote,
                 now=SystemClock().now,
                 pid=os.getpid(),
-                post=httpx.post,
-                get=httpx.get,
+                post=classifier.post,
+                get=classifier.get,
                 clock=time.monotonic,
                 sleep=time.sleep,
             )
@@ -837,8 +835,6 @@ def classifier_eval(
 
 def _doctor_classifier(config: Config) -> None:
     """Local Ollama memory and budget; other classifier endpoints report their key state."""
-    import httpx
-
     from agent_router import classifier
 
     settings = config.classifier
@@ -866,12 +862,12 @@ def _doctor_classifier(config: Config) -> None:
         try:
             tags = {
                 item.get("name")
-                for item in httpx.get(f"{url}/api/tags", timeout=_OLLAMA_TIMEOUT_S)
+                for item in classifier.get(f"{url}/api/tags", timeout=_OLLAMA_TIMEOUT_S)
                 .json()
                 .get("models", [])
                 if isinstance(item, dict)
             }
-            ps = httpx.get(f"{url}/api/ps", timeout=_OLLAMA_TIMEOUT_S).json().get("models", [])
+            ps = classifier.get(f"{url}/api/ps", timeout=_OLLAMA_TIMEOUT_S).json().get("models", [])
             loaded = {
                 item.get("name"): round(int(item.get("size_vram") or 0) / (1024 * 1024))
                 for item in ps

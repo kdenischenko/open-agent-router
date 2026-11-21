@@ -49,6 +49,28 @@ class _NoApiKey(Exception):
     pass
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def is_loopback_url(url: str) -> bool:
+    """Whether the URL host is loopback; such requests bypass the environment proxy."""
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return False
+    return host in _LOOPBACK_HOSTS
+
+
+def post(url: str, **kwargs: Any) -> httpx.Response:
+    """httpx.post that reaches a loopback URL directly, without the environment proxy."""
+    return httpx.post(url, trust_env=not is_loopback_url(url), **kwargs)
+
+
+def get(url: str, **kwargs: Any) -> httpx.Response:
+    """httpx.get that reaches a loopback URL directly, without the environment proxy."""
+    return httpx.get(url, trust_env=not is_loopback_url(url), **kwargs)
+
+
 def _post(m: ClassifierModel, post: Callable[..., Any], address: str, body: dict[str, Any]) -> Any:
     if m.api_key_env is None:
         return post(address, json=body, timeout=m.timeout_s)
@@ -64,7 +86,7 @@ def _post(m: ClassifierModel, post: Callable[..., Any], address: str, body: dict
 
 
 def classify(
-    prompt: str, settings: ClassifierSettings, post: Callable[..., Any] = httpx.post
+    prompt: str, settings: ClassifierSettings, post: Callable[..., Any] = post
 ) -> tuple[Tier, float] | None:
     if settings.kind != "systemone":
         return None
@@ -298,7 +320,7 @@ def _openai_answer(
 def classify_one(
     prompt: str,
     m: ClassifierModel,
-    post: Callable[..., Any] = httpx.post,
+    post: Callable[..., Any] = post,
     clock: Callable[[], float] = time.monotonic,
 ) -> Vote:
     """One vote through the configured backend; failures become the error field."""
@@ -361,7 +383,7 @@ class VoteQueue:
         *,
         now: Callable[[], datetime],
         flags: Any = None,
-        post: Callable[..., Any] = httpx.post,
+        post: Callable[..., Any] = post,
         clock: Callable[[], float] = time.monotonic,
         alive: Callable[[int], bool] = _default_alive,
         backlog: int = CLASSIFY_BACKLOG,
@@ -487,11 +509,7 @@ class VoteQueue:
 
 def is_local_ollama(model: ClassifierModel) -> bool:
     """Whether classifier memory can be managed through a loopback Ollama API."""
-    try:
-        host = urlparse(model.url).hostname
-    except ValueError:
-        return False
-    return model.kind in ("systemone", "ollama") and host in {"127.0.0.1", "::1", "localhost"}
+    return model.kind in ("systemone", "ollama") and is_loopback_url(model.url)
 
 
 class EvalError(Exception):

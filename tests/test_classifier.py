@@ -6,8 +6,10 @@ from typing import Any
 import httpx
 import pytest
 
-from agent_router.classifier import classify
+from agent_router import classifier
+from agent_router.classifier import classify, is_loopback_url
 from agent_router.config import ClassifierSettings
+from helpers import set_proxy_env
 
 
 class Response:
@@ -173,3 +175,87 @@ def test_disabled_classifier_returns_none_without_post() -> None:
 
     assert classify("task", settings(kind="none"), post) is None
     assert not called
+
+
+# --- proxy handling --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url", ["http://127.0.0.1:11434", "http://[::1]:11434", "http://localhost:11434"]
+)
+def test_loopback_post_bypasses_environment_proxy(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_proxy_env(monkeypatch)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def post(address: str, **kwargs: Any) -> Response:
+        calls.append((address, kwargs))
+        return Response(payload=answer())
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert classify("task", settings(url=url)) == ("standard", 0.3)
+    [(address, kwargs)] = calls
+    assert address == f"{url}/v1/systemone"
+    assert kwargs["trust_env"] is False
+
+
+def test_https_post_keeps_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_proxy_env(monkeypatch)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def post(address: str, **kwargs: Any) -> Response:
+        calls.append((address, kwargs))
+        return Response(payload=answer())
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert classify("task", settings(url="https://classifier.example/v1")) == ("standard", 0.3)
+    [(address, kwargs)] = calls
+    assert address == "https://classifier.example/v1/v1/systemone"
+    assert kwargs["trust_env"] is True
+
+
+def test_loopback_get_bypasses_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_proxy_env(monkeypatch)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def get(address: str, **kwargs: Any) -> Response:
+        calls.append((address, kwargs))
+        return Response(payload={"models": []})
+
+    monkeypatch.setattr(httpx, "get", get)
+    classifier.get("http://localhost:11434/api/ps", timeout=5)
+    [(address, kwargs)] = calls
+    assert address == "http://localhost:11434/api/ps"
+    assert kwargs["trust_env"] is False
+
+
+def test_https_get_keeps_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_proxy_env(monkeypatch)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def get(address: str, **kwargs: Any) -> Response:
+        calls.append((address, kwargs))
+        return Response(payload={"models": []})
+
+    monkeypatch.setattr(httpx, "get", get)
+    classifier.get("https://classifier.example/v1/api/ps", timeout=5)
+    [(address, kwargs)] = calls
+    assert address == "https://classifier.example/v1/api/ps"
+    assert kwargs["trust_env"] is True
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://127.0.0.1:11434", True),
+        ("http://[::1]:11434", True),
+        ("http://localhost:11434", True),
+        ("http://LOCALHOST:11434", True),
+        ("https://classifier.example", False),
+        ("http://10.0.0.5:11434", False),
+        ("not a url", False),
+    ],
+)
+def test_is_loopback_url(url: str, expected: bool) -> None:
+    assert is_loopback_url(url) is expected
