@@ -16,7 +16,7 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from importlib import metadata
 from pathlib import Path
 from typing import Any, NoReturn
@@ -693,6 +693,40 @@ def _export_moment(value: str) -> datetime:
     if moment.tzinfo is None or moment.utcoffset() is None:
         return moment.astimezone()
     return moment
+
+
+@app.command()
+def purge(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show how many jobs would be deleted without deleting them"
+    ),
+) -> None:
+    """Delete terminal jobs older than storage.retention_days and their local files."""
+    home = home_dir()
+    config = _config(home)
+    retention_days = config.storage.retention_days
+    if retention_days is None:
+        typer.echo("retention is disabled: set storage.retention_days in config.toml")
+        return
+    store = None
+    try:
+        store = open_store(config.storage, home)
+        jobs = open_jobstore(config.storage, home, store)
+        before = SystemClock().now() - timedelta(days=retention_days)
+        purged, failed_dirs = jobs.purge(before, home / "jobs", dry_run=dry_run)
+    except (ConfigError, OSError, sqlite3.Error) as exc:
+        typer.echo(f"purge failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        if store is not None:
+            store.close()
+    count = len(purged)
+    noun = "job" if count == 1 else "jobs"
+    typer.echo(f"{'would purge' if dry_run else 'purged'} {count} {noun}")
+    for directory in failed_dirs:
+        typer.echo(f"warning: could not remove {directory}", err=True)
+    if failed_dirs:
+        raise typer.Exit(1)
 
 
 @app.command("export")

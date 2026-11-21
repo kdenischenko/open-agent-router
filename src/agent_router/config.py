@@ -237,6 +237,7 @@ class ClassifierSettings:
 @dataclass(frozen=True)
 class StorageSettings:
     backend: str = "sqlite"
+    retention_days: int | None = None
     options: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -1141,8 +1142,17 @@ def _parse_storage(value: Any, errors: list[str]) -> StorageSettings:
     backend = _text(raw.get("backend", "sqlite"), "storage.backend", errors, "sqlite")
     if _STORAGE_BACKEND.fullmatch(backend) is None:
         errors.append("storage.backend: only [a-z0-9_-]+ characters are allowed")
+    retention_days = None
+    if raw.get("retention_days") is not None:
+        retention_days = _integer(raw["retention_days"], "storage.retention_days", errors, 1)
+        if retention_days < 1:
+            errors.append("storage.retention_days: must be at least 1")
     return StorageSettings(
-        backend=backend, options={key: item for key, item in raw.items() if key != "backend"}
+        backend=backend,
+        retention_days=retention_days,
+        options={
+            key: item for key, item in raw.items() if key not in {"backend", "retention_days"}
+        },
     )
 
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import builtins
+import contextlib
 import json
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -49,6 +51,12 @@ class JobStore(Protocol):
 
     def list(self, status: Status | None = None, limit: int = 50) -> builtins.list[Job]:
         """Jobs, newest first."""
+        ...
+
+    def purge(
+        self, before: datetime, jobs_dir: Path, dry_run: bool = False
+    ) -> tuple[builtins.list[str], builtins.list[Path]]:
+        """Delete old terminal jobs; return their ids and directories that could not be removed."""
         ...
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
@@ -592,6 +600,37 @@ class SqliteJobStore:
                 (status, int(limit)),
             )
         return [_job(row) for row in rows.fetchall()]
+
+    def purge(
+        self, before: datetime, jobs_dir: Path, dry_run: bool = False
+    ) -> tuple[builtins.list[str], builtins.list[Path]]:
+        moment = to_us(before)
+        condition = (
+            "COALESCE(finished_at, created_at) < ? AND status IN"
+            " ('completed', 'partial', 'failed', 'declined', 'cancelled')"
+        )
+        query = f"SELECT id FROM jobs WHERE {condition} ORDER BY created_at, seq"
+        if dry_run:
+            rows = self._store.connection().execute(query, (moment,)).fetchall()
+            return [row[0] for row in rows], []
+        with self._store.transaction() as conn:
+            rows = conn.execute(query, (moment,)).fetchall()
+            job_ids = [row[0] for row in rows]
+            for table in ("attempts", "ratings", "classifier_votes"):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE job_id IN (SELECT id FROM jobs WHERE {condition})",
+                    (moment,),
+                )
+            conn.execute(f"DELETE FROM jobs WHERE {condition}", (moment,))
+        failed_dirs = []
+        for job_id in job_ids:
+            directory = Path(jobs_dir) / job_id
+            try:
+                with contextlib.suppress(FileNotFoundError):
+                    shutil.rmtree(directory)
+            except OSError:
+                failed_dirs.append(directory)
+        return job_ids, failed_dirs
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
         conn = self._store.connection()

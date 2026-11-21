@@ -57,6 +57,7 @@ kind = "none"
 
 [storage]
 backend = "sqlite"
+# retention_days = 30  # omit to keep job history forever; purge is manual
 
 # [[sinks]]
 # type = "jsonl"

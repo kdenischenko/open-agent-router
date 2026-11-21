@@ -219,6 +219,21 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    idle_timeout_s = 600
    ```
 
+9. **Retention (optional).** Jobs, prompts, results and attempt logs are kept forever by default.
+   Set `storage.retention_days` to a positive number of days to make them eligible for manual
+   cleanup:
+
+   ```toml
+   [storage]
+   retention_days = 30
+   ```
+
+   Run `agent-router purge --dry-run` to see how many jobs would be removed, then
+   `agent-router purge` to delete their database records and `jobs/<job-id>/` directories. Only
+   terminal jobs whose finish time is older than the limit are removed; queued, running and
+   awaiting-approval jobs are always kept. Usage and spend records are kept for pool window
+   accounting. Purge never runs automatically when the gateway starts.
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 

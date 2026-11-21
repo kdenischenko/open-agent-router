@@ -19,8 +19,6 @@ Plans, not promises. Order is rough priority. Ideas and help are welcome — ope
 
 ## Data
 
-- **Retention.** A `[storage] retention_days` setting and an `agent-router purge` command for old
-  jobs, prompts and outputs.
 - **Safer CSV export** for spreadsheet apps (no formula injection).
 
 ## Routing

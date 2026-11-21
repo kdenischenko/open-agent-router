@@ -83,7 +83,9 @@ The gateway home directory (`%LOCALAPPDATA%\agent-router\agent-router` by defaul
 - `client.token`, `admin.token`, `config.toml`.
 
 Nothing is deleted automatically. Prompts and outputs may contain code and secrets from your
-projects; clean the directory yourself if needed. A retention setting is planned.
+projects. Set `[storage] retention_days` and run `agent-router purge` to delete old terminal jobs;
+use `--dry-run` to check the count first. Usage and spend records contain no prompts or outputs and
+are kept for pool window accounting.
 
 ## Reporting a vulnerability
 

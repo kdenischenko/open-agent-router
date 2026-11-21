@@ -184,8 +184,14 @@ option.
 | `approve JOB_ID` / `deny JOB_ID` | Approve or deny a job that awaits confirmation (admin token) |
 | `doctor` | Check config, store, harnesses and gateway; `--live` runs one read job per harness on routes without `confirm` |
 | `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length, CSV cells that a spreadsheet would read as a formula get a leading `'` |
+| `purge` | Delete terminal jobs older than `storage.retention_days`, with their prompts, results and attempt logs; usage/spend records are kept; `--dry-run` only reports the count |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
 | `classifier eval --models ID,...` | Replay past prompts through offline classifier models |
+
+Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
+then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and
+awaiting-approval jobs are never purged, and `serve` does not purge automatically. Check the count
+first with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
@@ -255,7 +261,7 @@ and does not bypass their restrictions.
 Contributions are welcome: open an issue before a large change, follow
 [CONTRIBUTING.md](https://github.com/kdenischenko/open-agent-router/blob/main/CONTRIBUTING.md), and keep the gates green
 (`uv run ruff check`, `uv run ruff format --check`, `uv run pytest -q`). Plans — Linux
-and macOS support, an OpenAI-compatible proxy, data retention — are in
+and macOS support and an OpenAI-compatible proxy — are in
 [ROADMAP.md](https://github.com/kdenischenko/open-agent-router/blob/main/ROADMAP.md).
 
 ## License
