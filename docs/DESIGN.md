@@ -244,6 +244,12 @@ routes; only `127.0.0.1`/`localhost` Host headers are accepted):
   `POST /pools/{id}/unblock`.
 - `GET /healthz` is unauthenticated.
 
+Request bodies are limited before parsing, since the token is checked only after the body is read:
+under `/api/` the limit is room for the longest accepted prompt (`tasks.max_prompt_chars` × 12 bytes,
+the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64 KiB. A declared
+`Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
+both answer `413` with the code `body_too_large`.
+
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
 frontend build) logs in with the admin token and sets a signed `ar_session` cookie (HMAC keyed from
