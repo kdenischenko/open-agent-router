@@ -30,6 +30,11 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Security: on filesystems that ignore case or Unicode normalization (the macOS default), a job
+  directory spelled differently from a `tasks.denied_roots` entry was accepted, and one spelled
+  differently from a `tasks.allowed_roots` entry was rejected. Roots are now also matched by the
+  directory's identity on the volume, and write jobs in one repository spelled two ways no longer
+  run at the same time.
 - The gateway rejects a request body over the size limit with `413 body_too_large` before
   parsing it.
 - `AGENT_ROUTER_URL` with a scheme other than `http` or `https` is a configuration error.

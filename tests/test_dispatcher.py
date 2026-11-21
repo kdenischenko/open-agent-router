@@ -1104,6 +1104,19 @@ def test_writers_of_one_repo_run_in_turn(make_rig) -> None:
     assert rig.status(first) == "completed" and rig.status(second) == "running"
 
 
+def test_writers_of_one_repo_in_other_case_run_in_turn(make_rig) -> None:
+    executor = ManualExecutor()
+    rig = make_rig(executor)
+    repo = rig.repo("Repository")
+    other_case = repo.parent / "rEPOSITORY"
+    if not other_case.exists():
+        pytest.skip("the temporary directory is on a case-sensitive filesystem")
+    first = rig.submit(repo, "write")
+    second = rig.submit(other_case, "write")
+    rig.tick()
+    assert [rig.status(job) for job in (first, second)] == ["running", "queued"]
+
+
 def test_max_parallel_is_respected(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor, max_parallel=2)

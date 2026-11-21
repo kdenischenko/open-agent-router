@@ -6,10 +6,12 @@ import dataclasses
 import os
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 import pytest
 
+from agent_router import jobs as jobs_module
 from agent_router.config import Config, TaskSettings
 from agent_router.jobs import (
     STATUSES,
@@ -192,6 +194,116 @@ def test_windows_path_in_other_case_is_accepted(config: Config, tmp_path: Path) 
     work.mkdir(parents=True)
     swapped = Path(str(work).swapcase())
     assert validate_request(JobRequest("job", swapped), with_roots(config, [root])) is None
+
+
+def _case_insensitive(directory: Path) -> bool:
+    probe = directory / "CaseProbe"
+    probe.mkdir()
+    twin = directory / "caseprobe"
+    return twin.exists() and os.path.samefile(probe, twin)
+
+
+@pytest.fixture
+def case_insensitive(tmp_path: Path) -> None:
+    if not _case_insensitive(tmp_path):
+        pytest.skip("the temporary directory is on a case-sensitive filesystem")
+
+
+def _folded_identity(path: Path) -> tuple[str, str]:
+    """Identity of a directory on a simulated case- and normalization-insensitive volume."""
+    return ("simulated", unicodedata.normalize("NFD", str(path)).casefold())
+
+
+@pytest.fixture
+def folding_volume(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jobs_module, "_identity", _folded_identity, raising=False)
+
+
+CAFE = "Café"  # composed é
+CAFE_OTHER_FORM = "CAFÉ"  # other case, decomposed é: no name comparison can match it
+
+
+@pytest.mark.parametrize("denied_case", [str.upper, str.lower])
+def test_denied_root_in_other_case_is_denied(
+    config: Config, root: Path, case_insensitive: None, denied_case
+) -> None:
+    inner = root / "Secrets" / "deeper"
+    inner.mkdir(parents=True)
+    cfg = with_roots(config, [root], [root / denied_case("Secrets")])
+    assert rejected(JobRequest("job", inner), cfg) == "cwd_not_allowed"
+    swapped = root / "Secrets".swapcase() / "deeper"
+    assert rejected(JobRequest("job", swapped), cfg) == "cwd_not_allowed"
+
+
+def test_allowed_root_in_other_case_is_accepted(
+    config: Config, root: Path, case_insensitive: None
+) -> None:
+    work = root / "Projects" / "one"
+    work.mkdir(parents=True)
+    cfg = with_roots(config, [root / "PROJECTS"])
+    assert validate_request(JobRequest("job", work), cfg) is None
+
+
+def test_denied_root_matched_by_volume_identity(
+    config: Config, root: Path, folding_volume: None
+) -> None:
+    inner = root / CAFE / "deeper"
+    inner.mkdir(parents=True)
+    cfg = with_roots(config, [root], [root / CAFE_OTHER_FORM])
+    assert rejected(JobRequest("job", inner), cfg) == "cwd_not_allowed"
+    assert rejected(JobRequest("job", inner.parent), cfg) == "cwd_not_allowed"
+
+
+def test_allowed_root_matched_by_volume_identity(
+    config: Config, root: Path, folding_volume: None
+) -> None:
+    work = root / CAFE / "work"
+    work.mkdir(parents=True)
+    cfg = with_roots(config, [root / CAFE_OTHER_FORM])
+    assert validate_request(JobRequest("job", work), cfg) is None
+
+
+def test_sibling_is_outside_by_volume_identity(
+    config: Config, root: Path, folding_volume: None
+) -> None:
+    sibling = root / (CAFE + " and more")
+    sibling.mkdir()
+    cfg = with_roots(config, [root / CAFE_OTHER_FORM])
+    assert rejected(JobRequest("job", sibling), cfg) == "cwd_not_allowed"
+
+
+def test_case_sensitive_volume_keeps_other_case_apart(config: Config, root: Path) -> None:
+    secret = root / "secret"
+    secret.mkdir()
+    other = root / "SECRET"
+    if other.exists():
+        pytest.skip("the temporary directory is on a case-insensitive filesystem")
+    other.mkdir()
+    cfg = with_roots(config, [root], [secret])
+    assert validate_request(JobRequest("job", other), cfg) is None
+    assert rejected(JobRequest("job", secret), cfg) == "cwd_not_allowed"
+
+
+def test_identity_without_file_number_falls_back_to_names(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    no_number = os.stat_result((0o040755, 0, 7, 1, 0, 0, 0, 0, 0, 0))
+    monkeypatch.setattr(jobs_module.os, "stat", lambda *args, **kwargs: no_number)
+    identity = jobs_module._identity(root)
+    monkeypatch.undo()
+    assert identity is None
+
+
+def test_directory_key_follows_volume_identity(root: Path, folding_volume: None) -> None:
+    assert jobs_module.directory_key(root / CAFE) == jobs_module.directory_key(
+        root / CAFE_OTHER_FORM
+    )
+    assert jobs_module.directory_key(root / CAFE) != jobs_module.directory_key(root / "Cafe")
+
+
+def test_directory_key_names_a_missing_directory(root: Path) -> None:
+    missing = root / "missing"
+    assert jobs_module.directory_key(missing) == os.path.normcase(str(missing))
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="UNC paths are Windows-only")
