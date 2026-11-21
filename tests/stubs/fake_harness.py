@@ -2,8 +2,9 @@
 
 Usage: python fake_harness.py --scenario <name> [scenario args]. Scenarios:
 echo-file <path>, exit <code>, sleep <s>, tick <count> <interval_s> [stdout|stderr],
-child-sleep <s> <pid-file>, write <file>, commit, big <MB>, final-then-hang <string>,
-stdin-echo, argv-echo, wait-stdin-eof, env <name>.
+child-sleep <s> <pid-file>, detached-child <s> <pid-file>, orphan-sleep <s> <child-s> <pid-file>,
+write <file>, commit, big <MB>, final-then-hang <string>, stdin-echo, argv-echo, wait-stdin-eof,
+env <name>.
 """
 
 from __future__ import annotations
@@ -60,6 +61,23 @@ def main(argv: list[str]) -> int:
         Path(args[1]).write_text(str(child.pid), encoding="utf-8")
         out("child started\n")
         child.wait()
+        return 0
+    if name == "detached-child":
+        # starts a sleeping grandchild and exits at once: the grandchild outlives its parent
+        child = subprocess.Popen(
+            [sys.executable, __file__, "--scenario", "sleep", args[0]], stdin=subprocess.DEVNULL
+        )
+        Path(args[1]).write_text(str(child.pid), encoding="utf-8")
+        return 0
+    if name == "orphan-sleep":
+        # a grandchild that outlives the harness: only a job object reaches it
+        middle = subprocess.Popen(
+            [sys.executable, __file__, "--scenario", "detached-child", args[1], args[2]],
+            stdin=subprocess.DEVNULL,
+        )
+        out("grandchild starting\n")
+        middle.wait()
+        time.sleep(float(args[0]))
         return 0
     if name == "write":
         Path(args[0]).write_text("written by fake harness\n", encoding="utf-8")

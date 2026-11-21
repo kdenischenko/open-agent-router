@@ -95,14 +95,18 @@ dispatcher blocks the pool until the reported reset time, or by exponential back
 `tasks.limit_backoff_max_s`). Blocks expire on tick or via manual `unblock` (admin).
 
 Recovery after restart: queued jobs are simply picked up again. Stored `running` jobs whose last
-attempt finished are finalized from the stored result; otherwise the dispatcher reaps orphaned
-processes (a PID is reused only if the image name and start time match the recorded values),
-re-measures the working tree, and finishes the job as `partial` or `failed` with
-`gateway_restarted`.
+attempt finished are finalized from the stored result; otherwise the dispatcher reaps the recorded
+harness process if its PID, image name and start time still match, re-measures the working tree,
+and finishes the job as `partial` or `failed` with `gateway_restarted`. A Windows job object's
+handle is deliberately not persisted: `KILL_ON_JOB_CLOSE` has already stopped its tree when the
+old gateway exited. Without a job object, recovery still checks only the harness PID; a descendant
+left behind by an already-exited harness is not discoverable and can escape both reaping and the
+`orphan_process` violation.
 
 Violations recorded on the job: `head_moved` (git HEAD changed during the attempt),
 `read_mode_files_changed`, `changes_unknown` (post-attempt tree measurement failed),
-`orphan_process` (the harness process survived its stop or could not be reaped).
+`orphan_process` (the harness or a member of its Windows job survived its stop, or the recorded
+harness could not be reaped).
 
 ## Route choice
 
@@ -193,9 +197,18 @@ rate, and a before/after split around the last `mode` change.
 
 The runner starts the harness without a shell: `Popen(argv, cwd, env, stdout/stderr to pipes)`.
 The environment is inherited plus `NO_COLOR=1` and `PWD` set to the working directory (opencode
-reads it). On Windows the child gets its own process group and no console window; stopping uses
-`taskkill /PID <pid> /T /F` (on POSIX, `SIGTERM` then `SIGKILL` to the process group). Output is
-streamed to per-attempt log files, capped at 20 MiB per stream with a truncation marker.
+reads it). On Windows the child gets its own process group and no console window. Each attempt
+also gets a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: the harness is created suspended,
+assigned to the job, and only then resumed, closing the launch/assignment race. Descendants join
+the same job. Stopping or finishing an attempt terminates the job and queries its process list;
+anything left sets `survived` and produces `orphan_process`. Job, process and thread handles are
+closed on every exit, and closing the last job handle also stops the tree if the gateway crashes.
+Windows 8 and later support nested jobs, but an enclosing job or policy can reject assignment. If
+job creation or assignment fails, the harness is resumed and the legacy
+`taskkill /PID <pid> /T /F` stop remains in use; in that mode a descendant of a dead harness is not
+visible to the survivor check. On POSIX, stopping still uses `SIGTERM` then `SIGKILL` to the process
+group. Output is streamed to per-attempt log files, capped at 20 MiB per stream with a truncation
+marker.
 Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeout_s`
 (14400 s, a hard cap). A harness that produces no stdout or stderr for `tasks.idle_timeout_s`
 (600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`

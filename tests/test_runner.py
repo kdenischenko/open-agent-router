@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import types
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ import pytest
 from agent_router import runner as runner_module
 from agent_router.runner import (
     Invocation,
+    JobQueryError,
     LocalRunner,
     ProcessQueryError,
     ShimUnsafeArgs,
@@ -548,7 +550,8 @@ def test_survivor_is_reported(work: Path, logs: Path, monkeypatch: pytest.Monkey
         with monkeypatch.context() as patch:
             patch.setattr(runner_module, "KILL_WAIT_S", 0.2)
             patch.setattr(runner_module, "_READER_WAIT_S", 0.2)
-            patch.setattr(LocalRunner, "_kill", staticmethod(lambda proc: None))
+            patch.setattr(runner_module, "create_job", lambda: None)  # the fallback path
+            patch.setattr(LocalRunner, "_kill", staticmethod(lambda proc, job=None: None))
             result = run(harness("sleep", "120"), work, logs, cancel=cancel, on_start=on_start)
         assert result.survived is True
         assert result.cancelled is True
@@ -647,7 +650,8 @@ def test_failure_with_survivor_returns_in_bounded_time(
         with monkeypatch.context() as patch:
             patch.setattr(runner_module, "KILL_WAIT_S", 0.2)
             patch.setattr(runner_module, "_READER_WAIT_S", 0.2)
-            patch.setattr(LocalRunner, "_kill", staticmethod(lambda proc: None))
+            patch.setattr(runner_module, "create_job", lambda: None)  # the fallback path
+            patch.setattr(LocalRunner, "_kill", staticmethod(lambda proc, job=None: None))
             with pytest.raises(RuntimeError, match="failure in the wait loop"):
                 run(silent, work, logs, cancel=_BrokenCancel(), on_start=pids.append)
         assert time.monotonic() - started < 5
@@ -675,7 +679,7 @@ def test_dead_parent_live_group_is_killed(
 ) -> None:
     monkeypatch.setattr(runner_module, "KILL_WAIT_S", 0.2)
     monkeypatch.setattr(runner_module, "_READER_WAIT_S", 0.2)
-    monkeypatch.setattr(LocalRunner, "_kill", staticmethod(lambda proc: proc.terminate()))
+    monkeypatch.setattr(LocalRunner, "_kill", staticmethod(lambda proc, job=None: proc.terminate()))
     pid_file = tmp_path / "child.pid"
     cancel = threading.Event()
     pids: list[int] = []
@@ -903,6 +907,246 @@ def test_taskkill_wait_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner_module, "_run_quiet", fake_run)
     runner_module.kill_tree(12345)
     assert timeouts == [runner_module.KILL_WAIT_S]
+
+
+# --- windows job object ----------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows-specific")
+def test_windows_orphaned_grandchild_is_stopped_on_cancel(
+    work: Path, logs: Path, tmp_path: Path
+) -> None:
+    pid_file = tmp_path / "grandchild.pid"
+    cancel = threading.Event()
+    grandchild: list[int] = []
+
+    def cancel_when_grandchild_started() -> None:
+        pid = wait_pid_file(pid_file, cancel)
+        if pid is not None:
+            grandchild.append(pid)
+            cancel.set()
+
+    helper = threading.Thread(target=cancel_when_grandchild_started)
+    helper.start()
+    try:
+        result = run(
+            harness("orphan-sleep", "120", "120", str(pid_file)), work, logs, cancel=cancel
+        )
+        assert result.cancelled is True
+        assert result.survived is False
+        assert grandchild and wait_dead(grandchild[0], 10)
+    finally:
+        cancel.set()
+        helper.join(30)
+        if not grandchild and pid_file.exists():
+            grandchild.append(int(pid_file.read_text(encoding="utf-8")))
+        if grandchild:
+            if pid_alive(grandchild[0]):
+                kill_tree(grandchild[0])
+            assert wait_dead(grandchild[0])
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows-specific")
+def test_windows_grandchild_does_not_outlive_the_harness(
+    work: Path, logs: Path, tmp_path: Path
+) -> None:
+    pid_file = tmp_path / "grandchild.pid"
+    grandchild: list[int] = []
+    try:
+        result = run(harness("orphan-sleep", "0.3", "120", str(pid_file)), work, logs)
+        assert result.exit_code == 0 and not result.timed_out and not result.cancelled
+        assert result.survived is False
+        grandchild.append(int(pid_file.read_text(encoding="utf-8")))
+        assert wait_dead(grandchild[0], 10)
+    finally:
+        if not grandchild and pid_file.exists():
+            grandchild.append(int(pid_file.read_text(encoding="utf-8")))
+        if grandchild:
+            if pid_alive(grandchild[0]):
+                kill_tree(grandchild[0])
+            assert wait_dead(grandchild[0])
+
+
+class FakeJob:
+    """Stands in for a Windows job object: terminate really stops the assigned process."""
+
+    def __init__(self, *, assign: bool = True, leftovers: Sequence[int] = ()) -> None:
+        self.assign_ok = assign
+        self.leftovers = list(leftovers)
+        self.pid: int | None = None
+        self.assigned: list[int] = []
+        self.terminated = 0
+        self.closed = False
+
+    def assign(self, pid: int) -> bool:
+        self.assigned.append(pid)
+        if not self.assign_ok:
+            return False
+        self.pid = pid
+        return True
+
+    def terminate(self) -> None:
+        self.terminated += 1
+        if self.pid is not None:
+            kill_tree(self.pid)
+
+    def pids(self) -> list[int]:
+        return list(self.leftovers)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def with_job(monkeypatch: pytest.MonkeyPatch, **kwargs) -> FakeJob:
+    job = FakeJob(**kwargs)
+    monkeypatch.setattr(runner_module, "create_job", lambda: job)
+    return job
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="suspended creation is Windows-specific")
+def test_windows_job_is_assigned_before_the_process_runs(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch)
+    real_popen = runner_module.subprocess.Popen
+    real_assign = job.assign
+    real_resume = runner_module.resume_process
+    creation_flags: list[int] = []
+    events: list[str] = []
+
+    def assign_spy(pid: int) -> bool:
+        events.append("assign")
+        return real_assign(pid)
+
+    def resume_spy(pid: int) -> None:
+        events.append("resume")
+        real_resume(pid)
+
+    def popen_spy(*args, **kwargs):
+        creation_flags.append(kwargs.get("creationflags", 0))
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(job, "assign", assign_spy)
+    monkeypatch.setattr(runner_module, "resume_process", resume_spy)
+    monkeypatch.setattr(runner_module.subprocess, "Popen", popen_spy)
+    result = run(harness("sleep", "0.1"), work, logs, on_start=lambda _pid: events.append("start"))
+    assert result.exit_code == 0
+    assert creation_flags[0] & 0x00000004  # CREATE_SUSPENDED closes the assignment race
+    assert job.assigned
+    assert events == ["assign", "resume", "start"]
+
+
+def test_job_stops_the_tree_on_timeout(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch)
+    pids: list[int] = []
+    result = run(harness("sleep", "120"), work, logs, timeout_s=1, on_start=pids.append)
+    assert result.timed_out and not result.cancelled
+    assert result.survived is False
+    assert job.assigned == pids
+    assert job.terminated >= 1
+    assert job.closed is True
+    assert wait_dead(pids[0])
+
+
+def test_job_stops_the_tree_on_cancel(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch)
+    cancel = threading.Event()
+    pids: list[int] = []
+
+    def on_start(pid: int) -> None:
+        pids.append(pid)
+        cancel.set()
+
+    result = run(harness("sleep", "120"), work, logs, cancel=cancel, on_start=on_start)
+    assert result.cancelled and not result.timed_out
+    assert result.survived is False
+    assert job.terminated >= 1 and job.closed is True
+    assert wait_dead(pids[0])
+
+
+def test_job_is_terminated_after_the_harness_exits(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch)
+    result = run(harness("sleep", "0.1"), work, logs)
+    assert result.exit_code == 0 and not result.timed_out
+    assert job.terminated >= 1 and job.closed is True
+
+
+def test_leftover_process_in_the_job_is_a_survivor(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch, leftovers=[999_999])
+    with monkeypatch.context() as patch:
+        patch.setattr(runner_module, "KILL_WAIT_S", 0.2)
+        result = run(harness("sleep", "0.1"), work, logs)
+    assert result.exit_code == 0 and result.survived is True
+    assert job.closed is True
+
+
+def test_job_assign_failure_falls_back_to_the_tree_kill(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch, assign=False)
+    pids: list[int] = []
+    result = run(harness("sleep", "120"), work, logs, timeout_s=1, on_start=pids.append)
+    assert result.timed_out and result.survived is False
+    assert job.terminated == 0 and job.closed is True
+    assert wait_dead(pids[0])  # the taskkill fallback still stopped the process
+
+
+def test_job_is_closed_when_the_launch_fails(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    job = with_job(monkeypatch)
+    missing = Invocation((str(tmp_path / "no-such-harness"),))
+    with pytest.raises(OSError):
+        run(missing, work, logs)
+    assert job.closed is True
+
+
+def test_job_is_closed_after_a_runner_failure(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = with_job(monkeypatch)
+
+    def fail_start(_self) -> None:
+        raise RuntimeError("reader thread not started")
+
+    monkeypatch.setattr(runner_module._Pump, "start", fail_start)
+    silent = Invocation((sys.executable, "-c", "import time; time.sleep(120)"))
+    pids: list[int] = []
+    try:
+        with pytest.raises(RuntimeError, match="reader thread not started"):
+            run(silent, work, logs, on_start=pids.append)
+        assert job.closed is True
+        assert pids and wait_dead(pids[0])
+    finally:
+        if pids:
+            kill_tree(pids[0])
+            assert wait_dead(pids[0])
+
+
+def test_job_survivor_check_reads_the_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    with monkeypatch.context() as patch:
+        patch.setattr(runner_module, "KILL_WAIT_S", 0.2)
+        assert runner_module._survived(4242, parent_alive=False, job=FakeJob()) is False
+        assert runner_module._survived(4242, parent_alive=False, job=FakeJob(leftovers=[7])) is True
+        assert runner_module._survived(4242, parent_alive=True, job=FakeJob()) is True
+
+
+def test_job_with_unreadable_list_counts_as_a_survivor(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Unreadable(FakeJob):
+        def pids(self) -> list[int]:
+            raise JobQueryError("job process list not read")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(runner_module, "KILL_WAIT_S", 0.2)
+        assert runner_module._survived(4242, parent_alive=False, job=Unreadable()) is True
 
 
 # --- process creation time ----------------------------------------------------------------

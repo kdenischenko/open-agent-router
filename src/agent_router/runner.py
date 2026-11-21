@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import IO, Protocol
 
 from agent_router.liveness import Liveness
+from agent_router.winjob import (
+    CREATE_SUSPENDED,
+    JobQueryError,
+    WindowsJob,
+    create_job,
+    resume_process,
+)
 
 SHIM_SUFFIXES = (".cmd", ".bat")
 _SHIM_SAFE = frozenset(" ._:/\\=@+-")
@@ -156,16 +163,33 @@ def kill_tree(pid: int) -> None:
             os.killpg(pid, signal.SIGKILL)
 
 
-def _survived(pid: int, parent_alive: bool) -> bool:
+def _survived(pid: int, parent_alive: bool, job: WindowsJob | None = None) -> bool:
     """Whether the process outlived the stop; on POSIX, finishes a live group whose parent died."""
     if parent_alive:
         return True
+    if job is not None:
+        return _job_alive(job)
     if sys.platform == "win32":
         return False  # children of a dead parent are not visible on Windows
     if not _group_alive(pid):
         return False
     kill_tree(pid)
     return _group_alive(pid)
+
+
+def _job_alive(job: WindowsJob) -> bool:
+    """Whether the job still holds a process after the stop; an unreadable list counts as alive."""
+    deadline = time.monotonic() + KILL_WAIT_S
+    while True:
+        try:
+            alive = bool(job.pids())
+        except JobQueryError:
+            return True
+        if not alive:
+            return False
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(_POLL_S)
 
 
 def _run_query(
@@ -420,19 +444,34 @@ class LocalRunner:
             if not final_at and is_final_line is not None and is_final_line(line):
                 final_at.append(time.monotonic())
 
-        proc = subprocess.Popen(  # no shell, arguments passed as a list
-            list(inv.argv),
-            cwd=str(cwd),
-            env=env,
-            stdin=subprocess.PIPE if inv.stdin_text is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
-            **options,  # type: ignore[arg-type]
-        )
+        job = create_job()  # one job per attempt: everything the harness starts stops with it
+        suspended = job is not None and sys.platform == "win32"
+        if suspended:
+            # The main thread cannot start children before it is assigned to the job
+            options["creationflags"] = int(options["creationflags"]) | CREATE_SUSPENDED
+        try:
+            proc = subprocess.Popen(  # no shell, arguments passed as a list
+                list(inv.argv),
+                cwd=str(cwd),
+                env=env,
+                stdin=subprocess.PIPE if inv.stdin_text is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=False,
+                **options,  # type: ignore[arg-type]
+            )
+        except BaseException:  # the launch failed: the job holds no process, its handle is closed
+            if job is not None:
+                job.close()
+            raise
         out_pump: _Pump | None = None
         err_pump: _Pump | None = None
         try:
+            if job is not None and not job.assign(proc.pid):
+                job.close()  # the tree stays outside the job: the taskkill fallback applies
+                job = None
+            if suspended:
+                resume_process(proc.pid)
             if on_start is not None:
                 on_start(proc.pid)
             assert proc.stdout is not None and proc.stderr is not None
@@ -476,15 +515,17 @@ class LocalRunner:
                     # after the final line only exit_grace_s decides how long to wait
                     timed_out = idle = True
                 if cancelled or timed_out or forced:
-                    self._kill(proc)
+                    self._kill(proc, job)
                     break
                 time.sleep(_POLL_S)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 proc.wait(timeout=KILL_WAIT_S)
+            if job is not None:
+                job.terminate()  # a descendant that outlived the harness stops with the attempt
             out_pump.join(_READER_WAIT_S)
             err_pump.join(_READER_WAIT_S)
             parent_alive = proc.poll() is None
-            survived = _survived(proc.pid, parent_alive)
+            survived = _survived(proc.pid, parent_alive, job)
             exit_code = None if parent_alive else proc.returncode
             if forced and not parent_alive:
                 exit_code = 0
@@ -502,7 +543,7 @@ class LocalRunner:
             )
         except BaseException:  # after cleanup the exception propagates
             with contextlib.suppress(Exception):
-                self._kill(proc)
+                self._kill(proc, job)
             with contextlib.suppress(Exception):
                 proc.wait(timeout=KILL_WAIT_S)
             if proc.stdin is not None:
@@ -518,9 +559,15 @@ class LocalRunner:
                     with contextlib.suppress(OSError, ValueError):
                         stream.close()
             raise
+        finally:
+            if job is not None:
+                job.close()
 
     @staticmethod
-    def _kill(proc: subprocess.Popen[bytes]) -> None:
+    def _kill(proc: subprocess.Popen[bytes], job: WindowsJob | None = None) -> None:
+        if job is not None:
+            job.terminate()
+            return
         if sys.platform == "win32":
             kill_tree(proc.pid)
             return
