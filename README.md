@@ -183,7 +183,7 @@ option.
 | `cancel JOB_ID` | Cancel a queued or running job |
 | `approve JOB_ID` / `deny JOB_ID` | Approve or deny a job that awaits confirmation (admin token) |
 | `doctor` | Check config, store, harnesses and gateway; `--live` runs one read job per harness on routes without `confirm` |
-| `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length |
+| `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length, CSV cells that a spreadsheet would read as a formula get a leading `'` |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
 | `classifier eval --models ID,...` | Replay past prompts through offline classifier models |
 

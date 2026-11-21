@@ -387,6 +387,41 @@ def test_export_csv_one_row_per_attempt(tmp_path: Path) -> None:
     assert len(read_csv(out / "spend.csv")) == 1
 
 
+@pytest.mark.parametrize("lead", ["=", "+", "-", "@", "\t", "\r"])
+def test_export_csv_neutralises_formulas(tmp_path: Path, lead: str) -> None:
+    home = tmp_path / "home"
+    store, jobs = open_db(home)
+    try:
+        job = make_job("j_formula")
+        job.reason = f"{lead}HYPERLINK(1)"
+        jobs.create(job)
+        jobs.add_block(PoolBlock("opencode-go", T0 + timedelta(hours=1), f"{lead}cmd"), "j_formula")
+    finally:
+        store.close()
+    db = home / "agent-router.sqlite"
+
+    run_export(db, tmp_path / "c", fmt="csv")
+    assert read_csv(tmp_path / "c" / "jobs.csv")[0]["reason"] == f"'{lead}HYPERLINK(1)"
+    assert read_csv(tmp_path / "c" / "pool_blocks.csv")[0]["reason"] == f"'{lead}cmd"
+
+    run_export(db, tmp_path / "j", fmt="jsonl")
+    assert read_jsonl(tmp_path / "j" / "jobs.jsonl")[0]["reason"] == f"{lead}HYPERLINK(1)"
+
+
+def test_export_csv_keeps_plain_text(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    store, jobs = open_db(home)
+    try:
+        job = make_job("j_plain")
+        job.reason = "chosen r-go = cheapest"
+        jobs.create(job)
+    finally:
+        store.close()
+
+    run_export(home / "agent-router.sqlite", tmp_path / "c", fmt="csv")
+    assert read_csv(tmp_path / "c" / "jobs.csv")[0]["reason"] == "chosen r-go = cheapest"
+
+
 def test_export_effort_end_to_end(tmp_path: Path) -> None:
     home = tmp_path / "home"
     store, jobs = open_db(home)
