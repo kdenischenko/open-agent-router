@@ -205,15 +205,56 @@ def new_job_id() -> str:
     return "j_" + secrets.token_hex(6)
 
 
-def _canonical(path: Path) -> str:
-    return os.path.normcase(str(path.resolve()))
-
-
 def _inside(path: str, root: str) -> bool:
     if path == root:
         return True
     prefix = root if root.endswith(os.sep) else root + os.sep
     return path.startswith(prefix)
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    """Volume and file number of an existing directory, as the filesystem itself sees it.
+
+    A name comparison cannot tell whether two spellings are one directory: macOS volumes
+    ignore case and Unicode normalization, while `os.path.normcase` there changes nothing.
+    None when the path is missing or the filesystem reports no file number.
+    """
+    try:
+        info = os.stat(path)
+    except (OSError, ValueError):
+        return None
+    if info.st_ino == 0:
+        return None
+    return (info.st_dev, info.st_ino)
+
+
+def directory_key(path: Path) -> str:
+    """Key that is equal for every spelling of one existing directory."""
+    identity = _identity(path)
+    if identity is None:
+        return os.path.normcase(str(path))
+    return f"{identity[0]}:{identity[1]}"
+
+
+class _Lineage:
+    """The resolved job directory and its parents, compared with roots by name and by identity."""
+
+    def __init__(self, resolved: Path) -> None:
+        self.name = os.path.normcase(str(resolved))
+        self._paths = (resolved, *resolved.parents)
+        self._identities: set[object] | None = None
+
+    def under(self, root: Path) -> bool:
+        resolved = root.resolve()
+        if _inside(self.name, os.path.normcase(str(resolved))):
+            return True
+        identity = _identity(resolved)
+        if identity is None:
+            return False
+        if self._identities is None:
+            found = (_identity(path) for path in self._paths)
+            self._identities = {item for item in found if item is not None}
+        return identity in self._identities
 
 
 def is_network_path(text: str) -> bool:
@@ -240,14 +281,14 @@ def check_cwd(cwd: Path, tasks: TaskSettings) -> Path:
         raise RequestRejected("cwd_not_allowed", message) from exc
     if not is_dir:
         raise RequestRejected("cwd_not_allowed", "no such directory")
-    canonical = os.path.normcase(str(resolved))
-    if is_network_path(canonical):
+    lineage = _Lineage(resolved)
+    if is_network_path(lineage.name):
         raise RequestRejected("cwd_not_allowed", "network and device paths are not accepted")
     if not tasks.allowed_roots:
         raise RequestRejected("cwd_not_allowed", "allowed_roots is empty: jobs are not accepted")
-    if not any(_inside(canonical, _canonical(root)) for root in tasks.allowed_roots):
+    if not any(lineage.under(root) for root in tasks.allowed_roots):
         raise RequestRejected("cwd_not_allowed", "directory outside allowed roots")
-    if any(_inside(canonical, _canonical(root)) for root in tasks.denied_roots):
+    if any(lineage.under(root) for root in tasks.denied_roots):
         raise RequestRejected("cwd_not_allowed", "directory inside a denied root")
     return resolved
 

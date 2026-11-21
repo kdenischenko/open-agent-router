@@ -10,8 +10,7 @@ place to start.
 
 - **Linux and macOS.** The test suite runs in CI on `ubuntu-latest` and `macos-latest`, and
   the gateway home is created with `0700`. Still needed: a live check on a real system,
-  case-insensitive path checks on macOS, autostart with `systemd --user` and `launchd`,
-  a bash variant of the skill install steps.
+  autostart with `systemd --user` and `launchd`, a bash variant of the skill install steps.
 
 ## Harnesses
 

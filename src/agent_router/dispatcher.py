@@ -31,6 +31,7 @@ from agent_router.jobs import (
     Status,
     WrongState,
     can_transition,
+    directory_key,
     new_job_id,
     validate_request_directory,
 )
@@ -96,6 +97,11 @@ class _Active:
 
 def _repo_key(root: Path | None) -> str | None:
     return None if root is None else os.path.normcase(str(root))
+
+
+def _writer_key(root: Path | None) -> str | None:
+    """Writer lock key: one for every spelling of a repository, whatever the volume's case rules."""
+    return None if root is None else directory_key(root)
 
 
 def _cwd_matches(job: Job, checked: Path) -> bool:
@@ -596,7 +602,7 @@ class Dispatcher:
             job.tier_pending = False
             self.jobs.update(job)
         write = job.request.mode == "write"
-        if write and _repo_key(job.repo_root) in self._writers:
+        if write and _writer_key(job.repo_root) in self._writers:
             return  # repository held by another writer: the job waits without holding up others
         try:
             current = validate_request_directory(job.request, self.config)
@@ -640,7 +646,7 @@ class Dispatcher:
             checked,
             choice,
             len(attempts) + 1,
-            _repo_key(job.repo_root) if write else None,
+            _writer_key(job.repo_root) if write else None,
             decision,
         )
 
