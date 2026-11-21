@@ -1,8 +1,9 @@
 """Fake harness for tests of the runner and dispatcher.
 
 Usage: python fake_harness.py --scenario <name> [scenario args]. Scenarios:
-echo-file <path>, exit <code>, sleep <s>, child-sleep <s> <pid-file>, write <file>, commit,
-big <MB>, final-then-hang <string>, stdin-echo, argv-echo, wait-stdin-eof, env <name>.
+echo-file <path>, exit <code>, sleep <s>, tick <count> <interval_s> [stdout|stderr],
+child-sleep <s> <pid-file>, write <file>, commit, big <MB>, final-then-hang <string>,
+stdin-echo, argv-echo, wait-stdin-eof, env <name>.
 """
 
 from __future__ import annotations
@@ -37,6 +38,20 @@ def main(argv: list[str]) -> int:
     if name == "sleep":
         out("sleeping\n")
         time.sleep(float(args[0]))
+        return 0
+    if name == "tick":
+        count = int(args[0])
+        interval = float(args[1])
+        to_stderr = len(args) > 2 and args[2] == "stderr"
+        for number in range(1, count + 1):
+            if to_stderr:
+                sys.stderr.write(f"tick {number}\n")
+                sys.stderr.flush()
+            else:
+                out(f"tick {number}\n")
+            if number < count:
+                time.sleep(interval)
+        out("ok:done\n")
         return 0
     if name == "child-sleep":
         child = subprocess.Popen(

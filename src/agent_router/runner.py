@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Protocol
 
+from agent_router.liveness import Liveness
+
 SHIM_SUFFIXES = (".cmd", ".bat")
 _SHIM_SAFE = frozenset(" ._:/\\=@+-")
 _TRUNCATED_MARK = b"\n[agent-router: output truncated]\n"
@@ -58,6 +60,7 @@ class ProcessResult:
     stderr_path: Path
     duration_s: float
     timed_out: bool = False
+    idle: bool = False  # stopped on silence: no output for idle_timeout_s (implies timed_out)
     cancelled: bool = False
     truncated: bool = False
     forced_after_final: bool = False
@@ -300,6 +303,7 @@ class Runner(Protocol):
         is_final_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
+        idle_timeout_s: float | None = None,
     ) -> ProcessResult: ...
 
 
@@ -312,12 +316,14 @@ class _Pump(threading.Thread):
         path: Path,
         limit: int,
         on_line: Callable[[str], None] | None = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(daemon=True, name=f"runner-pump-{path.name}")
         self._stream = stream
         self._path = path
         self._limit = limit
         self._on_line = on_line
+        self._on_activity = on_activity
         self.truncated = False
 
     def run(self) -> None:
@@ -328,6 +334,8 @@ class _Pump(threading.Thread):
                 chunk = self._stream.read1(65536)  # type: ignore[attr-defined]
                 if not chunk:
                     break
+                if self._on_activity is not None:
+                    self._on_activity()  # a drained pipe is still a live harness
                 if not self.truncated:
                     room = self._limit - written
                     if len(chunk) > room:
@@ -374,6 +382,7 @@ class LocalRunner:
         is_final_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
+        idle_timeout_s: float | None = None,
     ) -> ProcessResult:
         check_shim_args(inv.argv)
         log_dir = Path(log_dir)
@@ -427,13 +436,21 @@ class LocalRunner:
             if on_start is not None:
                 on_start(proc.pid)
             assert proc.stdout is not None and proc.stderr is not None
+            liveness = Liveness(started, max(0.0, float(timeout_s)), idle_timeout_s)
+
+            def on_activity() -> None:
+                liveness.touch(time.monotonic())
+
             out_pump = _Pump(
                 proc.stdout,
                 stdout_path,
                 self.max_stream_bytes,
                 on_line if is_final_line is not None else None,
+                on_activity,
             )
-            err_pump = _Pump(proc.stderr, stderr_path, self.max_stream_bytes)
+            err_pump = _Pump(
+                proc.stderr, stderr_path, self.max_stream_bytes, on_activity=on_activity
+            )
             out_pump.start()
             err_pump.start()
             if inv.stdin_text is not None:
@@ -445,16 +462,19 @@ class LocalRunner:
                     name="runner-stdin",
                 ).start()
 
-            deadline = started + max(0.0, float(timeout_s))
-            timed_out = cancelled = forced = False
+            timed_out = cancelled = forced = idle = False
             while proc.poll() is None:
                 now = time.monotonic()
+                verdict = liveness.verdict(now)
                 if cancel.is_set():
                     cancelled = True
-                elif now >= deadline:
+                elif verdict == "hard":
                     timed_out = True
                 elif final_at and now - final_at[0] >= exit_grace_s:
                     forced = True  # known harness hang after the final line
+                elif verdict == "idle" and not final_at:
+                    # after the final line only exit_grace_s decides how long to wait
+                    timed_out = idle = True
                 if cancelled or timed_out or forced:
                     self._kill(proc)
                     break
@@ -474,6 +494,7 @@ class LocalRunner:
                 stderr_path=stderr_path,
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
+                idle=idle,
                 cancelled=cancelled,
                 truncated=out_pump.truncated or err_pump.truncated,
                 forced_after_final=forced,

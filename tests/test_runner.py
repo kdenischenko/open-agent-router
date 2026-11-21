@@ -1,4 +1,4 @@
-"""Runner: launching a fake harness, timeout, cancel, output truncation, .cmd shims."""
+"""Runner: launching a fake harness, timeout, idle limit, cancel, output truncation, .cmd shims."""
 
 from __future__ import annotations
 
@@ -88,8 +88,86 @@ def test_timeout_kills_child_process_too(work: Path, logs: Path, tmp_path: Path)
     pid_file = tmp_path / "child.pid"
     result = run(harness("child-sleep", "120", str(pid_file)), work, logs, timeout_s=1)
     assert result.timed_out and not result.cancelled
+    assert not result.idle
     child = int(pid_file.read_text(encoding="utf-8"))
     assert wait_dead(child, 5)
+
+
+def test_silent_harness_is_stopped_as_idle(work: Path, logs: Path) -> None:
+    pids: list[int] = []
+    result = run(
+        harness("sleep", "120"),
+        work,
+        logs,
+        timeout_s=60,
+        idle_timeout_s=1,
+        on_start=pids.append,
+    )
+    assert result.timed_out and result.idle and not result.cancelled
+    assert result.duration_s < 10  # the hard cap of 60 s was never reached
+    assert pids and wait_dead(pids[0], 5)
+
+
+def test_ticking_harness_outlives_idle_limit(work: Path, logs: Path) -> None:
+    result = run(harness("tick", "8", "0.3"), work, logs, timeout_s=60, idle_timeout_s=1)
+    assert result.exit_code == 0
+    assert not result.timed_out and not result.idle
+    assert read(result.stdout_path).splitlines()[-1] == "ok:done"
+
+
+def test_stderr_ticks_count_as_progress(work: Path, logs: Path) -> None:
+    result = run(harness("tick", "8", "0.3", "stderr"), work, logs, timeout_s=60, idle_timeout_s=1)
+    assert result.exit_code == 0
+    assert not result.timed_out and not result.idle
+    assert "tick 8" in read(result.stderr_path)
+
+
+class _ChunkStream:
+    """A readable stream that hands out the given chunks and then reports EOF."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = list(chunks)
+        self.closed = False
+
+    def read1(self, _size: int) -> bytes:
+        return self._chunks.pop(0) if self._chunks else b""
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_truncated_output_still_counts_as_progress(tmp_path: Path) -> None:
+    touches: list[int] = []
+
+    def activity() -> None:
+        touches.append(1)
+
+    pump = runner_module._Pump(
+        _ChunkStream([b"one\n", b"two\n", b"three\n", b"four\n"]),
+        tmp_path / "stdout.log",
+        10,
+        on_activity=activity,
+    )
+    pump.start()
+    pump.join(5)
+    assert not pump.is_alive()
+    assert len(touches) == 4  # every chunk, also the one read after the output was truncated
+    assert pump.truncated is True
+
+
+def test_final_line_hang_is_forced_not_idle(work: Path, logs: Path) -> None:
+    result = run(
+        harness("final-then-hang", "FINAL-LINE"),
+        work,
+        logs,
+        timeout_s=60,
+        is_final_line=lambda line: line == "FINAL-LINE",
+        exit_grace_s=1,
+        idle_timeout_s=0.5,
+    )
+    assert result.forced_after_final
+    assert not result.timed_out and not result.idle
+    assert result.exit_code == 0
 
 
 def test_cancel_by_event(work: Path, logs: Path) -> None:
