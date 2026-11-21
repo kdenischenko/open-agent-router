@@ -45,7 +45,7 @@ from agent_router.runner import ResolvedExecutable
 from agent_router.service import record_classifier_mode
 from agent_router.settings_store import SqliteSettings
 from agent_router.store import SqliteStore, to_us
-from helpers import BASE_URL, full_config_text, write_config
+from helpers import BASE_URL, full_config_text, set_proxy_env, write_config
 
 T0 = datetime(2026, 11, 13, 9, 0, tzinfo=UTC)
 OLD_FORM = '[classifier]\nkind = "none"'
@@ -770,6 +770,24 @@ def test_queue_thread_runs_and_shutdown_stops_it() -> None:
     assert q.pending == 0
 
 
+def test_queue_default_post_bypasses_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_proxy_env(monkeypatch)
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def post(address: str, **kwargs: Any) -> Response:
+        calls.append((address, kwargs))
+        return Response(payload=systemone(1.0, None))
+
+    monkeypatch.setattr(httpx, "post", post)
+    settings = replace(two_models(), models=(model("systemone"),))
+    q = VoteQueue(settings, now=Now(), clock=Ticks(), start=False)
+    q.submit("j_1", "first", T0)
+    assert q.step() is True
+    [(address, kwargs)] = calls
+    assert address == "http://localhost:11434/v1/systemone"
+    assert kwargs["trust_env"] is False
+
+
 # --- vote store ------------------------------------------------------------------------
 
 
@@ -1463,6 +1481,26 @@ def test_doctor_ollama_down_is_warning_not_failure(doctor_home, monkeypatch) -> 
     assert "Ollama unavailable" in output
 
 
+def test_doctor_ollama_check_bypasses_environment_proxy(
+    doctor_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    classifier_config(doctor_home, NEW_FORM)
+    set_proxy_env(monkeypatch)
+    ollama = DoctorOllama(["tev1:4b-q4_K_M", "lfm3:1.7b-q4_K_M", "gemma4:e2b"], {})
+    seen: list[dict[str, Any]] = []
+    inner = ollama.get
+
+    def get(address: str, **kwargs: Any) -> Response:
+        seen.append(kwargs)
+        return inner(address, **kwargs)
+
+    monkeypatch.setattr(httpx, "get", get)
+    result = CliRunner().invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert len(seen) == 2
+    assert all(kwargs["trust_env"] is False for kwargs in seen)
+
+
 @pytest.mark.parametrize("key_is_set", [True, False])
 def test_doctor_remote_classifier_reports_key_without_probing_or_disclosing_it(
     doctor_home: Path, monkeypatch: pytest.MonkeyPatch, key_is_set: bool
@@ -1585,6 +1623,25 @@ def test_cli_classifier_eval_runs_selected_models(doctor_home: Path, monkeypatch
     finally:
         store.close()
     assert [v.offline for v in votes] == [False, True]
+
+
+def test_cli_classifier_eval_passes_direct_http_functions(
+    doctor_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    classifier_config(doctor_home, NEW_FORM)
+    seed_votes(doctor_home)
+    seen: dict[str, Any] = {}
+
+    def fake_run_eval(prompts, models, **kwargs):
+        seen["post"] = kwargs["post"]
+        seen["get"] = kwargs["get"]
+        return len(prompts)
+
+    monkeypatch.setattr(classifier_module, "run_eval", fake_run_eval)
+    result = CliRunner().invoke(cli.app, ["classifier", "eval", "--models", "gemma"])
+    assert result.exit_code == 0, result.output
+    assert seen["post"] is classifier_module.post
+    assert seen["get"] is classifier_module.get
 
 
 def test_cli_classifier_eval_unknown_model(doctor_home: Path) -> None:
