@@ -99,3 +99,14 @@ person, so please allow some time.
 ## Supported versions
 
 Only the latest release receives fixes.
+
+## Verifying a release
+
+Releases are built and published to PyPI by the `release.yml` workflow from a `v*` tag, with no
+stored upload token. From the release after 0.2.0 on, each GitHub release carries the wheel and the
+source archive, and the build signs a provenance attestation for them. To check that a file was
+built by that workflow from this repository:
+
+```
+gh attestation verify open_agent_router-<version>-py3-none-any.whl --repo kdenischenko/open-agent-router
+```

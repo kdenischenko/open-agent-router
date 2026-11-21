@@ -80,6 +80,33 @@ def test_release_workflow_smoke_tests_the_wheel_before_publishing() -> None:
     assert "LASTEXITCODE" in step
 
 
+def test_release_workflow_publishes_from_its_own_job_and_then_creates_the_release() -> None:
+    """Only the publish job may publish, and the GitHub release follows a successful upload."""
+    workflow = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml"
+    text = workflow.read_text(encoding="utf-8")
+    build = text.index("\n  build:\n")
+    publish = text.index("\n  publish:\n")
+    release = text.index("\n  github-release:\n")
+    assert build < publish < release
+    build_job, publish_job, release_job = (
+        text[build:publish],
+        text[publish:release],
+        text[release:],
+    )
+
+    assert text.count("id-token: write") == 1
+    assert "id-token: write" in publish_job
+    assert "environment: pypi" in publish_job
+    assert "needs: build" in publish_job
+    assert "attest-build-provenance" in publish_job
+    assert "uv run" not in publish_job
+    assert build_job.index("release_notes.py") < build_job.index("run: uv build")
+    assert "needs: publish" in release_job
+    assert "contents: write" in release_job
+    assert "gh release create" in release_job
+    assert "--notes-file" in release_job
+
+
 @pytest.fixture(autouse=True)
 def isolated_home(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))

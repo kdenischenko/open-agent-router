@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Each release tag also creates a GitHub release with the changelog notes, the wheel and the
+  source archive, and a signed build provenance attestation that `gh attestation verify` checks.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added
@@ -65,3 +70,7 @@ Alpha for Windows.
 - Installable from PyPI as `open-agent-router`; the command is `agent-router`.
 - Experimental Linux and macOS support; Windows-only autostart.
 - Troubleshooting guide for common gateway, harness, limit and approval failures.
+
+[Unreleased]: https://github.com/kdenischenko/open-agent-router/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kdenischenko/open-agent-router/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/kdenischenko/open-agent-router/releases/tag/v0.1.0
