@@ -182,7 +182,7 @@ option.
 | `jobs` | List jobs with status, route, tier and creation time, optionally by `--status` |
 | `cancel JOB_ID` | Cancel a queued or running job |
 | `approve JOB_ID` / `deny JOB_ID` | Approve or deny a job that awaits confirmation (admin token) |
-| `doctor` | Check config, store, harnesses and gateway; `--live` runs one read job per harness on routes without `confirm` |
+| `doctor` | Check config, store, harnesses and gateway; warns when a route's `counter` spend is invisible: the pool counter cannot see its harness, or the pool has no counter; `--live` runs one read job per harness on routes without `confirm` |
 | `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length, CSV cells that a spreadsheet would read as a formula get a leading `'` |
 | `purge` | Delete terminal jobs older than `storage.retention_days`, with their prompts, results and attempt logs; usage/spend records are kept; `--dry-run` only reports the count |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
@@ -195,6 +195,12 @@ first with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
+
+A route without an explicit `spend` inherits the usage source of its harness. When that source is
+`counter` and the counter of the route's pool cannot see the route's harness, the pool's `usd`
+window never counts the route's spending; `doctor` warns about it and suggests `spend = "journal"`,
+which records every job in the journal instead. A route that inherits `counter` on a pool with no
+counter is invisible in the same way, and `doctor` warns about it too.
 
 ## Exit codes
 

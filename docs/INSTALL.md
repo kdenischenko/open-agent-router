@@ -291,6 +291,11 @@ agent-router doctor --live
 `doctor` shows whether the config loaded, the database is accessible, which harnesses were found,
 which routes are enabled, and whether the gateway responds. The warning “route … is enabled, but
 harness … not found” means you need `[backends.<name>] executable`, or you should disable the route.
+The warning “route …: counter … does not see harness …” means the pool's counter cannot account for
+that route's spending, so the pool's `usd` window stays invisible; set `spend = "journal"` on the
+route to record its jobs in the journal. The warning “route …: pool … has no counter, so its spend
+is invisible; set `spend = "journal"`” means the route inherits the `counter` source on a pool that
+has no counter at all.
 
 `--live` runs one short read job per harness in the first directory from `allowed_roots` and uses
 a small amount of the limit. It probes only enabled routes that allow `read` and have no

@@ -44,7 +44,13 @@ from agent_router.jobs import TERMINAL, is_network_path
 from agent_router.jobstore import open_jobstore
 from agent_router.lifecycle import InstanceLocked, instance_lock
 from agent_router.periods import parse_moment
-from agent_router.registry import HARNESS_GROUP, harnesses, load_harness, resolve_backend
+from agent_router.registry import (
+    HARNESS_GROUP,
+    harnesses,
+    load_counter,
+    load_harness,
+    resolve_backend,
+)
 from agent_router.runner import ResolvedExecutable, resolve_executable
 from agent_router.settings_store import SqliteSettings
 from agent_router.store import open_store
@@ -1064,6 +1070,32 @@ def _doctor_weights(config: Config) -> None:
             )
 
 
+def _doctor_spend(config: Config) -> None:
+    """Warn when a route's counter spend cannot be seen by its pool."""
+    for route in config.routes:
+        if not route.enabled or config.route_spend(route) != "counter":
+            continue
+        pool = next((item for item in config.pools if item.id == route.pool), None)
+        harness = _route_harness(config, route)
+        if pool is None or harness is None:
+            continue
+        if pool.counter is None:
+            typer.echo(
+                f"Warning: route {route.id}: pool {pool.id} has no counter, so its spend is "
+                f'invisible; set spend = "journal"'
+            )
+            continue
+        try:
+            counter = load_counter(pool.counter)
+        except ConfigError:
+            continue  # an unknown counter is rejected when the config loads
+        if harness not in counter.sees:
+            typer.echo(
+                f"Warning: route {route.id}: counter {pool.counter} does not see harness "
+                f'{harness}, so its spend is invisible; set spend = "journal"'
+            )
+
+
 def _doctor_live(config: Config, client: GatewayClient) -> bool:
     if not config.tasks.allowed_roots:
         typer.echo("Warning: allowed_roots is empty — live probes skipped")
@@ -1180,6 +1212,7 @@ def doctor(
     _doctor_store(config, home)
     _doctor_backends(config)
     _doctor_weights(config)
+    _doctor_spend(config)
     _doctor_classifier(config)
     _doctor_callers(config)
     if not config.tasks.allowed_roots:

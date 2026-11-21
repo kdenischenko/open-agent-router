@@ -139,10 +139,13 @@ The ledger computes each window's state from observations and spend records:
   `/api/v1/signals/claude-statusline`), or from synthetic scheduled resets of fixed windows.
 - **Counters**: for pools with `counter = "opencode_stats"` the collector periodically runs
   `opencode stats --json --cost --models --all` and stores cumulative USD samples; growth
-  between samples is attributed to the window. The baseline is the sample nearest to the
-  observation time, or to the window start after a scheduled reset, within the tolerance; after a
-  reset with no such sample the first later sample is used and the window is marked as a lower
-  bound. A change in model weights (the pool's `scale_hash`)
+  between samples is attributed to the window. A counter declares the harnesses it can see in its
+  `sees` set: a route whose spend source is `counter` is invisible to a counter that does not list
+  its harness, so `doctor` suggests `spend = "journal"` for it. A route that inherits `counter` on
+  a pool with no counter has nothing to read, so `doctor` suggests `spend = "journal"` for it too.
+  The baseline is the sample nearest to the observation time, or to the window start after a
+  scheduled reset, within the tolerance; after a reset with no such sample the first later sample
+  is used and the window is marked as a lower bound. A change in model weights (the pool's `scale_hash`)
   invalidates the base and asks for recalibration.
 - **Spend records** are written per attempt: pool, route, tokens in/out, `cost_usd`, and an
   `estimated` flag. For `usd` pools the spend since the window base is added on top of the

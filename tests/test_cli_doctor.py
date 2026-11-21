@@ -9,9 +9,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, registry
 from agent_router import runner as runner_module
 from agent_router.client import GatewayError, GatewayUnavailable
+from agent_router.registry import CounterSpec
 from agent_router.runner import ResolvedExecutable
 from helpers import full_config_text, write_config
 
@@ -471,3 +472,204 @@ def test_doctor_shows_model_limits_date_age(
     assert result.exit_code == 0
     lines = [line for line in result.stdout.splitlines() if "2026-11-16" in line]
     assert lines and "opencode-go" in lines[0] and "days ago" in lines[0]
+
+
+class FakeCounter:
+    def __init__(self, config, store, clock, bus) -> None:
+        pass
+
+    def sample_once(self) -> None:
+        pass
+
+
+def _register_counter(monkeypatch: pytest.MonkeyPatch, name: str, sees: frozenset[str]) -> None:
+    monkeypatch.setitem(registry._COUNTERS, name, CounterSpec(name, FakeCounter, sees))
+
+
+def _counter_config_text(counter: str) -> str:
+    return full_config_text(confirm=False).replace(
+        'counter = "opencode_stats"', f'counter = "{counter}"'
+    )
+
+
+def _counter_config(home: Path, counter: str) -> None:
+    write_config(home, _counter_config_text(counter))
+
+
+def _write_config(home: Path, text: str) -> None:
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(text, encoding="utf-8")
+
+
+def _edit_route(text: str, route_id: str, old: str, new: str) -> str:
+    start = text.index(f'id = "{route_id}"')
+    block_start = text.rindex("[[routes]]", 0, start)
+    block_end = text.find("\n[[routes]]", start)
+    block_end = len(text) if block_end == -1 else block_end
+    block = text[block_start:block_end]
+    assert old in block
+    return text[:block_start] + block.replace(old, new, 1) + text[block_end:]
+
+
+def _warnings(result) -> list[str]:
+    return [line for line in result.stdout.splitlines() if "Warning:" in line]
+
+
+def test_doctor_warns_when_pool_counter_cannot_see_route(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "blind", frozenset())
+    _counter_config(home, "blind")
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert any(
+        "opencode-cli/glm-5.3-flash" in line
+        and "counter blind" in line
+        and "does not see harness opencode" in line
+        and 'spend = "journal"' in line
+        for line in _warnings(result)
+    )
+
+
+def test_doctor_quiet_when_route_sets_journal(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "blind", frozenset())
+    text = (
+        full_config_text(confirm=False)
+        .replace('counter = "opencode_stats"', 'counter = "blind"')
+        .replace('backend = "opencode"', 'backend = "opencode"\nspend = "journal"')
+    )
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("does not see" in line for line in _warnings(result))
+
+
+def test_doctor_quiet_when_counter_sees_route(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "sees-opencode", frozenset({"opencode"}))
+    _counter_config(home, "sees-opencode")
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("does not see" in line for line in _warnings(result))
+
+
+def test_doctor_warns_when_pool_has_no_counter(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+) -> None:
+    text = full_config_text(confirm=False).replace('counter = "opencode_stats"\n', "")
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert any(
+        "route opencode-cli/glm-5.3-flash:" in line
+        and "pool opencode-go has no counter" in line
+        and 'spend = "journal"' in line
+        for line in _warnings(result)
+    )
+
+
+def test_doctor_quiet_when_explicit_counter_sees_harness(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "sees-opencode", frozenset({"opencode"}))
+    text = _edit_route(
+        full_config_text(confirm=False).replace(
+            'counter = "opencode_stats"', 'counter = "sees-opencode"'
+        ),
+        "opencode-cli/glm-5.3-flash",
+        'backend = "opencode"',
+        'backend = "opencode"\nspend = "counter"',
+    )
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("does not see" in line for line in _warnings(result))
+
+
+def test_doctor_skips_disabled_routes(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "blind", frozenset())
+    text = _edit_route(
+        _counter_config_text("blind"),
+        "opencode-cli/glm-5.3",
+        "enabled = true",
+        "enabled = false",
+    )
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in _warnings(result) if "does not see" in line]
+    assert len(warnings) == 1
+    assert "route opencode-cli/glm-5.3-flash:" in warnings[0]
+
+
+def test_doctor_rejects_explicit_counter_when_counter_cannot_see(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_counter(monkeypatch, "blind", frozenset())
+    text = _edit_route(
+        _counter_config_text("blind"),
+        "opencode-cli/glm-5.3-flash",
+        'backend = "opencode"',
+        'backend = "opencode"\nspend = "counter"',
+    )
+    _write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "counter blind does not see harness opencode" in result.output
+
+
+def test_doctor_rejects_unknown_harness(runner: CliRunner, home: Path) -> None:
+    text = full_config_text(confirm=False).replace(
+        '[backends.opencode]\nexecutable = ""',
+        '[backends.opencode]\nharness = "nope"\nexecutable = ""',
+    )
+    _write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "unknown harness" in result.output
