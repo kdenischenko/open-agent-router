@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
 ### Added
 
 - `storage.retention_days` and `agent-router purge`: delete terminal jobs older than the limit

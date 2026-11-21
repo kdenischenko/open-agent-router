@@ -1,6 +1,6 @@
 [project]
 name = "open-agent-router"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local gateway that routes coding-agent jobs between AI subscriptions by remaining quota"
 readme = "README.md"
 requires-python = ">=3.12"
