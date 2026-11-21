@@ -45,6 +45,7 @@ def _error_details(event: dict[str, Any]) -> tuple[str, bool]:
 
 class ClineAdapter:
     name = "cline"
+    reports_progress = True
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

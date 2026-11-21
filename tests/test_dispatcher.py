@@ -43,6 +43,7 @@ class Step:
     stdout: str = "ok:готово"  # non-ascii on purpose
     exit_code: int | None = 0
     timed_out: bool = False
+    idle: bool = False
     action: Callable[[Path], None] | None = None
     wait_cancel: bool = False
     raises: Exception | None = None
@@ -60,6 +61,7 @@ class Call:
     cwd: Path
     timeout_s: float
     cancel: threading.Event
+    idle_timeout_s: float | None = None
 
 
 class ScriptRunner:
@@ -82,9 +84,10 @@ class ScriptRunner:
         is_final_line=None,
         exit_grace_s=60,
         on_start=None,
+        idle_timeout_s=None,
     ) -> ProcessResult:
         step = self.steps.popleft() if self.steps else Step()
-        self.calls.append(Call(inv, cwd, timeout_s, cancel))
+        self.calls.append(Call(inv, cwd, timeout_s, cancel, idle_timeout_s))
         log_dir.mkdir(parents=True, exist_ok=True)
         if cancel.is_set():
             (log_dir / "stdout.log").write_text("", encoding="utf-8")
@@ -119,6 +122,7 @@ class ScriptRunner:
             stderr_path=log_dir / "stderr.log",
             duration_s=1.5,
             timed_out=step.timed_out,
+            idle=step.idle,
             cancelled=cancel.is_set(),
             survived=step.survived,
         )
@@ -131,6 +135,8 @@ class ScriptAdapter:
     """
 
     name = "fake"
+
+    reports_progress = True
 
     def build(self, text, mode, model, exe, prompt_file) -> Invocation:
         return Invocation((str(exe.path), mode, model))
@@ -908,7 +914,7 @@ def test_queued_running_completed(make_rig) -> None:
     assert prompt.startswith("[agent-router]") and prompt.endswith(secret)
     assert "read-only" in prompt
     call = rig.runner.calls[0]
-    assert call.timeout_s == rig.config.tasks.default_timeout_s
+    assert call.timeout_s == 14400
     assert call.inv.argv == (str(Path("/opt/harness/fake")), "read", "model-x")
 
 
@@ -917,6 +923,40 @@ def test_timeout_comes_from_request(make_rig) -> None:
     rig.submit(rig.plain(), timeout_s=90)
     rig.tick()
     assert rig.runner.calls[0].timeout_s == 90
+
+
+def test_runner_gets_idle_limit(make_rig) -> None:
+    rig = make_rig()
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].idle_timeout_s == 600
+
+
+def test_claude_route_has_no_idle_limit(make_rig) -> None:
+    from agent_router.adapters.claude import ClaudeAdapter
+
+    rig = make_rig(routes=(route("claude/main", "pool-a", 5, backend="claude"),))
+    rig.dispatcher.harnesses["claude"] = HarnessSpec(
+        "claude", ClaudeAdapter(), ("claude",), "journal"
+    )
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].idle_timeout_s is None
+
+
+def test_idle_zero_disables(make_rig) -> None:
+    rig = make_rig(idle_timeout_s=0)
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].idle_timeout_s is None
+
+
+def test_explicit_timeout_keeps_idle(make_rig) -> None:
+    rig = make_rig()
+    rig.submit(rig.plain(), timeout_s=90)
+    rig.tick()
+    call = rig.runner.calls[0]
+    assert call.timeout_s == 90 and call.idle_timeout_s == 600
 
 
 # --- event log: prompt hash and decision snapshot ---------------------------------------
@@ -1314,7 +1354,7 @@ def test_emergency_outcomes(make_rig, step: Step, code: str) -> None:
         "read": ("read", None, "failed"),
     }
     for name, (mode, action, status) in cases.items():
-        rig.runner.add(Step(step.stdout, step.exit_code, step.timed_out, action))
+        rig.runner.add(Step(step.stdout, step.exit_code, step.timed_out, action=action))
         job = rig.submit(rig.repo(name), mode, route="a/main")
         rig.tick(2)
         done = rig.job(job)
@@ -1338,6 +1378,23 @@ def test_timeout_keeps_tokens(make_rig) -> None:
     rig.tick(2)
     done = rig.job(job)
     assert (done.status, done.error_code) == ("failed", "timeout")
+    assert done.error_message == "executor exceeded the allotted time"
+    (attempt,) = rig.attempts(job)
+    assert attempt.outcome == "timeout"
+    assert (attempt.tokens_in, attempt.tokens_out) == (10, 5)
+    assert attempt.log_tail == "ok:готово"  # non-ascii on purpose
+
+
+def test_idle_stop_reports_no_progress(make_rig) -> None:
+    # the harness printed its usage line and then went silent: idle stop, usage is still recorded
+    rig = make_rig()
+    step = Step("ok:готово", exit_code=None, timed_out=True, idle=True)  # non-ascii on purpose
+    rig.runner.add(step)
+    job = rig.submit(rig.plain())
+    rig.tick(2)
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "timeout")
+    assert done.error_message == "executor showed no progress for 600 s"
     (attempt,) = rig.attempts(job)
     assert attempt.outcome == "timeout"
     assert (attempt.tokens_in, attempt.tokens_out) == (10, 5)

@@ -47,6 +47,8 @@ class FakeAdapter:
 
     name = "fake"
 
+    reports_progress = True
+
     def build(self, text, mode, model, exe, prompt_file) -> Invocation:
         line = next((ln for ln in text.splitlines() if ln.startswith(PREFIX)), PREFIX + " exit 0")
         scenario = line[len(PREFIX) :].split()
@@ -1280,6 +1282,7 @@ def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
             is_final_line=None,
             exit_grace_s=60,
             on_start=None,
+            idle_timeout_s=None,
         ) -> ProcessResult:
             log_dir.mkdir(parents=True, exist_ok=True)
             stdout = log_dir / "stdout.log"

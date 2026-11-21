@@ -88,6 +88,12 @@ right away. Without a decision the approval expires after `tasks.approval_timeou
 (default 600 s): the job ends as `declined` with error `approval_expired` and does not move
 to another route.
 
+A job is stopped when it exceeds `tasks.default_timeout_s` (default 14400 s, a hard cap), or
+when the harness prints nothing to stdout or stderr for `tasks.idle_timeout_s` (default 600 s;
+`0` disables the check). `--timeout` on `run`, or `route.timeout_s`, replaces the hard cap, but
+the idle limit still applies. Claude Code prints its JSON only at the end, so its jobs are
+limited by the hard cap alone.
+
 The full guide — harness sign-in, limit calibration, Windows autostart, the web dashboard
 and the delegation skills for orchestrators — is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
 

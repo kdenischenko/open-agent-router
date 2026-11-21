@@ -158,7 +158,8 @@ class TaskSettings:
     max_parallel: int = 3
     max_queued: int = 200
     max_attempts: int = 3
-    default_timeout_s: int = 1800
+    default_timeout_s: int = 14400
+    idle_timeout_s: int = 600
     approval_timeout_s: int = 600
     limit_backoff_s: int = 1800
     limit_backoff_max_s: int = 18000
@@ -884,6 +885,7 @@ _TASKS_KEYS = frozenset(
         "max_queued",
         "max_attempts",
         "default_timeout_s",
+        "idle_timeout_s",
         "approval_timeout_s",
         "limit_backoff_s",
         "limit_backoff_max_s",
@@ -906,6 +908,7 @@ def _parse_tasks(value: Any, errors: list[str]) -> TaskSettings:
         "max_queued",
         "max_attempts",
         "default_timeout_s",
+        "idle_timeout_s",
         "approval_timeout_s",
         "limit_backoff_s",
         "limit_backoff_max_s",
@@ -914,8 +917,10 @@ def _parse_tasks(value: Any, errors: list[str]) -> TaskSettings:
     ):
         default = getattr(defaults, name)
         values[name] = _integer(raw.get(name, default), f"tasks.{name}", errors, default)
-        if values[name] < 1:
-            errors.append(f"tasks.{name}: must be at least 1")
+        # 0 disables the idle check; every other task limit must be at least 1
+        minimum = 0 if name == "idle_timeout_s" else 1
+        if values[name] < minimum:
+            errors.append(f"tasks.{name}: must be at least {minimum}")
     return TaskSettings(**values)
 
 

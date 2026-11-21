@@ -27,6 +27,7 @@ class KimiAdapter:
     """Read mode is enforced by the prompt preamble: `--plan` is incompatible with `-p`."""
 
     name = "kimi"
+    reports_progress = True
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

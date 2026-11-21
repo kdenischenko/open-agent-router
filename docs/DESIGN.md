@@ -190,10 +190,14 @@ reads it). On Windows the child gets its own process group and no console window
 `taskkill /PID <pid> /T /F` (on POSIX, `SIGTERM` then `SIGKILL` to the process group). Output is
 streamed to per-attempt log files, capped at 20 MiB per stream with a truncation marker.
 Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeout_s`
-(1800 s); after an adapter-recognized final line a lingering process is killed within
-`tasks.exit_grace_s` (60 s). Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt
-from argv to a prompt file with a "read the task from the file" instruction; shim arguments are
-validated against a safe character set.
+(14400 s, a hard cap). A harness that produces no stdout or stderr for `tasks.idle_timeout_s`
+(600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`
+replaces the hard cap, but the idle limit still applies. Each adapter declares
+`reports_progress`: Claude Code prints its JSON only at the end (`False`), so its jobs get only
+the hard cap; kimi, opencode and cline stream their output (`True`). After an adapter-recognized
+final line a lingering process is killed within `tasks.exit_grace_s` (60 s). Long prompts or shim
+(`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with a "read the task
+from the file" instruction; shim arguments are validated against a safe character set.
 
 Adapters (`adapters/`) build argv/stdin and parse output:
 

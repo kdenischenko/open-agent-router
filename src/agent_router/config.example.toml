@@ -9,7 +9,10 @@ denied_roots = []
 max_parallel = 3
 max_queued = 200
 max_attempts = 3
-default_timeout_s = 1800
+# hard cap for a job: a per-job timeout_s or route.timeout_s replaces it
+default_timeout_s = 14400
+# stop the job when the harness prints nothing for this long; 0 disables the check
+idle_timeout_s = 600
 approval_timeout_s = 600
 limit_backoff_s = 1800
 limit_backoff_max_s = 18000

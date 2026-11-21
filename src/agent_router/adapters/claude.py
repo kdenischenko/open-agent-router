@@ -34,6 +34,8 @@ def _result_object(stdout: str) -> tuple[dict[str, Any] | None, list[str]]:
 
 class ClaudeAdapter:
     name = "claude"
+    # the whole JSON answer arrives at the end: there is no streaming output to watch
+    reports_progress = False
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

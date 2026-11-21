@@ -186,6 +186,14 @@ def test_build_without_executable_fails(name: str) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [("claude", False), ("kimi", True), ("opencode", True), ("cline", True)],
+)
+def test_adapters_declare_progress_reporting(name: str, expected: bool) -> None:
+    assert load_harness(name).adapter.reports_progress is expected
+
+
 # --- parsing: kimi --------------------------------------------------------------------
 
 

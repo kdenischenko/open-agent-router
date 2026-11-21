@@ -1290,7 +1290,9 @@ def run(
         None, "--route", help="Use this route instead of letting the gateway choose"
     ),
     timeout: int | None = typer.Option(
-        None, "--timeout", help="Job time limit in seconds; the executor is stopped after it"
+        None,
+        "--timeout",
+        help="Job hard time limit in seconds; the idle limit still applies",
     ),
     no_wait: bool = typer.Option(
         False, "--no-wait", help="Print the job id and return without waiting"

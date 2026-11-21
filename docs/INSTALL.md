@@ -207,6 +207,18 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    `agent-router classifier report`. If the classifier does not respond within `wait_s` (by
    default, the `primary` timeout plus 0.5 seconds), the job starts with `standard`.
 
+8. **Job timeouts.** A job is stopped at `tasks.default_timeout_s` (default 14400 s, a hard cap),
+   or when its harness prints nothing to stdout or stderr for `tasks.idle_timeout_s`
+   (default 600 s; `0` disables the check). `--timeout` on `run`, or a route's `timeout_s`,
+   replaces the hard cap, but the idle limit still applies. Claude Code prints its JSON only at
+   the end, so its jobs get only the hard cap.
+
+   ```toml
+   [tasks]
+   default_timeout_s = 14400
+   idle_timeout_s = 600
+   ```
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 

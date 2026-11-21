@@ -65,8 +65,8 @@ _CALLER = Field(
     "claude-code; the gateway then keeps the job off the subscription you are running on"
 )
 _JOB_TIMEOUT = Field(
-    description="Job time limit in seconds; the route or tasks.default_timeout_s applies "
-    "when it is omitted"
+    description="Job hard time limit in seconds; the route timeout_s or tasks.default_timeout_s "
+    "applies when it is omitted; the job also stops after tasks.idle_timeout_s without output"
 )
 _WAIT_TIMEOUT = Field(description="Seconds to wait, capped at 100")
 

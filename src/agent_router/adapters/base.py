@@ -47,6 +47,7 @@ class RunOutcome:
 
 class Adapter(Protocol):
     name: str
+    reports_progress: bool  # whether stdout/stderr show progress while the job runs
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

@@ -20,6 +20,7 @@ class OpenCodeAdapter:
     """Read mode uses the plan agent (creates no files), write mode passes `--auto`."""
 
     name = "opencode"
+    reports_progress = True
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

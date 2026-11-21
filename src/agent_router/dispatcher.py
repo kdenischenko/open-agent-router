@@ -701,6 +701,15 @@ class Dispatcher:
             return float(route.timeout_s)
         return float(self.config.tasks.default_timeout_s)
 
+    def _idle_timeout_s(self, route: Route) -> float | None:
+        """The idle limit for a route: None when disabled or the adapter streams no progress."""
+        if self.config.tasks.idle_timeout_s == 0:
+            return None
+        adapter = self.harnesses[route.backend or ""].adapter
+        if not getattr(adapter, "reports_progress", True):
+            return None
+        return float(self.config.tasks.idle_timeout_s)
+
     def _start(
         self, job: Job, choice: Choice, n: int, repo: str | None, decision: Decision
     ) -> None:
@@ -911,6 +920,7 @@ class Dispatcher:
             is_final_line=adapter.is_final_line,
             exit_grace_s=self.config.tasks.exit_grace_s,
             on_start=on_start,
+            idle_timeout_s=self._idle_timeout_s(route),
         )
         stdout = _read(done.stdout_path)
         stderr = _read(done.stderr_path)
@@ -919,11 +929,11 @@ class Dispatcher:
         if done.cancelled:
             result = AttemptResult("cancelled", survived=done.survived)
         elif done.timed_out:
-            result = AttemptResult(
-                "timeout",
-                error="executor exceeded the allotted time",
-                survived=done.survived,
-            )
+            if done.idle:
+                error = f"executor showed no progress for {int(self.config.tasks.idle_timeout_s)} s"
+            else:
+                error = "executor exceeded the allotted time"
+            result = AttemptResult("timeout", error=error, survived=done.survived)
             # the output up to the timeout may end with the usage line: keep tokens and cost
             try:
                 parsed = adapter.parse(stdout, stderr, done.exit_code)
