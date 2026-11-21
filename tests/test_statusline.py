@@ -184,13 +184,14 @@ def test_main_uses_configured_port(
     capsys.readouterr()
 
 
+@pytest.mark.parametrize("scheme", ["http", "https"])
 def test_main_uses_gateway_url_from_environment(
-    statusline, home: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    statusline, home: Path, monkeypatch: pytest.MonkeyPatch, capsys, scheme
 ) -> None:
     write_token(home)
     (home / "config.toml").write_text("[server]\nport = 8899\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
-    monkeypatch.setenv("AGENT_ROUTER_URL", "http://127.0.0.1:9911/")
+    monkeypatch.setenv("AGENT_ROUTER_URL", f"{scheme}://127.0.0.1:9911/")
     set_stdin(monkeypatch, FIXTURE.read_bytes())
     requests = []
 
@@ -201,8 +202,33 @@ def test_main_uses_gateway_url_from_environment(
     monkeypatch.setattr(statusline, "_urlopen", fake_urlopen)
 
     assert statusline.main([]) == 0
-    assert requests[0].full_url == "http://127.0.0.1:9911/api/v1/signals/claude-statusline"
+    assert requests[0].full_url == f"{scheme}://127.0.0.1:9911/api/v1/signals/claude-statusline"
     capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["file:///gateway", "file://[", "http://[", "ftp://", "data:application/json,{}", "gateway"],
+)
+def test_main_ignores_unsupported_gateway_url_and_keeps_output(
+    statusline, home: Path, monkeypatch: pytest.MonkeyPatch, capsys, url
+) -> None:
+    write_token(home)
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setenv("AGENT_ROUTER_URL", url)
+    set_stdin(monkeypatch, FIXTURE.read_bytes())
+    calls = []
+    monkeypatch.setattr(
+        statusline,
+        "_urlopen",
+        lambda request, timeout: calls.append(request) or DummyResponse(),
+    )
+
+    assert statusline.main([]) == 0
+    assert calls == []
+    captured = capsys.readouterr()
+    assert captured.out == "5h 42% · 7d 61.5%\n"
+    assert captured.err == ""
 
 
 @pytest.mark.parametrize("use_option", [False, True], ids=["env", "option"])

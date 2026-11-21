@@ -70,6 +70,26 @@ def test_client_command_without_tokens_points_to_init(home: Path, config) -> Non
     assert "failed to read tokens; run agent-router init" in result.output
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["file:///gateway", "file://[", "http://[", "ftp://", "data:application/json,{}", "gateway"],
+)
+def test_client_command_reports_unsupported_url_scheme(config, tokens, monkeypatch, url) -> None:
+    monkeypatch.setenv("AGENT_ROUTER_URL", url)
+
+    result = CliRunner().invoke(cli.app, ["status"])
+
+    _clean_failure(result)
+    assert "config error: AGENT_ROUTER_URL must use http or https" in result.output
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8787", "https://gateway.example"])
+def test_gateway_accepts_http_and_https(config, tokens, monkeypatch, url) -> None:
+    monkeypatch.setenv("AGENT_ROUTER_URL", url)
+
+    assert cli._gateway().base_url == url
+
+
 def test_serve_reports_damaged_store(home: Path, config, tokens, started: list[bool]) -> None:
     (home / "agent-router.sqlite").write_bytes(b"not a database" * 100)
 

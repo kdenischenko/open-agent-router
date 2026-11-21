@@ -207,7 +207,9 @@ Common failures and their fixes are in [docs/TROUBLESHOOTING.md](https://github.
 - `AGENT_ROUTER_HOME` — directory with `config.toml`, tokens and stores; defaults to the
   per-user `agent-router` configuration directory.
 - `AGENT_ROUTER_URL` — gateway address for client commands and the Claude Code status line;
-  defaults to `http://127.0.0.1:<server.port>`.
+  defaults to `http://127.0.0.1:<server.port>` and must use `http` or `https`. Client commands
+  report unsupported schemes or URL parsing errors as configuration errors (exit code `1`);
+  the status line skips forwarding for these URLs and continues to render the limits.
 
 ## Adding a subscription or harness
 
