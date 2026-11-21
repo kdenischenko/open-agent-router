@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tomllib
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -51,13 +52,15 @@ def render(rate_limits: Any) -> str:
 
 
 def post_signal(url: str, token: str, rate_limits: Any, timeout: float = 1.0) -> None:
-    request = urllib.request.Request(
-        url.rstrip("/") + SIGNAL_PATH,
-        data=json.dumps({"rate_limits": rate_limits}, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        method="POST",
-    )
     try:
+        if urllib.parse.urlparse(url).scheme not in {"http", "https"}:
+            return
+        request = urllib.request.Request(
+            url.rstrip("/") + SIGNAL_PATH,
+            data=json.dumps({"rate_limits": rate_limits}, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
         _urlopen(request, timeout=timeout).close()
     except Exception:
         return

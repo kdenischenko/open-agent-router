@@ -122,6 +122,13 @@ def _gateway(admin: bool = False, *, err: bool = False) -> GatewayClient:
         typer.echo("failed to read tokens; run agent-router init", err=err)
         raise typer.Exit(1) from exc
     base_url = os.environ.get("AGENT_ROUTER_URL") or f"http://127.0.0.1:{config.port}"
+    try:
+        scheme = urlparse(base_url).scheme
+    except ValueError:
+        scheme = ""
+    if scheme not in {"http", "https"}:
+        typer.echo("config error: AGENT_ROUTER_URL must use http or https", err=err)
+        raise typer.Exit(1)
     return make_client(base_url, tokens.admin if admin else tokens.client)
 
 
