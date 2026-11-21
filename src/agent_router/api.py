@@ -99,6 +99,81 @@ class HostCheck:
         await self.app(scope, receive, send)
 
 
+# a JSON string spends at most twelve bytes on one character: a surrogate pair escaped as two \uXXXX
+JSON_BYTES_PER_CHAR = 12
+API_BODY_OVERHEAD_BYTES = 64 * 1024  # job fields other than the prompt, and JSON syntax
+FORM_BODY_MAX_BYTES = 64 * 1024  # dashboard forms carry a token and a few short fields
+
+
+def api_body_limit(config: Config) -> int:
+    """Largest accepted body under /api/: room for the longest prompt the gateway accepts."""
+    return config.tasks.max_prompt_chars * JSON_BYTES_PER_CHAR + API_BODY_OVERHEAD_BYTES
+
+
+class BodyTooLarge(Exception):
+    """Raised from receive once a streamed body passes the limit."""
+
+
+class BodyLimit:
+    """Rejects a request body over the limit with 413 before the route parses it.
+
+    The token check runs only after FastAPI has read and parsed the body, so without this
+    any local process or a cross-origin page could make the gateway hold gigabytes in memory.
+    A declared Content-Length is checked up front; a body without it is counted as it streams,
+    and whatever response the app produced after the limit was passed is replaced by the 413.
+    """
+
+    def __init__(self, app: Any, *, api_limit: int) -> None:
+        self.app = app
+        self.api_limit = api_limit
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        limit = self.api_limit if scope["path"].startswith("/api/") else FORM_BODY_MAX_BYTES
+        declared = next(
+            (value for name, value in scope["headers"] if name == b"content-length"), None
+        )
+        if declared is not None and declared.strip().isdigit() and int(declared) > limit:
+            await self.reject(scope, receive, send, limit)
+            return
+        received = 0
+        exceeded = False
+        started = False
+
+        async def counting_receive() -> Any:
+            nonlocal received, exceeded
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    exceeded = True
+                    raise BodyTooLarge
+            return message
+
+        async def guarded_send(message: Any) -> None:
+            nonlocal started
+            if exceeded and not started:
+                return
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, guarded_send)
+        except Exception:
+            if not exceeded or started:
+                raise
+        if exceeded and not started:
+            await self.reject(scope, receive, send, limit)
+
+    @staticmethod
+    async def reject(scope: Any, receive: Any, send: Any, limit: int) -> None:
+        response = error_response(413, "body_too_large", f"request body larger than {limit} bytes")
+        await response(scope, receive, send)
+
+
 def require(gateway: Gateway, role: Role) -> Callable[[Request], Role]:
     """FastAPI dependency: role from the Authorization header; admin works wherever client does."""
 
@@ -633,6 +708,7 @@ def create_app(
     app.state.background = threads
     app.state.waiters = gateway.waiters
 
+    app.add_middleware(BodyLimit, api_limit=api_body_limit(config))
     app.add_middleware(HostCheck)
 
     @app.exception_handler(ApiError)
