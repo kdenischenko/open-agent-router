@@ -325,6 +325,7 @@ class Runner(Protocol):
         log_dir: Path,
         cancel: threading.Event,
         is_final_line: Callable[[str], bool] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
@@ -341,6 +342,7 @@ class _Pump(threading.Thread):
         limit: int,
         on_line: Callable[[str], None] | None = None,
         on_activity: Callable[[], None] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
     ) -> None:
         super().__init__(daemon=True, name=f"runner-pump-{path.name}")
         self._stream = stream
@@ -348,17 +350,27 @@ class _Pump(threading.Thread):
         self._limit = limit
         self._on_line = on_line
         self._on_activity = on_activity
+        self._is_progress_line = is_progress_line
         self.truncated = False
 
     def run(self) -> None:
         written = 0
         pending = b""
+        line_activity = self._on_activity is not None and self._is_progress_line is not None
+
+        def handle_line(raw: bytes) -> None:
+            line = raw.decode("utf-8", "replace").rstrip("\r")
+            if self._on_line is not None:
+                self._on_line(line)
+            if line_activity and self._is_progress_line(line):
+                self._on_activity()
+
         with contextlib.suppress(OSError, ValueError), self._path.open("wb", buffering=0) as out:
             while True:
                 chunk = self._stream.read1(65536)  # type: ignore[attr-defined]
                 if not chunk:
                     break
-                if self._on_activity is not None:
+                if self._on_activity is not None and self._is_progress_line is None:
                     self._on_activity()  # a drained pipe is still a live harness
                 if not self.truncated:
                     room = self._limit - written
@@ -369,15 +381,15 @@ class _Pump(threading.Thread):
                     else:
                         out.write(chunk)
                         written += len(chunk)
-                if self._on_line is not None:
+                if self._on_line is not None or line_activity:
                     pending += chunk
                     *lines, pending = pending.split(b"\n")
                     for line in lines:
-                        self._on_line(line.decode("utf-8", "replace").rstrip("\r"))
+                        handle_line(line)
                     if len(pending) > _LINE_BUFFER_MAX:
                         pending = b""
-            if self._on_line is not None and pending:
-                self._on_line(pending.decode("utf-8", "replace").rstrip("\r"))
+            if (self._on_line is not None or line_activity) and pending:
+                handle_line(pending)
         with contextlib.suppress(OSError, ValueError):
             self._stream.close()
 
@@ -404,6 +416,7 @@ class LocalRunner:
         log_dir: Path,
         cancel: threading.Event,
         is_final_line: Callable[[str], bool] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
@@ -486,6 +499,7 @@ class LocalRunner:
                 self.max_stream_bytes,
                 on_line if is_final_line is not None else None,
                 on_activity,
+                is_progress_line,
             )
             err_pump = _Pump(
                 proc.stderr, stderr_path, self.max_stream_bytes, on_activity=on_activity

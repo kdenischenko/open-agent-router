@@ -214,10 +214,13 @@ Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeo
 (600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`
 replaces the hard cap, but the idle limit still applies. Each adapter declares
 `reports_progress`: Claude Code prints its JSON only at the end (`False`), so its jobs get only
-the hard cap; kimi, opencode and cline stream their output (`True`). After an adapter-recognized
-final line a lingering process is killed within `tasks.exit_grace_s` (60 s). Long prompts or shim
-(`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with a "read the task
-from the file" instruction; shim arguments are validated against a safe character set.
+the hard cap; kimi, opencode and cline stream their output (`True`). An adapter may also declare
+which stdout lines count as progress; without that declaration, all output counts. OpenCode JSON
+events with type `retry` do not count as progress, while its other output does. After an
+adapter-recognized final line a lingering process is killed within `tasks.exit_grace_s` (60 s).
+Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with
+a "read the task from the file" instruction; shim arguments are validated against a safe
+character set.
 OpenCode runs with `--standalone` so its session uses a private server in the child process tree;
 without it, stopping the `opencode run` client would leave the session running in the background
 service.
