@@ -61,6 +61,31 @@ class RecordingSink:
         self.closed = True
 
 
+class FlakyFile:
+    """Real file wrapper that fails flush or close on demand."""
+
+    def __init__(self, file: Any) -> None:
+        self._file = file
+        self.fail_flush = False
+        self.fail_close = False
+
+    def write(self, line: str) -> int:
+        return self._file.write(line)
+
+    def flush(self) -> None:
+        if self.fail_flush:
+            raise OSError("flush denied")
+        self._file.flush()
+
+    def close(self) -> None:
+        self._file.close()
+        if self.fail_close:
+            raise OSError("close denied")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._file, name)
+
+
 def test_jsonl_format_and_event_order(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"
     sink = JsonlSink(path)
@@ -170,6 +195,78 @@ def test_jsonl_failed_rotation_and_reopen_raises(
             sink.handle(event(3))
     finally:
         sink.close()
+
+
+def test_jsonl_rotation_flush_failure_reopens_and_keeps_writing(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    rotated = tmp_path / "events.jsonl.1"
+    sink = JsonlSink(path, max_bytes=120)
+    real = sink._file
+    assert real is not None
+    flaky = FlakyFile(real)
+    sink._file = flaky
+    try:
+        sink.handle(event(1))
+        flaky.fail_flush = True
+        sink.handle(event(2))
+
+        assert sink._file is not flaky
+        assert sink._file is not None
+        assert not sink._file.closed
+        sink.handle(event(3))
+    finally:
+        sink.close()
+
+    assert [row["seq"] for row in read_jsonl(rotated)] == [1, 2]
+    assert [row["seq"] for row in read_jsonl(path)] == [3]
+
+
+def test_jsonl_rotation_close_failure_reopens_and_keeps_writing(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    rotated = tmp_path / "events.jsonl.1"
+    sink = JsonlSink(path, max_bytes=120)
+    real = sink._file
+    assert real is not None
+    flaky = FlakyFile(real)
+    sink._file = flaky
+    try:
+        sink.handle(event(1))
+        flaky.fail_close = True
+        sink.handle(event(2))
+
+        assert sink._file is not flaky
+        assert sink._file is not None
+        assert not sink._file.closed
+        sink.handle(event(3))
+    finally:
+        sink.close()
+
+    assert [row["seq"] for row in read_jsonl(rotated)] == [1, 2]
+    assert [row["seq"] for row in read_jsonl(path)] == [3]
+
+
+def test_jsonl_rotation_failure_backoffs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "events.jsonl"
+    replace_calls = 0
+    original_replace = Path.replace
+
+    def fail_replace(self: Path, target: Path) -> Path:
+        nonlocal replace_calls
+        if self == path:
+            replace_calls += 1
+            raise PermissionError("rotation denied")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    sink = JsonlSink(path, max_bytes=1000)
+    try:
+        for seq in range(1, 31):
+            sink.handle(event(seq))
+    finally:
+        sink.close()
+
+    assert replace_calls == 2
+    assert len(read_jsonl(path)) == 30
 
 
 def test_relative_jsonl_path_is_resolved_from_home(tmp_path: Path) -> None:

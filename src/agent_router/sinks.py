@@ -29,6 +29,7 @@ class JsonlSink:
         self._lock = threading.Lock()
         self._file: TextIO | None = self.path.open("a", encoding="utf-8", newline="\n")
         self._size = self.path.stat().st_size
+        self._rotate_limit = max_bytes
 
     def handle(self, event: Event) -> None:
         with self._lock:
@@ -42,7 +43,7 @@ class JsonlSink:
             }
             line = json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
             encoded = line.encode("utf-8")
-            if self._size + len(encoded) > self.max_bytes:
+            if self._size + len(encoded) > self._rotate_limit:
                 self._rotate()
             self._file.write(line)
             self._file.flush()
@@ -50,22 +51,32 @@ class JsonlSink:
 
     def _rotate(self) -> None:
         assert self._file is not None
-        self._file.flush()
-        self._file.close()
         try:
+            self._file.flush()
+            self._file.close()
             self.path.replace(Path(f"{self.path}.1"))
             self._file = self.path.open("w", encoding="utf-8", newline="\n")
             self._size = 0
-        except OSError:
-            # rotation failed: keep appending to the old file, over max_bytes until the next attempt
-            self._file = None
-            file = self.path.open("a", encoding="utf-8", newline="\n")
-            try:
-                self._size = self.path.stat().st_size
-            except OSError:
+            self._rotate_limit = self.max_bytes
+        except (OSError, ValueError):
+            # flush, close or replace failed: the old handle may be closed, so reopen
+            # for appending and retry rotation only after max_bytes more data
+            self._reopen_append()
+            self._rotate_limit = self._size + self.max_bytes
+
+    def _reopen_append(self) -> None:
+        file = self._file
+        self._file = None
+        if file is not None:
+            with contextlib.suppress(OSError):
                 file.close()
-                raise
-            self._file = file
+        handle = self.path.open("a", encoding="utf-8", newline="\n")
+        try:
+            self._size = self.path.stat().st_size
+        except OSError:
+            handle.close()
+            raise
+        self._file = handle
 
     def close(self) -> None:
         with self._lock:
