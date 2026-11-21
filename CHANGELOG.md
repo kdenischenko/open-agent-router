@@ -6,8 +6,22 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `storage.retention_days` and `agent-router purge`: delete terminal jobs older than the limit
+  with their prompts, results and attempt logs; spend records are kept, `--dry-run` only
+  reports the count.
+- `doctor` warns about a route whose `counter` spend the pool cannot see — the pool counter does
+  not list the route's harness, or the pool has no counter — and suggests `spend = "journal"`.
+
 ### Changed
 
+- On Windows each attempt runs in its own job object: every process the harness starts stops
+  with the attempt and with the gateway. When the job object cannot be used, the `taskkill`
+  fallback applies.
+- OpenCode jobs run with `opencode run --standalone`, so a stopped job does not keep running in
+  the OpenCode background service.
+- Client commands connect with a short timeout, so an unreachable gateway is reported at once.
 - Job timeouts: `tasks.default_timeout_s` is now a hard cap (default 14400 s), and a job is
   stopped when the harness prints nothing to stdout or stderr for `tasks.idle_timeout_s`
   (default 600 s; `0` disables the check). An explicit job or route `timeout_s` replaces the
@@ -16,6 +30,15 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The gateway rejects a request body over the size limit with `413 body_too_large` before
+  parsing it.
+- `AGENT_ROUTER_URL` with a scheme other than `http` or `https` is a configuration error.
+- A token with line breaks or characters outside latin-1 is reported as an error instead of a
+  traceback.
+- Classifier requests to loopback models no longer go through the environment proxy.
+- A job whose directory is replaced by a link after intake fails with `cwd_changed` instead of
+  running elsewhere.
+- Log rotation recovers from flush, close and replace failures.
 - CSV export: a text cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return now
   gets a leading `'`, so spreadsheet apps do not run it as a formula.
 
