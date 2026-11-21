@@ -967,6 +967,7 @@ class Dispatcher:
             prompt_file.parent / f"attempt-{attempt.n}",
             cancel,
             is_final_line=adapter.is_final_line,
+            is_progress_line=getattr(adapter, "is_progress_line", None),
             exit_grace_s=self.config.tasks.exit_grace_s,
             on_start=on_start,
             idle_timeout_s=self._idle_timeout_s(route),

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from agent_router import runner as runner_module
+from agent_router.adapters.opencode import OpenCodeAdapter
 from agent_router.runner import (
     Invocation,
     JobQueryError,
@@ -112,6 +113,34 @@ def test_silent_harness_is_stopped_as_idle(work: Path, logs: Path) -> None:
 
 def test_ticking_harness_outlives_idle_limit(work: Path, logs: Path) -> None:
     result = run(harness("tick", "8", "0.3"), work, logs, timeout_s=60, idle_timeout_s=1)
+    assert result.exit_code == 0
+    assert not result.timed_out and not result.idle
+    assert read(result.stdout_path).splitlines()[-1] == "ok:done"
+
+
+def test_opencode_retries_do_not_reset_idle_limit(work: Path, logs: Path) -> None:
+    result = run(
+        harness("retry", "20", "0.3"),
+        work,
+        logs,
+        timeout_s=3,
+        idle_timeout_s=1,
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
+    assert result.timed_out and result.idle and not result.cancelled
+    lines = read(result.stdout_path).splitlines()
+    assert lines and all(json.loads(line)["type"] == "retry" for line in lines)
+
+
+def test_opencode_progress_lines_reset_idle_limit(work: Path, logs: Path) -> None:
+    result = run(
+        harness("tick", "8", "0.3"),
+        work,
+        logs,
+        timeout_s=60,
+        idle_timeout_s=1,
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
     assert result.exit_code == 0
     assert not result.timed_out and not result.idle
     assert read(result.stdout_path).splitlines()[-1] == "ok:done"

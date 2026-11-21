@@ -248,6 +248,25 @@ def test_kimi_final_line() -> None:
 # --- parsing: opencode ----------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ('{"type":"retry","error":"ECONNRESET"}', False),
+        ('  {"type":"retry"}  ', False),
+        ('{"type":"step_start"}', True),
+        ('{"type":"step_finish"}', True),
+        ('{"type":"tool_use"}', True),
+        ('{"type":"text","part":{"text":"retry"}}', True),
+        ('{"type":"unknown"}', True),
+        ('{"type":"retrying"}', True),
+        ("plain output", True),
+        ("not json: {", True),
+    ],
+)
+def test_opencode_is_progress_line(line: str, expected: bool) -> None:
+    assert opencode.is_progress_line(line) is expected
+
+
 def test_opencode_ok() -> None:
     outcome = opencode.parse(sample("opencode_ok.jsonl"), "", 0)
     assert outcome == RunOutcome(
