@@ -290,8 +290,9 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `cli.py` | `agent-router` command line (init, serve, run, calibrate, export, ...) |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
-| `config.py` | TOML parsing and validation: `load_config`, config template, `ConfigError` diagnostics |
-| `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config` |
+| `config.py` | TOML parsing and validation: `load_config`, config template, re-exports of the config model |
+| `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config`, `ConfigError` |
+| `config_values.py` | Generic TOML value checks (keys, tables, scalars) used by the config parsers |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
 | `events.py` | In-process event bus with per-subscriber threads |
 | `export.py` | Redacted JSONL/CSV export of jobs, spend, observations |

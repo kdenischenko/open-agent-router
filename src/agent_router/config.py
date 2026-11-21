@@ -1,8 +1,7 @@
-"""TOML config: immutable model, template, and validation."""
+"""TOML config parsing, validation, template, and loading."""
 
 from __future__ import annotations
 
-import math
 import os
 import re
 import tomllib
@@ -17,57 +16,87 @@ import platformdirs
 
 from agent_router.clock import to_utc
 from agent_router.config_model import (
-    TIERS,
-    BackendSection,
-    ClassifierModel,
-    ClassifierSettings,
-    Config,
-    ConfigError,
-    Mode,
-    ModelSettings,
-    Pool,
-    Route,
-    RouteKind,
-    SinkSettings,
-    SpendSource,
-    StatuslineSettings,
-    StorageSettings,
-    TaskSettings,
-    Tier,
-    UpstreamSettings,
-    Window,
-    effort_of,
-    model_key,
+    TIERS as TIERS,
+)
+from agent_router.config_model import (
+    BackendSection as BackendSection,
+)
+from agent_router.config_model import (
+    ClassifierModel as ClassifierModel,
+)
+from agent_router.config_model import (
+    ClassifierSettings as ClassifierSettings,
+)
+from agent_router.config_model import (
+    Config as Config,
+)
+from agent_router.config_model import (
+    ConfigError as ConfigError,
+)
+from agent_router.config_model import (
+    Mode as Mode,
+)
+from agent_router.config_model import (
+    ModelSettings as ModelSettings,
+)
+from agent_router.config_model import (
+    Pool as Pool,
+)
+from agent_router.config_model import (
+    Route as Route,
+)
+from agent_router.config_model import (
+    RouteKind as RouteKind,
+)
+from agent_router.config_model import (
+    SinkSettings as SinkSettings,
+)
+from agent_router.config_model import (
+    SpendSource as SpendSource,
+)
+from agent_router.config_model import (
+    StatuslineSettings as StatuslineSettings,
+)
+from agent_router.config_model import (
+    StorageSettings as StorageSettings,
+)
+from agent_router.config_model import (
+    TaskSettings as TaskSettings,
+)
+from agent_router.config_model import (
+    Tier as Tier,
+)
+from agent_router.config_model import (
+    UpstreamSettings as UpstreamSettings,
+)
+from agent_router.config_model import (
+    Window as Window,
+)
+from agent_router.config_model import (
+    effort_of as effort_of,
+)
+from agent_router.config_model import (
+    model_key as model_key,
+)
+from agent_router.config_values import (
+    _boolean,
+    _check_cmd_text,
+    _check_keys,
+    _choice,
+    _integer,
+    _number,
+    _optional_text,
+    _paths,
+    _required_text,
+    _strings,
+    _table,
+    _tables,
+    _text,
 )
 from agent_router.periods import Duration, parse_duration
 from agent_router.prices import PriceTable, load_prices
 
-__all__ = [
-    "BackendSection",
-    "ClassifierModel",
-    "ClassifierSettings",
-    "Config",
-    "ConfigError",
-    "Mode",
-    "ModelSettings",
-    "Pool",
-    "Route",
-    "RouteKind",
-    "SinkSettings",
-    "SpendSource",
-    "StatuslineSettings",
-    "StorageSettings",
-    "TaskSettings",
-    "Tier",
-    "TIERS",
-    "UpstreamSettings",
-    "Window",
-    "effort_of",
-    "model_key",
-]
-
 _STORAGE_BACKEND = re.compile(r"[a-z0-9_-]+")
-_CMD_UNSAFE = frozenset('&|^%"\r\n')
 _DENIED_HEADERS = frozenset(
     {
         "authorization",
@@ -83,97 +112,6 @@ _DENIED_HEADERS = frozenset(
         "upgrade",
     }
 )
-
-
-def _check_keys(
-    raw: dict[str, Any], allowed: frozenset[str], label: str, errors: list[str]
-) -> None:
-    for key in raw:
-        if key not in allowed:
-            errors.append(f"{label}.{key}: unknown key")
-
-
-def _table(value: Any, label: str, errors: list[str]) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        errors.append(f"{label}: expected a table")
-        return {}
-    return value
-
-
-def _tables(value: Any, label: str, errors: list[str]) -> list[dict[str, Any]]:
-    if value is None:
-        return []
-    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
-        errors.append(f"{label}: expected a list of tables")
-        return []
-    return value
-
-
-def _text(value: Any, label: str, errors: list[str], default: str = "") -> str:
-    if isinstance(value, str) and value:
-        return value
-    errors.append(f"{label}: a non-empty string is required")
-    return default
-
-
-def _optional_text(value: Any, label: str, errors: list[str]) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    errors.append(f"{label}: expected a string")
-    return None
-
-
-def _choice(
-    value: Any, choices: tuple[str, ...], label: str, errors: list[str], default: str
-) -> str:
-    if value in choices:
-        return value
-    errors.append(f"{label}: invalid value: {value!r}; allowed: {', '.join(choices)}")
-    return default
-
-
-def _number(value: Any, label: str, errors: list[str], default: float) -> float:
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        if math.isfinite(value):
-            return float(value)
-        errors.append(f"{label}: expected a finite number")  # TOML allows nan and inf
-        return default
-    errors.append(f"{label}: expected a number")
-    return default
-
-
-def _integer(value: Any, label: str, errors: list[str], default: int) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    errors.append(f"{label}: expected an integer")
-    return default
-
-
-def _boolean(value: Any, label: str, errors: list[str], default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    errors.append(f"{label}: expected true or false")
-    return default
-
-
-def _strings(value: Any, label: str, errors: list[str]) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        errors.append(f"{label}: expected a list of strings")
-        return []
-    return value
-
-
-def _paths(value: Any, label: str, errors: list[str]) -> tuple[Path, ...]:
-    return tuple(Path(item).expanduser() for item in _strings(value, label, errors))
-
-
-def _check_cmd_text(value: str | None, label: str, errors: list[str]) -> None:
-    if value is not None and any(character in value for character in _CMD_UNSAFE):
-        errors.append(f"{label}: characters unsafe for .cmd are not allowed")
 
 
 _WINDOW_KEYS = frozenset({"id", "duration", "kind", "role", "anchor", "limit_usd", "block_at"})
@@ -534,13 +472,6 @@ def _parse_models(value: Any, pool_ids: set[str], errors: list[str]) -> Mapping[
             seen.add(pool)
         models[name] = ModelSettings(prefer=tuple(prefer))
     return models
-
-
-def _required_text(value: Any, label: str, errors: list[str]) -> str:
-    if value is None:
-        errors.append(f"{label}: is required")
-        return ""
-    return _text(value, label, errors)
 
 
 _UPSTREAM_KEYS = frozenset(
