@@ -293,7 +293,8 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `cli.py` | `agent-router` command line (init, serve, run, calibrate, export, ...) |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
-| `config.py` | TOML schema, validation, defaults, levers, tiers |
+| `config.py` | TOML parsing and validation: `load_config`, config template, `ConfigError` diagnostics |
+| `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config` |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
 | `events.py` | In-process event bus with per-subscriber threads |
 | `export.py` | Redacted JSONL/CSV export of jobs, spend, observations |
