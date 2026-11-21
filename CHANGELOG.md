@@ -14,6 +14,11 @@ All notable changes are documented here. The format follows
   hard cap, but the idle limit still applies. Claude Code prints its JSON only at the end, so
   its jobs get only the hard cap.
 
+### Fixed
+
+- CSV export: a text cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return now
+  gets a leading `'`, so spreadsheet apps do not run it as a formula.
+
 ## [0.1.0] - 2026-11-21
 
 Alpha for Windows.

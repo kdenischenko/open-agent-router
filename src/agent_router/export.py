@@ -93,6 +93,8 @@ SPEND_COLUMNS = (
 OBSERVATION_COLUMNS = ("pool", "window", "fraction", "observed_at", "resets_at", "source")
 COUNTER_COLUMNS = ("pool", "value_usd", "sampled_at", "scale_hash")
 BLOCK_COLUMNS = ("pool", "until", "reason", "job_id")
+# leading characters that make spreadsheet apps read a CSV cell as a formula
+_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
 
 
 # Lowest schema version that has everything the export reads
@@ -413,11 +415,19 @@ def _job_csv_rows(jobs: list[dict[str, Any]], primary: str | None = None) -> lis
     return rows
 
 
+def _neutralise_formula(value: Any) -> Any:
+    """Prefix text a spreadsheet would run as a formula with a quote; numbers stay numbers."""
+    if isinstance(value, str) and value.startswith(_FORMULA_LEADS):
+        return "'" + value
+    return value
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]], columns: tuple[str, ...]) -> None:
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=columns)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow({key: _neutralise_formula(value) for key, value in row.items()})
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
