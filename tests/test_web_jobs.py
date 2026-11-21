@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import replace
 from datetime import UTC, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +16,7 @@ from agent_router.events import EventBus
 from agent_router.jobs import Attempt, Job, JobRequest
 from agent_router.policy import PoolBlock
 from agent_router.service import build_dispatcher
-from helpers import BASE_URL
+from helpers import BASE_URL, full_config_text, write_config
 
 
 class WebRig:
@@ -608,7 +610,13 @@ def test_api_rate_function_matches_endpoint(rig) -> None:
     assert set(direct) == set(via_http)
 
 
-def test_advice_shows_route_error_streak(rig) -> None:
+def test_advice_shows_route_error_streak(home, store, jobstore, clock, tokens) -> None:
+    # an existing executable keeps the route available whatever is installed on the machine
+    kimi = f'[backends.kimi]\nexecutable = "{Path(sys.executable).as_posix()}"'
+    config = write_config(
+        home, full_config_text().replace('[backends.kimi]\nexecutable = ""', kimi)
+    )
+    rig = WebRig(home, config, store, jobstore, clock, tokens)
     for n in (1, 2):
         job = rig.add_job("failed")
         rig.jobs.add_attempt(
