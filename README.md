@@ -5,6 +5,10 @@
 
 # open-agent-router
 
+**Hand coding-agent jobs to the AI subscriptions you already pay for — Claude Code, Kimi Code,
+OpenCode, Cline — and let a local gateway pick the one with the most limit left.**
+
+[![PyPI](https://img.shields.io/pypi/v/open-agent-router.svg)](https://pypi.org/project/open-agent-router/)
 [![CI](https://github.com/kdenischenko/open-agent-router/actions/workflows/ci.yml/badge.svg)](https://github.com/kdenischenko/open-agent-router/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/kdenischenko/open-agent-router/blob/main/LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org)
@@ -35,12 +39,18 @@ Kimi Code, OpenCode or Cline) and an orchestrator agent that delegates jobs to o
 
 ![Terminal: agent-router advice ranks routes by how far each pool is behind its pace, agent-router status shows usage of every pool window](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/demo.svg)
 
-## How is this different from LiteLLM or OpenRouter?
+## How is this different from LiteLLM, OpenRouter or switching by hand?
 
-LiteLLM and OpenRouter route API requests using API keys, with usage billed per token.
-open-agent-router hands whole jobs to the subscriptions you already pay for through their
-official CLIs. It keeps track of every limit window and its pace, and never sees provider
-keys.
+- **LiteLLM, OpenRouter and other API gateways** route single model requests using API keys,
+  with usage billed per token. open-agent-router hands whole jobs — a prompt, a directory and
+  a read or write mode — to the subscriptions you already pay for through their official CLIs,
+  and never sees provider keys.
+- **Switching by hand** means checking several usage pages and guessing which limit resets
+  first. The gateway keeps track of every limit window and its pace, moves a job to another
+  route when a limit is hit, and keeps strong models for the jobs that need them.
+- **An agent's own model picker** stays inside one subscription. The gateway spreads jobs
+  across subscriptions from different providers, and an orchestrator agent can use it through
+  the CLI or the MCP server.
 
 ## Quick start
 

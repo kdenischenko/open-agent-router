@@ -20,17 +20,29 @@ keywords = [
     "kimi",
     "cline",
     "orchestration",
+    "ai-agents",
+    "coding-assistant",
+    "developer-tools",
+    "cli",
+    "local-first",
+    "rate-limit",
+    "subscription",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development",
+    "Topic :: Utilities",
 ]
 dependencies = [
     "fastapi>=0.162.5,<0.163",
@@ -45,6 +57,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/kdenischenko/open-agent-router"
+Documentation = "https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md"
+Source = "https://github.com/kdenischenko/open-agent-router"
 Issues = "https://github.com/kdenischenko/open-agent-router/issues"
 Changelog = "https://github.com/kdenischenko/open-agent-router/blob/main/CHANGELOG.md"
 
