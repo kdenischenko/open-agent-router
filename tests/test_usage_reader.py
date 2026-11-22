@@ -438,6 +438,191 @@ def test_cli_usage_refresh_sends_the_pool(
     assert gateway.calls == [("/api/v1/usage/refresh", {"pool": "auto-pool"})]
 
 
+# --- snapshot: figure sources and read health -------------------------------------------
+
+
+def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clock) -> None:
+    client, _, _ = api_client
+    headers = bearer(tokens.client)
+
+    body = client.get("/api/v1/snapshot", headers=headers).json()
+    pools = {pool["id"]: pool for pool in body["pools"]}
+    # before any read: the plain pool has no source at all, auto mode with no success is
+    # stale, and manual mode promises no reads, so it never is
+    assert pools["plain"]["usage"] is None
+    assert pools["auto-pool"]["usage"] == {
+        "source": "fake-usage",
+        "mode": "auto",
+        "last_attempt_at": None,
+        "last_success_at": None,
+        "last_error": None,
+        "age_s": None,
+        "stale": True,
+    }
+    assert pools["manual-pool"]["usage"]["mode"] == "manual"
+    assert pools["manual-pool"]["usage"]["stale"] is False
+    assert all(window["figure_source"] == "journal" for window in pools["auto-pool"]["windows"])
+
+    refreshed = client.post(
+        "/api/v1/usage/refresh", json={"pool": "auto-pool"}, headers=bearer(tokens.admin)
+    ).json()
+    assert [item["pool"] for item in refreshed["read"]] == ["auto-pool"]
+    clock.advance(timedelta(minutes=2))
+
+    body = client.get("/api/v1/snapshot", headers=headers).json()
+    pools = {pool["id"]: pool for pool in body["pools"]}
+    usage = pools["auto-pool"]["usage"]
+    read_at = (clock.now() - timedelta(minutes=2)).isoformat()
+    assert usage["last_attempt_at"] == read_at and usage["last_success_at"] == read_at
+    assert usage["last_error"] is None
+    assert usage["age_s"] == 120.0
+    assert usage["stale"] is False  # the interval is 5m: two intervals have not passed
+    windows = {window["id"]: window for window in pools["auto-pool"]["windows"]}
+    assert windows["week"]["figure_source"] == "auto"
+    assert windows["5h"]["figure_source"] == "auto"
+
+    clock.advance(timedelta(minutes=9))  # 11 min since the read: past two 5m intervals
+    body = client.get("/api/v1/snapshot", headers=headers).json()
+    usage = next(pool for pool in body["pools"] if pool["id"] == "auto-pool")["usage"]
+    assert usage["stale"] is True
+    assert usage["age_s"] == 660.0
+
+
+def test_snapshot_keeps_the_last_error_and_manual_mode_never_goes_stale(
+    usage_config, store, clock, tokens, home, bus
+) -> None:
+    fake = FakeSource(result=UsageRead(reason="unauthorized"))
+    gateway = Gateway(usage_config, store, clock, tokens, home=home, tz=UTC, bus=bus)
+    reader = UsageReader(usage_config, gateway, clock, bus, environ={}, sources={"auto-pool": fake})
+    gateway.usage_reader = reader
+
+    result = reader.refresh("auto-pool")
+
+    assert [(item.pool, item.reason) for item in result.failed] == [("auto-pool", "unauthorized")]
+    pools = {pool["id"]: pool for pool in gateway.snapshot_view()["pools"]}
+    usage = pools["auto-pool"]["usage"]
+    assert usage["last_error"] == "unauthorized"
+    assert usage["last_attempt_at"] == clock.now().isoformat()
+    assert usage["last_success_at"] is None and usage["age_s"] is None
+    assert usage["stale"] is True  # never a successful read
+    assert pools["manual-pool"]["usage"]["stale"] is False
+
+
+# --- CLI: agent-router status -------------------------------------------------------------
+
+
+def _status_window(window_id: str, **changes) -> dict:
+    values = {
+        "id": window_id,
+        "kind": "fixed",
+        "role": "pace",
+        "known": True,
+        "used": 0.4,
+        "expected": 0.5,
+        "lag": 0.1,
+        "resets_at": None,
+        "source": "fake_usage",
+        "figure_source": "auto",
+        "observed_at": "2026-11-13T09:00:00+00:00",
+        "age_s": 720.0,
+        "estimated": False,
+        "estimated_prices": False,
+        "blocked": False,
+        "note": None,
+        "anchored": False,
+    }
+    values.update(changes)
+    return values
+
+
+def _status_pool(pool_id: str, windows: list[dict], usage: dict | None) -> dict:
+    return {
+        "id": pool_id,
+        "title": pool_id,
+        "unit": "percent",
+        "known": True,
+        "lag": 0.1,
+        "blocked_by": None,
+        "blocked_until": None,
+        "reserve_hit": False,
+        "block": None,
+        "via_gateway": None,
+        "counter_sampled_at": None,
+        "windows": windows,
+        "usage": usage,
+    }
+
+
+def _usage_json(**changes) -> dict:
+    values = {
+        "source": "fake-usage",
+        "mode": "auto",
+        "last_attempt_at": "2026-11-13T09:12:00+00:00",
+        "last_success_at": "2026-11-13T09:00:00+00:00",
+        "last_error": "unauthorized",
+        "age_s": 720.0,
+        "stale": True,
+    }
+    values.update(changes)
+    return values
+
+
+class SnapshotGateway:
+    """Gateway client stub: answers the snapshot request with the canned body."""
+
+    def __init__(self, snapshot: dict) -> None:
+        self.snapshot = snapshot
+
+    def get(self, path: str, **params) -> dict:
+        assert path == "/api/v1/snapshot"
+        return self.snapshot
+
+
+def test_status_prints_usage_line_and_window_figures(
+    runner, cli_home, tokens, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pools = [
+        _status_pool(
+            "auto-pool",
+            [_status_window("week"), _status_window("5h", role="guard", expected=None)],
+            _usage_json(),
+        ),
+        _status_pool("plain", [_status_window("week", source=None, figure_source="journal")], None),
+    ]
+    monkeypatch.setattr(
+        cli_common, "make_client", lambda base_url, token: SnapshotGateway({"pools": pools})
+    )
+
+    result = runner.invoke(cli.app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    expected_usage = "  usage: fake-usage (auto), read 12 min ago, last error: unauthorized, stale"
+    assert expected_usage in lines
+    assert (
+        "  week: used 40.0%; expected 50.0%; reset: unknown; source: fake_usage; figure: auto"
+        in lines
+    )
+    assert "  5h: used 40.0%; reset: unknown; source: fake_usage; figure: auto" in lines
+    # the pool without a source has no usage line
+    assert sum("  usage:" in line for line in lines) == 1
+
+
+def test_status_usage_line_without_a_read_and_without_failures(
+    runner, cli_home, tokens, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    usage = _usage_json(age_s=None, last_error=None)
+    pools = [_status_pool("auto-pool", [_status_window("week")], usage)]
+    monkeypatch.setattr(
+        cli_common, "make_client", lambda base_url, token: SnapshotGateway({"pools": pools})
+    )
+
+    result = runner.invoke(cli.app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert "  usage: fake-usage (auto), never read, stale" in result.output.splitlines()
+
+
 # --- dashboard: buttons and POST /limits/refresh ----------------------------------------
 
 

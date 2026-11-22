@@ -24,7 +24,7 @@ from agent_router.cli_common import (
     _shell_arg,
     _shell_quote_dir,
 )
-from agent_router.clock import SystemClock, format_local
+from agent_router.clock import SystemClock, format_age, format_local
 from agent_router.config import (
     Config,
     ConfigError,
@@ -470,14 +470,35 @@ def _status_window_line(window: dict) -> str:
         parts.append(f"expected {_percent(window.get('expected'))}")
     parts.append(f"reset: {format_local(resets_at) if resets_at else 'unknown'}")
     parts.append(f"source: {window.get('source') or 'no data'}")
+    parts.append(f"figure: {window.get('figure_source')}")
     if window.get("blocked"):
         parts.append("exhausted")
     return f"  {window['id']}: " + "; ".join(parts)
 
 
+def _status_usage_line(pool: dict) -> str | None:
+    """The pool's usage source on one line: mode, freshness, last failure, staleness."""
+    usage = pool.get("usage")
+    if not usage:
+        return None
+    parts = [f"  usage: {usage['source']} ({usage['mode']})"]
+    if usage.get("age_s") is None:
+        parts.append("never read")
+    else:
+        parts.append(f"read {format_age(usage['age_s'])} ago")
+    if usage.get("last_error"):
+        parts.append(f"last error: {usage['last_error']}")
+    if usage.get("stale"):
+        parts.append("stale")
+    return ", ".join(parts)
+
+
 def _status_pool_lines(pool: dict) -> list[str]:
     """Why the pool is excluded right now, in the words advice uses, and the gateway's own load."""
     lines = []
+    usage = _status_usage_line(pool)
+    if usage is not None:
+        lines.append(usage)
     block = pool.get("block")
     if block:
         lines.append(f"  closed until {format_local(block['until'])}: {block['reason']}")

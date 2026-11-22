@@ -288,6 +288,23 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     A failed read reports a reason (`unauthorized`, `timeout`, `error`, `no_data` when no point
     maps onto a window, …) and writes nothing.
 
+    **Where a figure comes from, and whether it is fresh.** Every pool card on the limits page
+    shows a line like `Source: opencode-go (auto) · read 12 min ago` under its title when it has a
+    usage source: the source, its mode, the age of the last successful read (or `last read failed:
+    <reason>`), and a `stale` badge. Each window shows its `figure` next to its data age:
+    `auto` (the pool's usage source), `manual` (a calibration) or `journal` (no observation in
+    the current window — the figure comes from spend tracking or a scheduled reset). A pool in
+    `auto` mode is **stale** when no successful read is older than twice `[usage].interval`
+    (never read counts as stale); manual mode never goes stale. `agent-router status` prints the
+    same facts: one `usage: <source> (<mode>), read <age> ago, last error: <reason>, stale` line
+    per pool with a source, and the figure of every window.
+
+    `doctor` adds its own warnings for usage sources: a pool whose `api_key_env` (or the source's
+    default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
+    the terminal that runs `doctor`; a pool whose last read failed; stale data; and `auto` mode
+    without a `source` on a pool that has one. See
+    [TROUBLESHOOTING.md](TROUBLESHOOTING.md#usage-sources-do-not-refresh) for the fixes.
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 

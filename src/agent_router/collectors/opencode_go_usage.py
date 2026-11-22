@@ -116,4 +116,5 @@ SOURCE = UsageSourceSpec(
     factory=_factory,
     windows=frozenset({"rolling", "weekly", "monthly"}),
     observation_source="opencode_go_usage",
+    default_api_key_env=DEFAULT_API_KEY_ENV,
 )

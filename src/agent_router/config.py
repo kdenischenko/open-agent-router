@@ -724,7 +724,7 @@ def _parse_usage(value: Any, errors: list[str]) -> UsageSettings:
                     errors.append("usage.interval: must be at least 1m")
                 else:
                     interval_s = int(span.total_seconds())
-    return UsageSettings(mode=mode, interval_s=interval_s)
+    return UsageSettings(mode=mode, interval_s=interval_s, present=value is not None)
 
 
 def load_config(path: Path) -> Config:

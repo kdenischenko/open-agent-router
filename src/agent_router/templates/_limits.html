@@ -14,6 +14,18 @@
         <button type="submit" aria-label="Refresh limits of {{ pool.title }}">Refresh limits</button>
       </form>
       {% endif %}
+      {% if pool.usage %}
+      <p class="limit-source">Source: {{ pool.usage.source }} ({{ pool.usage.mode }}) ·
+        {%- if pool.usage.age_s is not none %} read {{ pool.usage.age_s|age }} ago
+        {%- else %} never read
+        {%- endif %}
+        {%- if pool.usage.last_error %} · last read failed: {{ pool.usage.last_error }}
+        {%- endif %}
+        {%- if pool.usage.stale %}
+        <span class="limit-stale approval-badge approval-badge--warn">stale</span>
+        {%- endif %}
+      </p>
+      {% endif %}
       {% if pool.block %}
       <div class="limit-block">
         <span class="limit-status approval-badge approval-badge--danger">blocked</span>
@@ -63,7 +75,7 @@
           </time>
           {% elif window.kind == 'fixed' and not window.anchored %}set the reset time{% else %}—{% endif %}
         </p>
-        <p class="limit-age">Data age: {{ window.age_s|age }}
+        <p class="limit-age">Data age: {{ window.age_s|age }} · figure: {{ window.figure_source }}
           {% if window.age_s is not none and window.age_s > stale_after_s %}
           <span class="limit-stale approval-badge approval-badge--warn">stale</span>
           {% endif %}

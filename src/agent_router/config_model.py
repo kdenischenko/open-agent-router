@@ -45,6 +45,9 @@ class UsageSettings:
 
     mode: str = "auto"  # "auto" reads sources on the interval; "manual" is calibration only
     interval_s: int = 3600
+    # whether the config had a [usage] table at all: doctor stays quiet about pools
+    # without a source unless the user opted into usage tracking here
+    present: bool = False
 
 
 @dataclass(frozen=True)
