@@ -2,9 +2,9 @@
 
 Add a scenario as a `pytest.param(Scenario(...), id=...)` row in SCENARIOS:
 routes and controls are TOML.
-`weight` is an offset in percentage points of `100 * lag / time_left`, which equals lag at
-the start of a window and doubles at its middle: -20 means "pick it if the pool trails the
-others by 10 pp more" halfway through the window.
+`weight` is an offset in percentage points of `100 * lag / time_left`, which equals the lag in
+percentage points at the start of a window and doubles at its middle: -20 means "pick it if
+the pool trails the others by 10 pp more" halfway through the window.
 When tuning a weight, add a row with your pools' lags and check where it lands in `expected`.
 """
 
