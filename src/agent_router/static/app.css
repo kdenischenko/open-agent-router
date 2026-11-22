@@ -5,9 +5,10 @@
   --color-surface: #f6f8fa;
   --color-surface-2: #eaeef2;
   --color-border: #d0d7de;
+  --color-control-border: #6e7781;
   --color-text: #1f2328;
   --color-muted: #59636e;
-  --color-accent: #0969da;
+  --color-accent: #0550ae;
   --color-accent-contrast: #ffffff;
   --color-ok: #1a7f37;
   --color-warn: #9a6700;
@@ -46,6 +47,7 @@
     --color-surface: #161b22;
     --color-surface-2: #21262d;
     --color-border: #30363d;
+    --color-control-border: #768390;
     --color-text: #e6edf3;
     --color-muted: #9da7b3;
     --color-accent: #58a6ff;
@@ -196,7 +198,7 @@ input,
 select,
 textarea {
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-control-border);
   border-radius: var(--radius-1);
   color: var(--color-text);
   max-width: 100%;

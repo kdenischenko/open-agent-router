@@ -224,3 +224,78 @@ def test_static_urls_carry_the_package_version(web: TestClient) -> None:
     text = web.get("/").text
     assert f'href="/static/app.css?v={__version__}"' in text
     assert f'src="/static/app.js?v={__version__}"' in text
+
+
+# --- colour contrast of the theme tokens ----------------------------------------------------
+
+
+def theme_tokens() -> dict[str, dict[str, str]]:
+    css = (PACKAGE / "static" / "app.css").read_text(encoding="utf-8")
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    light_root = re.search(r":root\s*\{", css)
+    media = re.search(r"@media\s*\([^)]*prefers-color-scheme[^)]*\)\s*\{", css)
+    assert light_root is not None and media is not None
+    dark_root = re.search(r":root\s*\{", css[media.end() :])
+    assert dark_root is not None
+    blocks = {
+        "light": balanced_block(css, light_root.end() - 1),
+        "dark": balanced_block(css, media.end() + dark_root.end() - 1),
+    }
+    pattern = re.compile(r"(--color-[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\b")
+    return {theme: dict(pattern.findall(block)) for theme, block in blocks.items()}
+
+
+def contrast(first: str, second: str) -> float:
+    def luminance(colour: str) -> float:
+        channels = [int(colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    high, low = sorted((luminance(first), luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+TEXT_PAIRS = [
+    (fg, bg)
+    for fg in ("--color-text", "--color-muted", "--color-accent")
+    for bg in ("--color-bg", "--color-surface", "--color-surface-2")
+] + [
+    ("--color-accent-contrast", "--color-accent"),
+    ("--color-ok", "--color-ok-bg"),
+    ("--color-warn", "--color-warn-bg"),
+    ("--color-danger", "--color-danger-bg"),
+    ("--color-info", "--color-info-bg"),
+]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize(("fg", "bg"), TEXT_PAIRS)
+def test_text_tokens_meet_aa_contrast(theme, fg, bg) -> None:
+    tokens = theme_tokens()[theme]
+    ratio = contrast(tokens[fg], tokens[bg])
+    assert ratio >= 4.5, f"{theme}: {fg} on {bg} is {ratio:.2f}:1"
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("bg", ["--color-bg", "--color-surface"])
+def test_control_border_meets_non_text_contrast(theme, bg) -> None:
+    tokens = theme_tokens()[theme]
+    ratio = contrast(tokens["--color-control-border"], tokens[bg])
+    assert ratio >= 3.0, f"{theme}: control border on {bg} is {ratio:.2f}:1"
+
+
+def test_form_controls_use_the_control_border() -> None:
+    css = (PACKAGE / "static" / "app.css").read_text(encoding="utf-8")
+    rules = re.findall(r"^input,\s*select,\s*textarea\s*\{([^}]*)\}", css, re.M)
+    borders = [line.strip() for rule in rules for line in rule.splitlines() if "border:" in line]
+    assert borders == ["border: 1px solid var(--color-control-border);"]
+
+
+def test_badge_accessible_name_is_its_visible_label(web, rig) -> None:
+    rig.add_job("awaiting_approval")
+
+    text = web.get("/").text
+
+    badge = re.search(r'<a\b[^>]*class="approval-badge"[^>]*>', text)
+    assert badge is not None
+    assert "aria-label" not in badge.group(0)

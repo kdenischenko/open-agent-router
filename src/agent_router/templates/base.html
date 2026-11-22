@@ -16,7 +16,7 @@
       <a href="/jobs" class="nav-link"{% if nav == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
       <a href="/calibrate" class="nav-link"{% if nav == 'calibrate' %} aria-current="page"{% endif %}>Calibrate</a>
       {% if awaiting_count|default(none) is not none and awaiting_count > 0 %}
-      <a href="/jobs" class="approval-badge" aria-label="{{ awaiting_display }} jobs awaiting approval">{{ awaiting_display }} awaiting approval</a>
+      <a href="/jobs" class="approval-badge">{{ awaiting_display }} awaiting approval</a>
       {% endif %}
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf }}">
