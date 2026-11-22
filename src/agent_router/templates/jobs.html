@@ -1,4 +1,44 @@
 {% extends "base.html" %}
 {% block content %}
+{% if not tasks_disabled %}
+<form method="get" action="/jobs" class="panel job-filters" role="search" aria-label="Filter jobs">
+  <label>Status
+    <select name="status">
+      <option value="">any</option>
+      {% for status in statuses %}
+      <option value="{{ status }}"{% if filters.status == status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Route
+    <select name="route">
+      <option value="">any</option>
+      {% for route in routes %}
+      <option value="{{ route }}"{% if filters.route == route %} selected{% endif %}>{{ route }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Caller
+    <input name="caller" value="{{ filters.caller or '' }}" list="job-callers" autocomplete="off">
+  </label>
+  <datalist id="job-callers">
+    {% for caller in callers %}<option value="{{ caller }}">{% endfor %}
+  </datalist>
+  <label>Search
+    <input type="search" name="q" value="{{ filters.q or '' }}" placeholder="job id or prompt text">
+  </label>
+  <label>Sort
+    <select name="sort">
+      {% for sort in sorts %}
+      <option value="{{ sort }}"{% if (filters.sort or sorts[0]) == sort %} selected{% endif %}>{{ sort }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="job-filters__actions">
+    <button type="submit">Filter</button>
+    {% if filters %}<a href="/jobs">Clear filters</a>{% endif %}
+  </div>
+</form>
+{% endif %}
 {% include "_jobs.html" %}
 {% endblock %}

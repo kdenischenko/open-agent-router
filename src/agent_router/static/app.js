@@ -7,16 +7,23 @@ async function refresh(path, id) {
     const fresh = parsed.getElementById(id);
     const current = document.getElementById(id);
     // a swap must not pull focus or a disclosure state from under the visitor: skip the
-    // refresh while focus is inside, and reopen the disclosures that were open
-    if (fresh && current && !current.contains(document.activeElement)) {
+    // refresh while focus is inside or a confirmation dialog is open, since closing the dialog
+    // returns focus to the link that opened it; disclosures keep the state the visitor left
+    if (fresh && current && !current.contains(document.activeElement)
+        && !document.querySelector('dialog[open]')) {
       const open = Array.from(current.querySelectorAll('details')).map((item) => item.open);
       current.innerHTML = fresh.innerHTML;
       current.querySelectorAll('details').forEach((item, index) => {
-        if (open[index]) item.open = true;
+        if (index < open.length) item.open = open[index];
       });
-      if (fresh.hasAttribute('data-terminal')) {
-        current.dataset.terminal = fresh.dataset.terminal;
-      }
+      // the wrapper's own attributes change too, e.g. the inbox loses its heading reference
+      // when it empties
+      Array.from(current.attributes).forEach((attr) => {
+        if (!fresh.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+      });
+      Array.from(fresh.attributes).forEach((attr) => current.setAttribute(attr.name, attr.value));
+      // the swap drops the unhiding the copy buttons got at load, so reveal them again
+      revealCopyButtons(current);
       if (id === 'limits') {
         setupLimitCards(current);
       }
@@ -28,7 +35,9 @@ async function refresh(path, id) {
 
 setInterval(() => refresh('/fragments/limits' + location.search, 'limits'), 30000);
 setInterval(() => refresh('/fragments/advice', 'advice'), 30000);
-setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000);
+// the job list keeps its filters and page from the query string
+setInterval(() => refresh('/fragments/jobs' + location.search, 'jobs'), 5000);
+setInterval(() => refresh('/fragments/approvals', 'approvals'), 5000);
 
 // limits cards enhance the server markup progressively: pace markers appear and
 // relative reset countdowns update only with scripts on
@@ -277,3 +286,91 @@ function setupCalibration() {
 }
 
 setupCalibration();
+
+// approval deadlines count down between refreshes; the server text stays without scripts
+function approvalCountdown(ms) {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds <= 0) return 'expired';
+  if (seconds < 60) return `in ${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `in ${minutes} min`;
+  return `in ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function setupApprovalCountdowns() {
+  setInterval(() => {
+    document.querySelectorAll('time[data-approval-countdown][datetime]').forEach((time) => {
+      const target = Date.parse(time.getAttribute('datetime'));
+      if (Number.isFinite(target)) time.textContent = approvalCountdown(target - Date.now());
+    });
+  }, 1000);
+}
+
+setupApprovalCountdowns();
+
+// Deny and Cancel are links to a confirmation page; with scripts on, a dialog asks instead
+// and posts the same form, so the page reload is skipped but the routes and CSRF stay
+function setupConfirmDialog() {
+  const csrf = document.querySelector('input[name="csrf"]');
+  if (!csrf || typeof HTMLDialogElement === 'undefined') return;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'confirm-dialog';
+  dialog.setAttribute('aria-labelledby', 'confirm-dialog-title');
+  const title = document.createElement('h2');
+  title.id = 'confirm-dialog-title';
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.className = 'inline';
+  const token = document.createElement('input');
+  token.type = 'hidden';
+  token.name = 'csrf';
+  token.value = csrf.value;
+  const confirm = document.createElement('button');
+  confirm.type = 'submit';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'button-secondary';
+  back.textContent = 'Keep';
+  back.addEventListener('click', () => dialog.close());
+  form.append(token, confirm, back);
+  dialog.append(title, form);
+  document.body.append(dialog);
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-confirm-action]');
+    if (!link) return;
+    event.preventDefault();
+    const action = link.dataset.confirmAction;
+    const job = link.getAttribute('href').split('/')[2];
+    title.textContent = action === 'deny' ? `Deny the route for ${job}?` : `Cancel ${job}?`;
+    confirm.textContent = action === 'deny' ? 'Deny' : 'Cancel the job';
+    form.action = link.getAttribute('href');
+    dialog.showModal();
+    back.focus();  // the safe choice takes focus, so Enter does not deny by accident
+  });
+}
+
+setupConfirmDialog();
+
+// copy buttons stay hidden without scripts or clipboard access; one delegated listener
+// covers buttons that appear later, since a refresh swaps #job instead of rebinding
+function revealCopyButtons(root) {
+  if (!navigator.clipboard) return;
+  root.querySelectorAll('.copy-button').forEach((button) => { button.hidden = false; });
+}
+
+function setupCopyButtons() {
+  if (!navigator.clipboard) return;
+  revealCopyButtons(document);
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.copy-button[data-copy-target]');
+    if (!button) return;
+    const target = document.getElementById(button.dataset.copyTarget);
+    if (!target) return;
+    navigator.clipboard.writeText(target.textContent).then(() => {
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+    }).catch(() => {});
+  });
+}
+
+setupCopyButtons();

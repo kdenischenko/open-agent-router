@@ -1,55 +1,93 @@
-"""TOML config: immutable model, template, and validation."""
+"""TOML config parsing, validation, template, and loading."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import math
 import os
 import re
 import tomllib
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
-from types import MappingProxyType
-from typing import Any, Literal
-from urllib.parse import urlparse
+from typing import Any
 
 import platformdirs
 
 from agent_router.clock import to_utc
+from agent_router.config_classifier import (
+    _parse_classifier,
+)
+from agent_router.config_model import (
+    TIERS,
+    BackendSection,
+    ClassifierModel,
+    ClassifierSettings,
+    Config,
+    ConfigError,
+    Mode,
+    ModelSettings,
+    Pool,
+    Route,
+    RouteKind,
+    SinkSettings,
+    SpendSource,
+    StatuslineSettings,
+    StorageSettings,
+    TaskSettings,
+    Tier,
+    UpstreamSettings,
+    Window,
+    effort_of,
+    model_key,
+)
+from agent_router.config_values import (
+    _boolean,
+    _check_cmd_text,
+    _check_keys,
+    _choice,
+    _integer,
+    _number,
+    _optional_text,
+    _paths,
+    _required_text,
+    _strings,
+    _table,
+    _tables,
+    _text,
+)
 from agent_router.periods import Duration, parse_duration
 from agent_router.prices import PriceTable, load_prices
 
-Tier = Literal["cheap", "standard", "strong"]
-TIERS: tuple[Tier, ...] = ("cheap", "standard", "strong")
-Mode = Literal["read", "write"]
-SpendSource = Literal["counter", "journal", "proxy"]
-RouteKind = Literal["harness", "api"]
-
-
-def model_key(route_model: str) -> str:
-    return route_model.split("#", 1)[0].split("/", 1)[-1]
-
-
-def effort_of(route_model: str) -> str | None:
-    _, separator, effort = route_model.partition("#")
-    return effort if separator and effort else None
-
-
-@dataclass(frozen=True)
-class BackendSection:
-    name: str
-    harness: str
-    executable: str
-    priority: int | None = None
-    weight: float | None = None
+# the config model lives in config_model; callers keep importing it from here
+__all__ = [
+    "BackendSection",
+    "ClassifierModel",
+    "ClassifierSettings",
+    "Config",
+    "ConfigError",
+    "default_config_text",
+    "effort_of",
+    "home_dir",
+    "load_config",
+    "Mode",
+    "model_key",
+    "ModelSettings",
+    "Pool",
+    "Route",
+    "RouteKind",
+    "SinkSettings",
+    "SpendSource",
+    "StatuslineSettings",
+    "StorageSettings",
+    "TaskSettings",
+    "Tier",
+    "TIERS",
+    "UpstreamSettings",
+    "Window",
+]
 
 
 _STORAGE_BACKEND = re.compile(r"[a-z0-9_-]+")
-_CMD_UNSAFE = frozenset('&|^%"\r\n')
 _DENIED_HEADERS = frozenset(
     {
         "authorization",
@@ -65,391 +103,6 @@ _DENIED_HEADERS = frozenset(
         "upgrade",
     }
 )
-
-
-@dataclass(frozen=True)
-class Window:
-    id: str
-    duration: Duration
-    kind: Literal["fixed", "rolling"]
-    role: Literal["pace", "guard"]
-    anchor: datetime | None
-    limit_usd: float | None
-    block_at: float
-
-
-@dataclass(frozen=True)
-class Pool:
-    id: str
-    title: str
-    unit: Literal["percent", "usd"]
-    windows: tuple[Window, ...]
-    reserve: float
-    reserve_tier: Tier | None
-    counter: str | None
-    counter_provider: str | None
-    counter_model: str | None
-    priority: int | None = None
-    weight: float | None = None
-    price_file: Path | None = None
-    prices: PriceTable | None = None
-    limit_base_usd: float | None = None
-    model_limits: Mapping[str, float] = field(default_factory=dict)
-    model_limits_date: str | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "windows", tuple(self.windows))
-        object.__setattr__(
-            self,
-            "model_limits",
-            MappingProxyType({key: float(value) for key, value in self.model_limits.items()}),
-        )
-
-    def scale(self, model: str) -> float:
-        """Model weight in the Go counter: pool base / monthly model limit."""
-        if self.limit_base_usd is None:
-            return 1.0
-        limit = self.model_limits.get(model_key(model))
-        if limit is None:
-            return 1.0
-        return self.limit_base_usd / limit
-
-    @property
-    def scale_hash(self) -> str | None:
-        """Fingerprint of the weight table: changes if limit_base_usd or model_limits change."""
-        if self.limit_base_usd is None:
-            return None
-        payload = json.dumps([self.limit_base_usd, sorted(self.model_limits.items())])
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
-
-
-@dataclass(frozen=True)
-class Route:
-    id: str
-    pool: str
-    tiers: frozenset[Tier]
-    quality: int
-    backend: str | None
-    model: str | None
-    modes: frozenset[Mode]
-    confirm: bool
-    enabled: bool
-    timeout_s: int | None
-    kind: RouteKind = "harness"
-    upstream: str | None = None
-    model_key: str | None = None
-    priority: int | None = None
-    weight: float | None = None
-    spend: SpendSource | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tiers", frozenset(self.tiers))
-        object.__setattr__(self, "modes", frozenset(self.modes))
-
-    @property
-    def model_group(self) -> str:
-        return self.model_key or self.id
-
-
-@dataclass(frozen=True)
-class TaskSettings:
-    allowed_roots: tuple[Path, ...]
-    denied_roots: tuple[Path, ...]
-    max_parallel: int = 3
-    max_queued: int = 200
-    max_attempts: int = 3
-    default_timeout_s: int = 14400
-    idle_timeout_s: int = 600
-    approval_timeout_s: int = 600
-    limit_backoff_s: int = 1800
-    limit_backoff_max_s: int = 18000
-    max_prompt_chars: int = 200_000
-    exit_grace_s: int = 60
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "allowed_roots", tuple(self.allowed_roots))
-        object.__setattr__(self, "denied_roots", tuple(self.denied_roots))
-
-
-@dataclass(frozen=True)
-class StatuslineSettings:
-    pool: str
-    five_hour: str = "5h"
-    seven_day: str = "week"
-
-
-@dataclass(frozen=True)
-class ClassifierModel:
-    """One classifier endpoint: systemone, Ollama, or OpenAI-compatible chat."""
-
-    id: str
-    kind: Literal["systemone", "ollama", "openai"]
-    url: str
-    model: str
-    timeout_s: float
-    live: bool = True
-    min_confidence: float | None = None
-    api_key_env: str | None = None
-
-
-@dataclass(frozen=True)
-class ClassifierSettings:
-    kind: Literal["none", "systemone", "ollama", "openai"] = "none"
-    url: str = "http://localhost:11434"
-    model: str = "tev1:4b-q4_K_M"
-    timeout_s: float = 3
-    api_key_env: str | None = None
-    mode: Literal["shadow", "active"] = "shadow"
-    primary: str | None = None
-    min_confidence: float = 0.6
-    write_floor: Tier = "standard"
-    wait_s: float | None = None
-    vram_budget_mb: int = 5300
-    models: tuple[ClassifierModel, ...] = ()
-
-    @property
-    def effective_models(self) -> tuple[ClassifierModel, ...]:
-        """Models in the new form; the legacy form is read as one classifier with id = kind."""
-        if self.models:
-            return self.models
-        if self.kind == "none":
-            return ()
-        return (
-            ClassifierModel(
-                id=self.kind,
-                kind=self.kind,  # type: ignore[arg-type]
-                url=self.url,
-                model=self.model,
-                timeout_s=self.timeout_s,
-                api_key_env=self.api_key_env,
-            ),
-        )
-
-    @property
-    def primary_model(self) -> ClassifierModel | None:
-        """The model whose vote decides in active mode and is written to classifier_tier."""
-        models = self.effective_models
-        if not models:
-            return None
-        return next((item for item in models if item.id == self.primary), models[0])
-
-
-@dataclass(frozen=True)
-class StorageSettings:
-    backend: str = "sqlite"
-    retention_days: int | None = None
-    options: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
-
-
-@dataclass(frozen=True)
-class SinkSettings:
-    type: str
-    options: Mapping[str, Any]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
-
-
-@dataclass(frozen=True)
-class ModelSettings:
-    prefer: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "prefer", tuple(self.prefer))
-
-
-@dataclass(frozen=True)
-class UpstreamSettings:
-    name: str
-    kind: str
-    pool: str
-    base_url: str
-    key_file: str | None
-    key_env: str | None
-    pass_headers: tuple[str, ...]
-    stream_usage: bool = True
-    enabled: bool = True
-    priority: int | None = None
-    weight: float | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "pass_headers", tuple(self.pass_headers))
-
-
-@dataclass(frozen=True)
-class Config:
-    pools: tuple[Pool, ...]
-    routes: tuple[Route, ...]
-    callers: Mapping[str, str | None]
-    tasks: TaskSettings
-    backends: Mapping[str, BackendSection]
-    statusline: StatuslineSettings | None
-    classifier: ClassifierSettings
-    storage: StorageSettings
-    sinks: tuple[SinkSettings, ...]
-    port: int = 8787
-    counter_interval_s: int = 300
-    snapshot_ttl_s: float = 1.0
-    models: Mapping[str, ModelSettings] = field(default_factory=dict)
-    upstreams: Mapping[str, UpstreamSettings] = field(default_factory=dict)
-    panel_session_days: int = 30
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "pools", tuple(self.pools))
-        object.__setattr__(self, "routes", tuple(self.routes))
-        object.__setattr__(self, "sinks", tuple(self.sinks))
-        object.__setattr__(self, "callers", MappingProxyType(dict(self.callers)))
-        object.__setattr__(self, "backends", MappingProxyType(dict(self.backends)))
-        object.__setattr__(self, "models", MappingProxyType(dict(self.models)))
-        object.__setattr__(self, "upstreams", MappingProxyType(dict(self.upstreams)))
-
-    def backend_section(self, name: str) -> BackendSection:
-        return self.backends.get(name) or BackendSection(name, name, "")
-
-    def levers(self, route: Route) -> tuple[int, float]:
-        if route.kind == "api":
-            section = self.upstreams.get(route.upstream) if route.upstream is not None else None
-        else:
-            section = self.backend_section(route.backend) if route.backend is not None else None
-        pool = next((item for item in self.pools if item.id == route.pool), None)
-        priority = next(
-            (
-                value
-                for value in (
-                    route.priority,
-                    section.priority if section is not None else None,
-                    pool.priority if pool is not None else None,
-                )
-                if value is not None
-            ),
-            0,
-        )
-        weight = next(
-            (
-                value
-                for value in (
-                    route.weight,
-                    section.weight if section is not None else None,
-                    pool.weight if pool is not None else None,
-                )
-                if value is not None
-            ),
-            0.0,
-        )
-        return priority, float(weight)
-
-    def route_spend(self, route: Route) -> SpendSource:
-        if route.kind == "api":
-            return "proxy"
-        if route.spend is not None:
-            return route.spend
-        if route.backend is None:
-            return "journal"
-        from agent_router import registry
-
-        return registry.load_harness(self.backend_section(route.backend).harness).spend
-
-
-class ConfigError(Exception):
-    messages: list[str]
-
-    def __init__(self, messages: list[str]) -> None:
-        self.messages = messages
-        super().__init__("\n".join(messages))
-
-
-def _check_keys(
-    raw: dict[str, Any], allowed: frozenset[str], label: str, errors: list[str]
-) -> None:
-    for key in raw:
-        if key not in allowed:
-            errors.append(f"{label}.{key}: unknown key")
-
-
-def _table(value: Any, label: str, errors: list[str]) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        errors.append(f"{label}: expected a table")
-        return {}
-    return value
-
-
-def _tables(value: Any, label: str, errors: list[str]) -> list[dict[str, Any]]:
-    if value is None:
-        return []
-    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
-        errors.append(f"{label}: expected a list of tables")
-        return []
-    return value
-
-
-def _text(value: Any, label: str, errors: list[str], default: str = "") -> str:
-    if isinstance(value, str) and value:
-        return value
-    errors.append(f"{label}: a non-empty string is required")
-    return default
-
-
-def _optional_text(value: Any, label: str, errors: list[str]) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    errors.append(f"{label}: expected a string")
-    return None
-
-
-def _choice(
-    value: Any, choices: tuple[str, ...], label: str, errors: list[str], default: str
-) -> str:
-    if value in choices:
-        return value
-    errors.append(f"{label}: invalid value: {value!r}; allowed: {', '.join(choices)}")
-    return default
-
-
-def _number(value: Any, label: str, errors: list[str], default: float) -> float:
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        if math.isfinite(value):
-            return float(value)
-        errors.append(f"{label}: expected a finite number")  # TOML allows nan and inf
-        return default
-    errors.append(f"{label}: expected a number")
-    return default
-
-
-def _integer(value: Any, label: str, errors: list[str], default: int) -> int:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    errors.append(f"{label}: expected an integer")
-    return default
-
-
-def _boolean(value: Any, label: str, errors: list[str], default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    errors.append(f"{label}: expected true or false")
-    return default
-
-
-def _strings(value: Any, label: str, errors: list[str]) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        errors.append(f"{label}: expected a list of strings")
-        return []
-    return value
-
-
-def _paths(value: Any, label: str, errors: list[str]) -> tuple[Path, ...]:
-    return tuple(Path(item).expanduser() for item in _strings(value, label, errors))
-
-
-def _check_cmd_text(value: str | None, label: str, errors: list[str]) -> None:
-    if value is not None and any(character in value for character in _CMD_UNSAFE):
-        errors.append(f"{label}: characters unsafe for .cmd are not allowed")
 
 
 _WINDOW_KEYS = frozenset({"id", "duration", "kind", "role", "anchor", "limit_usd", "block_at"})
@@ -812,13 +465,6 @@ def _parse_models(value: Any, pool_ids: set[str], errors: list[str]) -> Mapping[
     return models
 
 
-def _required_text(value: Any, label: str, errors: list[str]) -> str:
-    if value is None:
-        errors.append(f"{label}: is required")
-        return ""
-    return _text(value, label, errors)
-
-
 _UPSTREAM_KEYS = frozenset(
     {
         "kind",
@@ -950,191 +596,6 @@ def _parse_statusline(
         if window_id and window_id not in window_ids:
             errors.append(f"statusline.{key}: pool {pool.id!r} has no window: {window_id!r}")
     return settings
-
-
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def _check_api_key_env(value: Any, label: str, errors: list[str]) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str) and _ENV_NAME.fullmatch(value) is not None:
-        return value
-    errors.append(f"{label}: not a valid environment variable name")
-    return None
-
-
-def _check_classifier_address(
-    url: str, api_key_env: str | None, label: str, errors: list[str]
-) -> None:
-    try:
-        parsed = urlparse(url)
-        _ = parsed.port  # raises on a port that is not a number in 0..65535
-    except ValueError:
-        parsed = None
-    host = parsed.hostname if parsed is not None else None
-    if host in _LOOPBACK_HOSTS:
-        return
-    if parsed is not None and parsed.scheme == "https" and api_key_env:
-        return
-    errors.append(f"{label}: address must be loopback, or https with api_key_env")
-
-
-_CLASSIFIER_MODEL_KEYS = frozenset(
-    {"id", "kind", "url", "model", "timeout_s", "live", "min_confidence", "api_key_env"}
-)
-
-_CLASSIFIER_KINDS = ("systemone", "ollama", "openai")
-
-
-def _parse_classifier_common(raw: dict[str, Any], errors: list[str]) -> dict[str, Any]:
-    """Settings shared by the single-model form and [[classifier.models]]."""
-    mode = _choice(
-        raw.get("mode", "shadow"), ("shadow", "active"), "classifier.mode", errors, "shadow"
-    )
-    min_confidence = _number(
-        raw.get("min_confidence", 0.6), "classifier.min_confidence", errors, 0.6
-    )
-    if not 0 <= min_confidence <= 1:
-        errors.append("classifier.min_confidence: must be in the range 0..1")
-    write_floor = _choice(
-        raw.get("write_floor", "standard"), TIERS, "classifier.write_floor", errors, "standard"
-    )
-    wait_s = None
-    if raw.get("wait_s") is not None:
-        wait_s = _number(raw.get("wait_s"), "classifier.wait_s", errors, 0.0)
-        if wait_s < 0:
-            errors.append("classifier.wait_s: cannot be negative")
-    vram_budget_mb = _integer(
-        raw.get("vram_budget_mb", 5300), "classifier.vram_budget_mb", errors, 5300
-    )
-    if vram_budget_mb <= 0:
-        errors.append("classifier.vram_budget_mb: must be positive")
-    return {
-        "mode": mode,
-        "min_confidence": min_confidence,
-        "write_floor": write_floor,
-        "wait_s": wait_s,
-        "vram_budget_mb": vram_budget_mb,
-    }
-
-
-def _parse_classifier_models(raw: dict[str, Any], errors: list[str]) -> ClassifierSettings:
-    for key in ("kind", "url", "model", "timeout_s", "api_key_env"):
-        if key in raw:
-            errors.append("classifier: old form and [[classifier.models]] used together")
-            break
-    common = _parse_classifier_common(raw, errors)
-    raw_models = raw.get("models") or []
-    if not isinstance(raw_models, list) or any(not isinstance(item, dict) for item in raw_models):
-        errors.append("classifier.models: expected a list of tables")
-        raw_models = []
-    models: list[ClassifierModel] = []
-    seen: set[str] = set()
-    for index, item in enumerate(raw_models):
-        label = f"classifier.models[{index}]"
-        _check_keys(item, _CLASSIFIER_MODEL_KEYS, label, errors)
-        model_id = _text(item.get("id"), f"{label}.id", errors)
-        if model_id in seen:
-            errors.append(f"{label}.id: duplicate id: {model_id!r}")
-        seen.add(model_id)
-        kind = _choice(item.get("kind"), _CLASSIFIER_KINDS, f"{label}.kind", errors, "systemone")
-        url = _text(item.get("url", "http://localhost:11434"), f"{label}.url", errors)
-        raw_key_env = item.get("api_key_env")
-        address_key_env = raw_key_env if isinstance(raw_key_env, str) and raw_key_env else None
-        _check_classifier_address(url, address_key_env, f"{label}.url", errors)
-        api_key_env = _check_api_key_env(raw_key_env, f"{label}.api_key_env", errors)
-        model = _text(item.get("model"), f"{label}.model", errors)
-        timeout_s = _number(item.get("timeout_s", 3), f"{label}.timeout_s", errors, 3)
-        live = _boolean(item.get("live", True), f"{label}.live", errors, True)
-        model_min: float | None = None
-        if item.get("min_confidence") is not None:
-            model_min = _number(item.get("min_confidence"), f"{label}.min_confidence", errors, 0.0)
-            if not 0 <= model_min <= 1:
-                errors.append(f"{label}.min_confidence: must be in the range 0..1")
-                model_min = None
-        models.append(
-            ClassifierModel(
-                id=model_id,
-                kind=kind,
-                url=url,
-                model=model,
-                timeout_s=timeout_s,
-                live=live,
-                min_confidence=model_min,
-                api_key_env=api_key_env,
-            )
-        )
-    primary = raw.get("primary")
-    if primary is not None and not isinstance(primary, str):
-        errors.append("classifier.primary: a non-empty string is required")
-        primary = None
-    if primary is None and models:
-        primary = models[0].id
-    if primary is not None and primary not in seen:
-        errors.append(f"classifier.primary: unknown classifier: {primary!r}")
-    # legacy fields come from the deciding model; without an explicit primary it is also the first
-    chosen = next((item for item in models if item.id == primary), None)
-    if chosen is not None and not chosen.live:
-        errors.append(
-            f"classifier.primary: deciding model {chosen.id!r} is disabled (live = false)"
-        )
-    return ClassifierSettings(
-        kind=chosen.kind if chosen is not None else "none",
-        url=chosen.url if chosen is not None else "http://localhost:11434",
-        model=chosen.model if chosen is not None else "tev1:4b-q4_K_M",
-        timeout_s=chosen.timeout_s if chosen is not None else 3,
-        api_key_env=chosen.api_key_env if chosen is not None else None,
-        primary=primary,
-        models=tuple(models),
-        **common,
-    )
-
-
-_CLASSIFIER_KEYS = frozenset(
-    {
-        "kind",
-        "url",
-        "model",
-        "timeout_s",
-        "mode",
-        "min_confidence",
-        "write_floor",
-        "wait_s",
-        "vram_budget_mb",
-        "models",
-        "primary",
-        "api_key_env",
-    }
-)
-
-
-def _parse_classifier(value: Any, errors: list[str]) -> ClassifierSettings:
-    raw = _table(value, "classifier", errors)
-    _check_keys(raw, _CLASSIFIER_KEYS, "classifier", errors)
-    if "models" in raw:
-        return _parse_classifier_models(raw, errors)
-    url = _text(raw.get("url", "http://localhost:11434"), "classifier.url", errors)
-    raw_key_env = raw.get("api_key_env")
-    address_key_env = raw_key_env if isinstance(raw_key_env, str) and raw_key_env else None
-    _check_classifier_address(url, address_key_env, "classifier.url", errors)
-    api_key_env = _check_api_key_env(raw_key_env, "classifier.api_key_env", errors)
-    common = _parse_classifier_common(raw, errors)
-    return ClassifierSettings(
-        kind=_choice(
-            raw.get("kind", "none"),
-            ("none",) + _CLASSIFIER_KINDS,
-            "classifier.kind",
-            errors,
-            "none",
-        ),
-        url=url,
-        model=_text(raw.get("model", "tev1:4b-q4_K_M"), "classifier.model", errors),
-        timeout_s=_number(raw.get("timeout_s", 3), "classifier.timeout_s", errors, 3),
-        api_key_env=api_key_env,
-        **common,
-    )
 
 
 def _parse_storage(value: Any, errors: list[str]) -> StorageSettings:

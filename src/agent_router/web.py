@@ -18,7 +18,7 @@ from starlette.templating import Jinja2Templates
 from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
-from agent_router.jobs import TERMINAL, Attempt, Job
+from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 
@@ -26,6 +26,21 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
 TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
+
+JOBS_PAGE_SIZE = 50
+JOB_SORTS = ("newest", "oldest", "duration")
+JOB_FILTER_MAX_CHARS = 200
+# the badge colour of each job status; the status name itself is always shown as text
+STATUS_KIND = {
+    "queued": "info",
+    "running": "info",
+    "awaiting_approval": "warn",
+    "completed": "ok",
+    "partial": "warn",
+    "failed": "danger",
+    "declined": "danger",
+    "cancelled": "muted",
+}
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
 LIMIT_STALE_AFTER_S = 6 * 3600
 
@@ -36,6 +51,31 @@ def _countdown(moment: str, now: datetime) -> str:
 
 
 TEMPLATES.env.filters["countdown"] = _countdown
+
+
+def job_totals(job: Job, attempts: list[Attempt]) -> dict:
+    """Totals over attempts; a field stays None when no attempt has a value for it."""
+    durations = [attempt.duration_s for attempt in attempts if attempt.duration_s is not None]
+    duration_s: float | None
+    if job.finished_at is not None:
+        duration_s = (job.finished_at - job.created_at).total_seconds()
+    elif durations:
+        duration_s = sum(durations)
+    else:
+        duration_s = None
+    return {
+        "tokens_in": _sum_field(attempts, "tokens_in"),
+        "tokens_out": _sum_field(attempts, "tokens_out"),
+        "cost_usd": _sum_field(attempts, "cost_usd"),
+        "duration_s": duration_s,
+        "attempts": len(attempts),
+    }
+
+
+def _sum_field(attempts: list[Attempt], name: str) -> int | float | None:
+    values = [getattr(attempt, name) for attempt in attempts]
+    values = [value for value in values if value is not None]
+    return sum(values) if values else None
 
 
 def _field(form: FormData, name: str) -> str:
@@ -184,10 +224,74 @@ def web_router(deps: Gateway) -> APIRouter:
         response.delete_cookie("ar_session", path="/", httponly=True, samesite="strict")
         return response
 
+    def job_filters(request: Request) -> dict[str, str]:
+        """Filters from the query string; unknown or malformed values are dropped, not errors."""
+        params = request.query_params
+        filters: dict[str, str] = {}
+        status = params.get("status", "")
+        if status in STATUSES:
+            filters["status"] = status
+        route = params.get("route", "")
+        if any(item.id == route for item in deps.config.routes):
+            filters["route"] = route
+        caller = params.get("caller", "").strip()
+        if 0 < len(caller) <= JOB_FILTER_MAX_CHARS:
+            filters["caller"] = caller
+        q = params.get("q", "").strip()
+        if 0 < len(q) <= JOB_FILTER_MAX_CHARS:
+            filters["q"] = q
+        sort = params.get("sort", "")
+        if sort in JOB_SORTS and sort != JOB_SORTS[0]:
+            filters["sort"] = sort
+        return filters
+
+    def job_page_number(request: Request) -> int:
+        raw = request.query_params.get("page", "")
+        # a length check first: int() refuses strings of thousands of digits
+        return int(raw) if raw.isdecimal() and len(raw) <= 6 and int(raw) > 0 else 1
+
+    def job_list(request: Request) -> dict | None:
+        if deps.dispatcher is None:
+            return None
+        filters = job_filters(request)
+        search = {
+            "status": filters.get("status"),
+            "route": filters.get("route"),
+            "caller": filters.get("caller"),
+            "q": filters.get("q"),
+            "sort": filters.get("sort", JOB_SORTS[0]),
+            "limit": JOBS_PAGE_SIZE,
+        }
+        page = job_page_number(request)
+        found, total = deps.dispatcher.jobs.search(**search, offset=(page - 1) * JOBS_PAGE_SIZE)
+        pages = max(1, -(-total // JOBS_PAGE_SIZE))
+        if page > pages:
+            page = pages
+            found, total = deps.dispatcher.jobs.search(**search, offset=(page - 1) * JOBS_PAGE_SIZE)
+        if "sort" not in filters:
+            # jobs waiting for a human come first within the page, as on the home page
+            found = sorted(found, key=lambda job: job.status != "awaiting_approval")
+
+        def page_href(number: int) -> str:
+            query = {**filters, "page": str(number)} if number > 1 else filters
+            return "/jobs" + ("?" + urlencode(query) if query else "")
+
+        return {
+            "jobs": found,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "first": (page - 1) * JOBS_PAGE_SIZE + 1 if found else 0,
+            "last": (page - 1) * JOBS_PAGE_SIZE + len(found),
+            "prev_href": page_href(page - 1) if page > 1 else None,
+            "next_href": page_href(page + 1) if page < pages else None,
+            "filters": filters,
+        }
+
     def jobs_page(
         request: Request,
         sid: str,
-        jobs: list | None,
+        listing: dict | None,
         *,
         fragment: bool = False,
     ) -> HTMLResponse:
@@ -201,18 +305,53 @@ def web_router(deps: Gateway) -> APIRouter:
             }
         context = {
             "title": "Jobs",
-            "jobs": jobs or [],
-            "tasks_disabled": jobs is None,
+            "jobs": [] if listing is None else listing["jobs"],
+            "listing": listing,
+            "filters": {} if listing is None else listing["filters"],
+            "tasks_disabled": listing is None,
             "classifier": classifier,
+            "statuses": STATUSES,
+            "routes": [item.id for item in deps.config.routes],
+            "callers": sorted(deps.config.callers),
+            "sorts": JOB_SORTS,
+            "status_kind": STATUS_KIND,
+            "local": local,
         }
         template = "_jobs.html" if fragment else "jobs.html"
         return render_page(request, template, context, sid=sid, nav=None if fragment else "jobs")
 
-    def job_list() -> list | None:
+    def approval_items() -> list[dict]:
         if deps.dispatcher is None:
-            return None
-        found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
-        return sorted(found, key=lambda job: job.status != "awaiting_approval")
+            return []
+        found = deps.dispatcher.jobs.list("awaiting_approval", 100)
+        now = deps.clock.now()
+        items = []
+        for job in found:
+            route = next(
+                (item for item in deps.config.routes if item.id == job.approval_route), None
+            )
+            pool = (
+                next((item for item in deps.config.pools if item.id == route.pool), None)
+                if route is not None
+                else None
+            )
+            remaining = (
+                (job.approval_deadline - now).total_seconds()
+                if job.approval_deadline is not None
+                else 0.0
+            )
+            prompt = job.request.prompt
+            items.append(
+                {
+                    "job": job,
+                    "pool_title": pool.title if pool is not None else None,
+                    "prompt": prompt[:200],
+                    "prompt_truncated": len(prompt) > 200,
+                    "expired": remaining <= 0,
+                    "countdown": "expired" if remaining <= 0 else f"in {format_age(remaining)}",
+                }
+            )
+        return items
 
     def limits_context(request: Request, snapshot: dict) -> dict:
         return {
@@ -280,11 +419,19 @@ def web_router(deps: Gateway) -> APIRouter:
             {
                 "title": "Limits",
                 "recorded": recorded_line(request, snapshot),
+                "approvals": approval_items(),
             }
             | limits_context(request, snapshot)
             | advice_context(snapshot)
         )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
+
+    @router.get("/fragments/approvals")
+    def get_approvals_fragment(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return render_page(request, "_approvals.html", {"approvals": approval_items()}, sid=sid)
 
     @router.get("/fragments/limits")
     def get_limits(request: Request) -> Response:
@@ -307,14 +454,14 @@ def web_router(deps: Gateway) -> APIRouter:
         sid = session_id(request)
         if sid is None:
             return login_redirect()
-        return jobs_page(request, sid, job_list())
+        return jobs_page(request, sid, job_list(request))
 
     @router.get("/fragments/jobs")
     def get_jobs_fragment(request: Request) -> Response:
         sid = session_id(request)
         if sid is None:
             return login_redirect()
-        return jobs_page(request, sid, job_list(), fragment=True)
+        return jobs_page(request, sid, job_list(request), fragment=True)
 
     def job_context(job: Job, attempts: list[Attempt]) -> dict:
         prompt_chars = job.prompt_chars if job.prompt_chars is not None else len(job.request.prompt)
@@ -325,6 +472,9 @@ def web_router(deps: Gateway) -> APIRouter:
             "prompt_truncated": prompt_chars > 2000,
             "prompt_chars": prompt_chars,
             "attempts": attempts,
+            "totals": job_totals(job, attempts),
+            "status_kind": STATUS_KIND,
+            "caller": job.request.caller,
             "last_rating": deps.dispatcher.jobs.last_rating(job.id),
             "local": local,
             "terminal": job.status in TERMINAL,
@@ -355,6 +505,43 @@ def web_router(deps: Gateway) -> APIRouter:
             return PlainTextResponse("job not found", status_code=404)
         context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
         return render_page(request, "_job.html", context, sid=sid)
+
+    CONFIRM_ACTIONS = {
+        "deny": {
+            "title": "Deny the route",
+            "heading": "Deny this route?",
+            "text": "the route is excluded and the job goes back to the queue",
+            "button": "Deny",
+        },
+        "cancel": {
+            "title": "Cancel the job",
+            "heading": "Cancel this job?",
+            "text": "the job stops and is marked as cancelled",
+            "button": "Cancel",
+        },
+    }
+
+    def get_job_confirmation(request: Request, job_id: str, action: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return PlainTextResponse(
+                "jobs are disabled: the job dispatcher is not running", status_code=503
+            )
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        context = {"action": action, "job": job} | CONFIRM_ACTIONS[action]
+        return render_page(request, "confirm_action.html", context, sid=sid, nav="jobs")
+
+    @router.get("/jobs/{job_id}/deny")
+    def get_job_deny(request: Request, job_id: str) -> Response:
+        return get_job_confirmation(request, job_id, "deny")
+
+    @router.get("/jobs/{job_id}/cancel")
+    def get_job_cancel(request: Request, job_id: str) -> Response:
+        return get_job_confirmation(request, job_id, "cancel")
 
     async def post_job_action(request: Request, job_id: str, action: str) -> Response:
         sid = session_id(request)

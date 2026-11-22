@@ -149,12 +149,19 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 `server.port`, default 8787). Log in with the admin token: paste the contents of the
-`admin.token` file whose path `init` prints. The home page shows one card per pool with
-usage, expected pace, reset countdowns and observation age for each window, including stale
-and blocked states; the full limits table stays under a disclosure. Manual calibration shows
-field-specific errors and, with scripts on, validates input and previews usage pace and the local
-reset time; after saving, the updated pool card is highlighted. The job page refreshes itself,
-shows the error, and lets you rate a finished job.
+`admin.token` file whose path `init` prints. Jobs waiting for your approval are listed at
+the top of the home page with Approve and Deny. Below them the home page shows one card per
+pool with usage, expected pace, reset countdowns and observation age for each window,
+including stale and blocked states; the full limits table stays under a disclosure. The job
+list filters by status, route and caller, searches by job id or prompt text, sorts by
+creation time or duration and pages through 50 jobs at a time; the filters live in the
+address, so a filtered view can be bookmarked. Manual calibration shows field-specific
+errors and, with scripts on, validates input and previews usage pace and the local reset time;
+after saving, the updated pool card is highlighted. The job page refreshes itself, shows the
+error, and lets you rate a finished job.
+It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
+final text and per-attempt output in expandable blocks, with a copy button when clipboard
+scripting is available.
 
 ## Harnesses
 

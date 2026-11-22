@@ -10,7 +10,7 @@ import pytest
 import uvicorn
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_common
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +87,7 @@ def test_client_command_reports_unsupported_url_scheme(config, tokens, monkeypat
 def test_gateway_accepts_http_and_https(config, tokens, monkeypatch, url) -> None:
     monkeypatch.setenv("AGENT_ROUTER_URL", url)
 
-    assert cli._gateway().base_url == url
+    assert cli_common._gateway().base_url == url
 
 
 def test_serve_reports_damaged_store(home: Path, config, tokens, started: list[bool]) -> None:

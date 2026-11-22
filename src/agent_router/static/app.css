@@ -654,3 +654,258 @@ th,
 dd {
   overflow-wrap: anywhere;
 }
+
+/* Approvals inbox and confirmations */
+
+#approvals:not(:empty) {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+#approvals .job p {
+  margin-bottom: var(--space-2);
+}
+
+a[data-confirm-action] {
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-1);
+  display: inline-block;
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  text-decoration: none;
+}
+
+.button-secondary {
+  background: var(--color-bg);
+  border-color: var(--color-control-border);
+  color: var(--color-text);
+}
+
+.confirm-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  color: var(--color-text);
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+/* Job list: filters, rows and pages */
+
+.job-filters {
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  margin-bottom: var(--space-4);
+}
+
+.job-filters label {
+  display: grid;
+  font-size: var(--text-sm);
+  gap: var(--space-1);
+}
+
+.job-filters input,
+.job-filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+.job-filters__actions {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.job-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.job-row {
+  align-items: baseline;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.job-row code {
+  overflow-wrap: anywhere;
+}
+
+.job-row__meta {
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  gap: var(--space-1) var(--space-3);
+}
+
+.job-row__reason {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.job-row__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.status-badge {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 0 var(--space-2);
+}
+
+.status-badge--ok {
+  background: var(--color-ok-bg);
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
+.status-badge--warn {
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
+  color: var(--color-warn);
+}
+
+.status-badge--danger {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.status-badge--info {
+  background: var(--color-info-bg);
+  border-color: var(--color-info);
+  color: var(--color-info);
+}
+
+.pager {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* Job page */
+
+/* .job-header is a <header>, so it intentionally keeps the global banner styles; only the packing changes */
+.job-header {
+  gap: var(--space-2) var(--space-3);
+  justify-content: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.job-header h2 {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.job-header h2 code {
+  overflow-wrap: anywhere;
+}
+
+.job-meta {
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  gap: var(--space-1) var(--space-3);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.job-meta li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.job-totals {
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  margin-bottom: var(--space-4);
+  min-width: 0;
+}
+
+.job-totals dt {
+  margin-top: 0;
+}
+
+.job-totals dd {
+  margin-bottom: 0;
+}
+
+.attempt-timeline {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+}
+
+.attempt-timeline li {
+  border-left: 0.25rem solid var(--color-border);
+  min-width: 0;
+  padding-left: var(--space-3);
+}
+
+.attempt-timeline h3 {
+  font-size: var(--text-base);
+  margin-bottom: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.attempt-timeline dl {
+  display: grid;
+  gap: 0 var(--space-3);
+  grid-template-columns: minmax(5rem, auto) 1fr;
+  margin: 0;
+  min-width: 0;
+}
+
+.attempt-timeline dt {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  margin-top: 0;
+}
+
+.attempt-timeline dd {
+  margin-bottom: var(--space-1);
+}
+
+pre.wrap {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.copy-button {
+  background: var(--color-bg);
+  border-color: var(--color-control-border);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  margin: var(--space-2) 0;
+  padding: var(--space-1) var(--space-2);
+}

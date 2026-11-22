@@ -48,21 +48,25 @@ class WebRig:
         text=None,
         tier="standard",
         tier_source="default",
+        caller=None,
         **fields,
     ) -> Job:
         self._number += 1
+        awaiting = status == "awaiting_approval"
         job = Job(
             id=f"j_web_{self._number}",
-            request=JobRequest(prompt=prompt, cwd=self.home),
+            request=JobRequest(prompt=prompt, cwd=self.home, caller=caller),
             status=status,
             tier=tier,
             tier_source=tier_source,
             repo_root=fields.pop("repo_root", None),
-            route="kimi-cli/kimi-for-coding",
-            reason="route choice reason",
-            approval_route="kimi-cli/kimi-for-coding" if status == "awaiting_approval" else None,
-            approval_deadline=self.clock.now() + timedelta(hours=1)
-            if status == "awaiting_approval"
+            route=fields.pop("route", "kimi-cli/kimi-for-coding"),
+            reason=fields.pop("reason", "route choice reason"),
+            approval_route=fields.pop("approval_route", "kimi-cli/kimi-for-coding")
+            if awaiting
+            else None,
+            approval_deadline=fields.pop("approval_deadline", self.clock.now() + timedelta(hours=1))
+            if awaiting
             else None,
             text=text,
             created_at=self.clock.now() + timedelta(seconds=self._number),
@@ -152,7 +156,7 @@ def test_jobs_page_puts_awaiting_approval_first_with_buttons(web, rig) -> None:
     assert response.status_code == 200
     assert response.text.index(waiting.id) < response.text.index(queued.id)
     assert f'action="/jobs/{waiting.id}/approve"' in response.text
-    assert f'action="/jobs/{waiting.id}/deny"' in response.text
+    assert f'href="/jobs/{waiting.id}/deny"' in response.text
     assert "Approve" in response.text
     assert "Deny" in response.text
 
@@ -341,7 +345,10 @@ def test_jobs_script_refreshes_fragment_every_five_seconds(client) -> None:
     response = client.get("/static/app.js")
 
     assert response.status_code == 200
-    assert "setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000)" in response.text
+    assert (
+        "setInterval(() => refresh('/fragments/jobs' + location.search, 'jobs'), 5000)"
+        in response.text
+    )
 
 
 # --- job page: error, live fragment, details, rating --------------------------------------

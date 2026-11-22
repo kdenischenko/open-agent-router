@@ -2,7 +2,8 @@
 
 Usage: python fake_harness.py --scenario <name> [scenario args]. Scenarios:
 echo-file <path>, exit <code>, sleep <s>, tick <count> <interval_s> [stdout|stderr],
-child-sleep <s> <pid-file>, detached-child <s> <pid-file>, orphan-sleep <s> <child-s> <pid-file>,
+retry <count> <interval_s>, child-sleep <s> <pid-file>, detached-child <s> <pid-file>,
+orphan-sleep <s> <child-s> <pid-file>,
 write <file>, commit, big <MB>, final-then-hang <string>, stdin-echo, argv-echo, wait-stdin-eof,
 env <name>.
 """
@@ -53,6 +54,12 @@ def main(argv: list[str]) -> int:
             if number < count:
                 time.sleep(interval)
         out("ok:done\n")
+        return 0
+    if name == "retry":
+        for number in range(int(args[0])):
+            out(json.dumps({"type": "retry", "attempt": number + 1}) + "\n")
+            time.sleep(float(args[1]))
+        time.sleep(120)
         return 0
     if name == "child-sleep":
         child = subprocess.Popen(
