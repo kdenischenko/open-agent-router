@@ -286,7 +286,8 @@ page refreshes itself, shows the error and lets you rate a finished job.
 |---|---|
 | `api.py` | FastAPI app: routes, token checks, host guard, lifespan wiring |
 | `auth.py` | Token files, dashboard session cookies, CSRF tokens |
-| `classifier.py` | systemone/ollama/openai clients, vote queue, tier resolution, offline eval, report |
+| `classifier.py` | vote queue, tier resolution, offline eval, report |
+| `classifier_backends.py` | systemone/ollama/openai backend clients, prompts and answer parsing |
 | `cli.py` | `agent-router` command line (init, serve, run, calibrate, export, ...) |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
