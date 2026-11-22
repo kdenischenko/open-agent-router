@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 from agent_router import plugins
 from agent_router.config import BackendSection, Config, ConfigError, SpendSource
 from agent_router.runner import ResolvedExecutable, resolve_executable
+from agent_router.usage import UsageSourceSpec
 
 if TYPE_CHECKING:
     from agent_router.adapters.base import Adapter
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
 HARNESS_GROUP = "agent_router.harnesses"
 COUNTER_GROUP = "agent_router.counters"
+USAGE_SOURCE_GROUP = "agent_router.usage_sources"
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,7 @@ class CounterSpec:
 _OVERRIDES: dict[str, HarnessSpec] = {}
 _HARNESSES: dict[str, HarnessSpec] = {}
 _COUNTERS: dict[str, CounterSpec] = {}
+_USAGE_SOURCES: dict[str, UsageSourceSpec] = {}
 
 
 def _entry_names(group: str) -> set[str]:
@@ -90,6 +93,22 @@ def load_counter(name: str) -> CounterSpec:
     return loaded
 
 
+def load_usage_source(name: str) -> UsageSourceSpec:
+    if name in _USAGE_SOURCES:
+        return _USAGE_SOURCES[name]
+    try:
+        loaded = plugins.load_plugin(USAGE_SOURCE_GROUP, name)
+    except ConfigError as exc:
+        if name not in _entry_names(USAGE_SOURCE_GROUP):
+            available = _available(USAGE_SOURCE_GROUP)
+            raise ConfigError([f'unknown usage source "{name}"; available: {available}']) from exc
+        raise
+    if not isinstance(loaded, UsageSourceSpec):
+        raise ConfigError([f'plugin "{name}" in group {USAGE_SOURCE_GROUP} has the wrong type'])
+    _USAGE_SOURCES[name] = loaded
+    return loaded
+
+
 def _sections(config: Config) -> dict[str, BackendSection]:
     sections = {
         route.backend: config.backend_section(route.backend)
@@ -113,12 +132,23 @@ def validate(config: Config) -> list[str]:
         except ConfigError as exc:
             errors.extend(f"backends.{name}.harness: {message}" for message in exc.messages)
     for index, pool in enumerate(config.pools):
-        if pool.counter is None:
+        if pool.counter is not None:
+            try:
+                load_counter(pool.counter)
+            except ConfigError as exc:
+                errors.extend(f"pools[{index}].counter: {message}" for message in exc.messages)
+        if pool.usage.source is None:
             continue
         try:
-            load_counter(pool.counter)
+            spec = load_usage_source(pool.usage.source)
         except ConfigError as exc:
-            errors.extend(f"pools[{index}].counter: {message}" for message in exc.messages)
+            errors.extend(f"pools[{index}].usage.source: {message}" for message in exc.messages)
+            continue
+        for key in pool.usage.windows:
+            if key not in spec.windows:
+                available = ", ".join(sorted(spec.windows)) or "none"
+                reason = f"source {pool.usage.source} has no field {key}; available: {available}"
+                errors.append(f"pools[{index}].usage.windows: {reason}")
     for index, route in enumerate(config.routes):
         if route.kind != "harness" or route.spend not in ("counter", "proxy"):
             continue

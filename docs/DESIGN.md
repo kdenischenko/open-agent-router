@@ -155,6 +155,15 @@ The ledger computes each window's state from observations and spend records:
   `estimated` flag. For `usd` pools the spend since the window base is added on top of the
   observed fraction.
 
+**Usage sources** (entry point group `agent_router.usage_sources`) are the seam for vendors that
+report a window's used share with a reset time instead of cumulative spend. A source's `read()`
+returns points — a source field name, a fraction 0..1 and an optional `resets_at` — or a reason
+code when there is no data. Each pool maps source fields to its window ids with
+`[pools.usage] windows`, and the mapped points become observations with
+`source = spec.observation_source` (e.g. `opencode_go_usage`); the newest observation of a window
+wins, and journal spend after it is added on top. `[usage].mode = "auto"` reads the sources on
+every `[usage].interval`; `"manual"` keeps calibration-only behavior. A pool may override the mode.
+
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —
 multiplied by the model weight `limit_base_usd / model_limits[model]`, and tagged with the price

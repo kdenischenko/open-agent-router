@@ -13,6 +13,7 @@ from types import MappingProxyType
 
 import pytest
 
+from agent_router.config_model import PoolUsage
 from helpers import ALL_HARNESSES
 
 VALID_CONFIG = """\
@@ -666,3 +667,136 @@ def test_init_template_has_routing_keys(default_config) -> None:
     assert default_config.callers["opencode"] == "opencode-go"
     assert default_config.callers["claude-code"] == "claude-pro"
     assert default_config.route_spend(cline) == "journal"
+
+
+def _usage_text(root: str = "", pool: str = "") -> str:
+    text = VALID_CONFIG
+    if pool:
+        text = text.replace("[[routes]]", "[pools.usage]\n" + pool + "\n[[routes]]")
+    if root:
+        text += "\n[usage]\n" + root
+    return text
+
+
+@pytest.fixture
+def fake_usage_source(monkeypatch: pytest.MonkeyPatch):
+    """A registered fake usage source so pool tables with source pass registry validation."""
+    from agent_router import registry
+    from agent_router.usage import UsageSourceSpec
+
+    spec = UsageSourceSpec(
+        "fake-usage",
+        lambda pool_usage, env: None,
+        frozenset({"monthly", "rolling"}),
+        "fake_usage",
+    )
+    monkeypatch.setitem(registry._USAGE_SOURCES, "fake-usage", spec)
+    return spec
+
+
+def test_usage_defaults(tmp_path: Path, config_module) -> None:
+    config = load_text(tmp_path, config_module, VALID_CONFIG)
+    assert (config.usage.mode, config.usage.interval_s) == ("auto", 3600)
+    assert config.pools[0].usage == config_module.PoolUsage()
+    assert config.usage_mode("pool") == "auto"
+
+
+def test_usage_root_table_parses(tmp_path: Path, config_module) -> None:
+    root = 'mode = "manual"\ninterval = "30m"\n'
+    config = load_text(tmp_path, config_module, _usage_text(root=root))
+    assert (config.usage.mode, config.usage.interval_s) == ("manual", 1800)
+
+
+@pytest.mark.parametrize("root", ['mode = "nope"\n', 'interval = "abc"\n', "interval = 5\n"])
+def test_usage_root_bad_values_are_rejected(tmp_path: Path, config_module, root: str) -> None:
+    messages = error_messages(tmp_path, config_module, _usage_text(root=root))
+    key = root.split()[0]
+    assert any(message.startswith(f"usage.{key}:") for message in messages)
+
+
+def test_usage_root_unknown_key_is_rejected(tmp_path: Path, config_module) -> None:
+    messages = error_messages(tmp_path, config_module, _usage_text(root="every = 5\n"))
+    assert "usage.every: unknown key" in messages
+
+
+def test_pool_usage_maps_windows(tmp_path: Path, config_module, fake_usage_source) -> None:
+    text = _usage_text(pool='source = "fake-usage"\nwindows = { monthly = "week" }\n')
+    usage = load_text(tmp_path, config_module, text).pools[0].usage
+    assert usage.source == "fake-usage"
+    assert dict(usage.windows) == {"monthly": "week"}
+
+
+def test_pool_usage_unknown_window_is_rejected(
+    tmp_path: Path, config_module, fake_usage_source
+) -> None:
+    text = _usage_text(pool='source = "fake-usage"\nwindows = { monthly = "nope" }\n')
+    messages = error_messages(tmp_path, config_module, text)
+    assert 'pools[0].usage.windows.monthly: unknown window "nope"' in messages
+
+
+def test_pool_usage_two_fields_one_window_is_rejected(
+    tmp_path: Path, config_module, fake_usage_source
+) -> None:
+    text = _usage_text(
+        pool='source = "fake-usage"\nwindows = { monthly = "week", rolling = "week" }\n'
+    )
+    messages = error_messages(tmp_path, config_module, text)
+    assert (
+        'pools[0].usage.windows.rolling: window "week" is already mapped from field "monthly"'
+        in messages
+    )
+
+
+def test_pool_usage_source_without_windows_is_rejected(
+    tmp_path: Path, config_module, fake_usage_source
+) -> None:
+    text = _usage_text(pool='source = "fake-usage"\n')
+    messages = error_messages(tmp_path, config_module, text)
+    assert "pools[0].usage.windows: map at least one source field to a window" in messages
+
+
+@pytest.mark.parametrize("pool", ['windows = { monthly = "week" }\n', 'api_key_env = "X_KEY"\n'])
+def test_pool_usage_without_source_is_rejected(tmp_path: Path, config_module, pool: str) -> None:
+    messages = error_messages(tmp_path, config_module, _usage_text(pool=pool))
+    assert "pools[0].usage: windows and api_key_env require source" in messages
+
+
+def test_pool_usage_bad_api_key_env_is_rejected(
+    tmp_path: Path, config_module, fake_usage_source
+) -> None:
+    text = _usage_text(
+        pool='source = "fake-usage"\napi_key_env = "1BAD"\nwindows = { monthly = "week" }\n'
+    )
+    messages = error_messages(tmp_path, config_module, text)
+    assert "pools[0].usage.api_key_env: must look like an environment variable name" in messages
+
+
+def test_pool_usage_bad_mode_is_rejected(tmp_path: Path, config_module) -> None:
+    text = _usage_text(pool='mode = "nope"\n')
+    messages = error_messages(tmp_path, config_module, text)
+    assert "pools[0].usage.mode: invalid value: 'nope'; allowed: auto, manual" in messages
+
+
+def test_pool_usage_unknown_key_is_rejected(tmp_path: Path, config_module) -> None:
+    messages = error_messages(tmp_path, config_module, _usage_text(pool="src = 5\n"))
+    assert "pools[0].usage.src: unknown key" in messages
+
+
+def test_usage_mode_inheritance(tmp_path: Path, config_module, fake_usage_source) -> None:
+    text = _usage_text(
+        root='mode = "manual"\n',
+        pool='source = "fake-usage"\nmode = "auto"\nwindows = { monthly = "week" }\n',
+    )
+    config = load_text(tmp_path, config_module, text)
+    assert config.usage_mode("pool") == "auto"  # pool override wins
+    assert config.usage_mode("missing") == "manual"  # anything else inherits the root
+
+
+def test_auto_mode_without_source_is_valid(tmp_path: Path, config_module) -> None:
+    config = load_text(tmp_path, config_module, _usage_text(root='mode = "auto"\n'))
+    assert config.usage.mode == "auto"
+
+
+def test_default_template_usage_is_commented_out(default_config) -> None:
+    assert (default_config.usage.mode, default_config.usage.interval_s) == ("auto", 3600)
+    assert all(pool.usage == PoolUsage() for pool in default_config.pools)

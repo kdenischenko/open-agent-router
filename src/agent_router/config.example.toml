@@ -3,6 +3,10 @@
 [server]
 port = 8787
 
+# [usage]
+# mode = "auto"    # "auto" reads usage sources; "manual" is calibration only
+# interval = "1h"  # how often usage sources are read
+
 [tasks]
 allowed_roots = []
 denied_roots = []
@@ -126,6 +130,11 @@ counter_provider = "opencode-go"
   kind = "fixed"
   role = "pace"
   limit_usd = 10  # set your plan limit
+
+  # [pools.usage]
+  # source = "opencode-go"          # read the plan's usage from OpenCode
+  # api_key_env = "OPENCODE_GO_API_KEY"
+  # windows = { rolling = "5h", weekly = "week", monthly = "month" }
 
 [[routes]]
 id = "claude-cli/sonnet"

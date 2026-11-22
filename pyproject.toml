@@ -75,6 +75,9 @@ cline = "agent_router.adapters.cline:HARNESS"
 [project.entry-points."agent_router.counters"]
 opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
 
+# the usage source group is empty until a real source ships with the package
+[project.entry-points."agent_router.usage_sources"]
+
 [dependency-groups]
 dev = ["pytest", "ruff"]
 smoke = ["playwright==1.64.1"]
