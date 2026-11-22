@@ -484,3 +484,43 @@ th,
 dd {
   overflow-wrap: anywhere;
 }
+
+/* Approvals inbox and confirmations */
+
+#approvals:not(:empty) {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+#approvals .job p {
+  margin-bottom: var(--space-2);
+}
+
+a[data-confirm-action] {
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-1);
+  display: inline-block;
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  text-decoration: none;
+}
+
+.button-secondary {
+  background: var(--color-bg);
+  border-color: var(--color-control-border);
+  color: var(--color-text);
+}
+
+.confirm-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  color: var(--color-text);
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: var(--space-4);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}

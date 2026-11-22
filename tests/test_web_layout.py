@@ -128,7 +128,8 @@ def test_badge_caps_display_at_99_plus(web, rig, monkeypatch) -> None:
 
     monkeypatch.setattr(rig.dispatcher.jobs, "list", fake_list)
 
-    text = web.get("/").text
+    # the calibration page renders only the badge, not the inbox that needs full jobs
+    text = web.get("/calibrate").text
 
     assert ("awaiting_approval", 100) in calls
     badge = approval_badge(text)
