@@ -18,67 +18,27 @@ from agent_router.config_classifier import (
     _parse_classifier,
 )
 from agent_router.config_model import (
-    TIERS as TIERS,
-)
-from agent_router.config_model import (
-    BackendSection as BackendSection,
-)
-from agent_router.config_model import (
-    ClassifierModel as ClassifierModel,
-)
-from agent_router.config_model import (
-    ClassifierSettings as ClassifierSettings,
-)
-from agent_router.config_model import (
-    Config as Config,
-)
-from agent_router.config_model import (
-    ConfigError as ConfigError,
-)
-from agent_router.config_model import (
-    Mode as Mode,
-)
-from agent_router.config_model import (
-    ModelSettings as ModelSettings,
-)
-from agent_router.config_model import (
-    Pool as Pool,
-)
-from agent_router.config_model import (
-    Route as Route,
-)
-from agent_router.config_model import (
-    RouteKind as RouteKind,
-)
-from agent_router.config_model import (
-    SinkSettings as SinkSettings,
-)
-from agent_router.config_model import (
-    SpendSource as SpendSource,
-)
-from agent_router.config_model import (
-    StatuslineSettings as StatuslineSettings,
-)
-from agent_router.config_model import (
-    StorageSettings as StorageSettings,
-)
-from agent_router.config_model import (
-    TaskSettings as TaskSettings,
-)
-from agent_router.config_model import (
-    Tier as Tier,
-)
-from agent_router.config_model import (
-    UpstreamSettings as UpstreamSettings,
-)
-from agent_router.config_model import (
-    Window as Window,
-)
-from agent_router.config_model import (
-    effort_of as effort_of,
-)
-from agent_router.config_model import (
-    model_key as model_key,
+    TIERS,
+    BackendSection,
+    ClassifierModel,
+    ClassifierSettings,
+    Config,
+    ConfigError,
+    Mode,
+    ModelSettings,
+    Pool,
+    Route,
+    RouteKind,
+    SinkSettings,
+    SpendSource,
+    StatuslineSettings,
+    StorageSettings,
+    TaskSettings,
+    Tier,
+    UpstreamSettings,
+    Window,
+    effort_of,
+    model_key,
 )
 from agent_router.config_values import (
     _boolean,
@@ -97,6 +57,35 @@ from agent_router.config_values import (
 )
 from agent_router.periods import Duration, parse_duration
 from agent_router.prices import PriceTable, load_prices
+
+# the config model lives in config_model; callers keep importing it from here
+__all__ = [
+    "BackendSection",
+    "ClassifierModel",
+    "ClassifierSettings",
+    "Config",
+    "ConfigError",
+    "default_config_text",
+    "effort_of",
+    "home_dir",
+    "load_config",
+    "Mode",
+    "model_key",
+    "ModelSettings",
+    "Pool",
+    "Route",
+    "RouteKind",
+    "SinkSettings",
+    "SpendSource",
+    "StatuslineSettings",
+    "StorageSettings",
+    "TaskSettings",
+    "Tier",
+    "TIERS",
+    "UpstreamSettings",
+    "Window",
+]
+
 
 _STORAGE_BACKEND = re.compile(r"[a-z0-9_-]+")
 _DENIED_HEADERS = frozenset(
