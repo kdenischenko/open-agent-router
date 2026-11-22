@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_common
 from agent_router.auth import ensure_tokens
 from agent_router.client import GatewayClient
 from agent_router.config import load_config
@@ -32,7 +32,7 @@ def test_gateway(monkeypatch: pytest.MonkeyPatch, client):
     def factory(base_url: str, token: str) -> GatewayClient:
         return GatewayClient(base_url, token, client=client)
 
-    monkeypatch.setattr(cli, "make_client", factory)
+    monkeypatch.setattr(cli_common, "make_client", factory)
 
 
 def _roots(home: Path) -> list[Path]:

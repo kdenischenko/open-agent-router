@@ -14,7 +14,7 @@ from pathlib import Path, PureWindowsPath
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_common
 from agent_router.auth import ensure_tokens
 from agent_router.client import GatewayClient
 from agent_router.clock import format_local
@@ -123,7 +123,7 @@ def test_gateway(monkeypatch: pytest.MonkeyPatch, client):
     def factory(base_url: str, token: str) -> GatewayClient:
         return GatewayClient(base_url, token, client=client)
 
-    monkeypatch.setattr(cli, "make_client", factory)
+    monkeypatch.setattr(cli_common, "make_client", factory)
 
 
 def test_init_twice_does_not_change_files(home: Path, runner: CliRunner) -> None:
@@ -299,7 +299,7 @@ def test_advice_sends_the_job_mode(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, config, tokens
 ) -> None:
     gateway = AdviceGateway()
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: gateway)
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: gateway)
 
     result = runner.invoke(cli.app, ["advice", "--mode", "write"])
 
@@ -336,7 +336,7 @@ def test_rejected_token_returns_five_without_printing_it(
 ) -> None:
     wrong_token = "wrong-token-for-cli-test"
     monkeypatch.setattr(
-        cli,
+        cli_common,
         "make_client",
         lambda base_url, token: GatewayClient(base_url, wrong_token, client=client),
     )
@@ -594,7 +594,9 @@ def test_status_prints_window_note(
             }
         ]
     }
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: SnapshotGateway(snapshot))
+    monkeypatch.setattr(
+        cli_common, "make_client", lambda base_url, token: SnapshotGateway(snapshot)
+    )
 
     result = runner.invoke(cli.app, ["status"])
 
@@ -608,7 +610,9 @@ def test_status_prints_window_note(
 
 def _status_lines(runner: CliRunner, monkeypatch: pytest.MonkeyPatch, pool: dict) -> list[str]:
     snapshot = {"pools": [{"id": "claude-pro", "title": "Claude Pro", **pool}]}
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: SnapshotGateway(snapshot))
+    monkeypatch.setattr(
+        cli_common, "make_client", lambda base_url, token: SnapshotGateway(snapshot)
+    )
     result = runner.invoke(cli.app, ["status"])
     assert result.exit_code == 0
     return result.output.splitlines()

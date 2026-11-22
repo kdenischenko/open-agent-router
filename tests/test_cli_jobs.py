@@ -9,7 +9,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_common
 from agent_router.client import GatewayError, GatewayUnavailable
 from agent_router.clock import format_local
 
@@ -92,7 +92,7 @@ def gateway(monkeypatch: pytest.MonkeyPatch, config, tokens) -> FakeGateway:
         fake.tokens_used.append(token)
         return fake
 
-    monkeypatch.setattr(cli, "make_client", factory)
+    monkeypatch.setattr(cli_common, "make_client", factory)
     return fake
 
 
