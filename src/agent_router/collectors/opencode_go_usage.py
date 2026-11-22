@@ -27,7 +27,10 @@ def _reset_time(value: object) -> datetime | None:
 
 
 def _point(field: str, meter: object) -> UsagePoint | None:
-    """One meter as a point; a malformed percent or reset time skips the meter."""
+    """One meter as a point; a malformed percent or reset time skips the meter.
+
+    `status` ("ok" or "rate-limited") is not read: `percent` already says how full the meter is.
+    """
     if not isinstance(meter, Mapping):
         return None
     percent = meter.get("percent")
@@ -80,9 +83,10 @@ class OpenCodeGoUsage:
             return UsageRead(reason="missing_api_key")
         try:
             response = self._get(key)
+        # the caught errors are never logged: they carry the request and its authorization header
         except httpx.TimeoutException:
             return UsageRead(reason="timeout")
-        except httpx.HTTPError:
+        except (httpx.HTTPError, httpx.InvalidURL):  # InvalidURL is not an HTTPError
             return UsageRead(reason="unavailable")
         if response.status_code == 401:
             return UsageRead(reason="unauthorized")
