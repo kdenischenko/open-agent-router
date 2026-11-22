@@ -77,6 +77,7 @@ opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
 
 [dependency-groups]
 dev = ["pytest", "ruff"]
+smoke = ["playwright==1.64.1"]
 
 [build-system]
 requires = ["hatchling"]
@@ -102,7 +103,10 @@ extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Depends", "
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["bench: speed measurements, not part of the gates"]
-addopts = "-m 'not bench'"
+markers = [
+    "bench: speed measurements, not part of the gates",
+    "smoke: browser smoke tests, opt-in with -m smoke",
+]
+addopts = "-m 'not bench and not smoke'"
 # starlette suggests httpx2; the project uses httpx
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

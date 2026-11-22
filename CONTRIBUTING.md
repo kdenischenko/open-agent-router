@@ -26,6 +26,19 @@ uv run pytest -q
 CI runs the same commands on Windows, Linux and macOS. Windows is required; Linux and
 macOS are experimental and allowed to fail.
 
+## Browser smoke tests
+
+The Playwright suite is opt-in and offline. It uses a temporary gateway home and a fake clock,
+never the real gateway home or clock. Install Chromium once, then run the smoke marker:
+
+```
+uv run --group smoke playwright install chromium
+uv run --group smoke pytest -m smoke tests/test_web_smoke.py
+```
+
+Set `AGENT_ROUTER_SMOKE_SHOTS=<dir>` to keep the theme and mobile screenshots in that directory.
+Without it, screenshots go to pytest's temporary directory.
+
 ## Guidelines
 
 - **Tests first** for bug fixes: a test that fails for the stated reason, then the fix.
