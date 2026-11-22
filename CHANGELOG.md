@@ -6,6 +6,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Route choice ranks a pool by its urgency, `100 * lag / max(1 - expected, 0.02)`: a pool
+  with an unspent allowance and a near reset now outranks a pool with a larger lag and more
+  time left. `weight` is an offset on this score, which is twice the lag halfway through a
+  window, so weights tuned for the old score may need doubling. Status and decision JSON
+  gain an `urgency` field next to `lag`.
+
 ### Added
 
 - Each release tag also creates a GitHub release with the changelog notes, the wheel and the

@@ -2,8 +2,9 @@
 
 Add a scenario as a `pytest.param(Scenario(...), id=...)` row in SCENARIOS:
 routes and controls are TOML.
-`weight` is an offset in percentage points of lag: -10 means "pick it if the pool
-trails the others by 10 pp more."
+`weight` is an offset in percentage points of `100 * lag / time_left`, which equals the lag in
+percentage points at the start of a window and doubles at its middle: -20 means "pick it if
+the pool trails the others by 10 pp more" halfway through the window.
 When tuning a weight, add a row with your pools' lags and check where it lands in `expected`.
 """
 
@@ -117,10 +118,10 @@ SCENARIOS = [
     ),
     case(
         Scenario(
-            "expensive-model-weight-minus-10",
-            route_toml("claude/sonnet", "claude-pro", 5, "weight = -10", backend="claude") + OC_GLM,
+            "expensive-model-weight-minus-20",
+            route_toml("claude/sonnet", "claude-pro", 5, "weight = -20", backend="claude") + OC_GLM,
             {"claude-pro": 0.15, "opencode-go": 0.08},
-            ("oc/glm", "claude/sonnet"),  # without the weight Claude (15 pp) would come first
+            ("oc/glm", "claude/sonnet"),  # without the weight Claude (30 points) would come first
         )
     ),
     case(
@@ -134,9 +135,9 @@ SCENARIOS = [
     case(
         Scenario(
             "ahead-pool-negative-weight-not-better",
-            route_toml("claude/sonnet", "claude-pro", 5, "weight = -10", backend="claude") + OC_GLM,
+            route_toml("claude/sonnet", "claude-pro", 5, "weight = -20", backend="claude") + OC_GLM,
             {"claude-pro": -0.05, "opencode-go": -0.10},
-            ("oc/glm", "claude/sonnet"),  # -5-10 = -15, worse than -10; Claude leads unweighted
+            ("oc/glm", "claude/sonnet"),  # -10-20 = -30, worse than -20; Claude leads unweighted
         )
     ),
     case(
@@ -168,12 +169,12 @@ SCENARIOS = [
     case(
         Scenario(
             "members-differ-in-priority-and-weight",
-            route_toml("kimi/k3", "kimi-code", 4, K3 + "\nweight = -20")
+            route_toml("kimi/k3", "kimi-code", 4, K3 + "\nweight = -40")
             + route_toml("oc/k3", "opencode-go", 4, K3 + "\npriority = 1")
             + PREFER
             + OC_GLM,
             {"kimi-code": 0.25, "opencode-go": 0.10},
-            ("oc/glm", "kimi/k3", "oc/k3"),  # group is placed by its leader (25-20 = 5 < 10)
+            ("oc/glm", "kimi/k3", "oc/k3"),  # group is placed by its leader (50-40 = 10 < 20)
         )
     ),
 ]
