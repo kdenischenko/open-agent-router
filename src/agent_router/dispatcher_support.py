@@ -12,6 +12,7 @@ from agent_router.policy import Choice, Decision, RouteMetrics
 
 LOG_TAIL_CHARS = 4000
 ERROR_TEXT_MAX = 500
+_CWD_CHANGED = "job directory changed after validation"
 _READ_MAX_BYTES = 20 * 2**20 + 4096
 
 
