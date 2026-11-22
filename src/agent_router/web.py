@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
@@ -26,6 +27,15 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
+LIMIT_STALE_AFTER_S = 6 * 3600
+
+
+def _countdown(moment: str, now: datetime) -> str:
+    seconds = (datetime.fromisoformat(moment) - now).total_seconds()
+    return "now" if seconds <= 0 else f"in {format_age(seconds)}"
+
+
+TEMPLATES.env.filters["countdown"] = _countdown
 
 
 def _field(form: FormData, name: str) -> str:
@@ -194,6 +204,14 @@ def web_router(deps: Gateway) -> APIRouter:
         found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
         return sorted(found, key=lambda job: job.status != "awaiting_approval")
 
+    def limits_context(snapshot: dict) -> dict:
+        return {
+            "pools": snapshot["pools"],
+            "local": local,
+            "now": deps.clock.now(),
+            "stale_after_s": LIMIT_STALE_AFTER_S,
+        }
+
     def advice_context(snapshot: dict) -> dict:
         decisions = [
             decision_json(tier, deps.advise(tier, None)) | {"title": TIER_TITLES[tier]}
@@ -238,21 +256,23 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        context = {
-            "title": "Limits",
-            "pools": snapshot["pools"],
-            "recorded": recorded_line(request, snapshot),
-        } | advice_context(snapshot)
+        context = (
+            {
+                "title": "Limits",
+                "recorded": recorded_line(request, snapshot),
+            }
+            | limits_context(snapshot)
+            | advice_context(snapshot)
+        )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
 
     @router.get("/fragments/limits")
     def get_limits(request: Request) -> Response:
-        if session_id(request) is None:
+        sid = session_id(request)
+        if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        return TEMPLATES.TemplateResponse(
-            request, "_limits.html", {"pools": snapshot["pools"], "local": local}
-        )
+        return render_page(request, "_limits.html", limits_context(snapshot), sid=sid)
 
     @router.get("/fragments/advice")
     def get_advice(request: Request) -> Response:
