@@ -165,7 +165,7 @@ def test_unknown_usage_source_is_config_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as caught:
         load_text(tmp_path, text)
     messages = caught.value.messages
-    assert 'pools[0].usage.source: unknown usage source "nope"; available: none' in messages
+    assert 'pools[0].usage.source: unknown usage source "nope"; available: opencode-go' in messages
 
 
 def test_mapped_field_the_source_does_not_report(

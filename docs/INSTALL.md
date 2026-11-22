@@ -258,8 +258,20 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
     Every key of `windows` is a field the source reports; its value is a window id of that pool.
     An unmapped field is ignored, two fields cannot map to the same window, and a `source` needs
-    at least one mapped window. No usage source is registered yet: `source = "..."` fails with
-    `unknown usage source` until one is installed.
+    at least one mapped window. An unknown `source` still fails with `unknown usage source`. The
+    package ships one usage source, `opencode-go`.
+
+    To enable it for the OpenCode Go pool:
+
+    1. Create an API key in the [OpenCode console](https://opencode.ai).
+    2. Set the environment variable named by `api_key_env` (`OPENCODE_GO_API_KEY` by default)
+       for the user that runs the gateway, so the process started with `agent-router serve`
+       sees it.
+    3. Add the `[pools.usage]` sub-table to the OpenCode Go pool — the example above shows
+       exactly this table.
+
+    The gateway reads the key from the environment on every request; it never stores the key and
+    never writes it to a log, a reason code or an error message.
 
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).

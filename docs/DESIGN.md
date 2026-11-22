@@ -163,6 +163,10 @@ code when there is no data. Each pool maps source fields to its window ids with
 `source = spec.observation_source` (e.g. `opencode_go_usage`); the newest observation of a window
 wins, and for `usd` windows journal spend after it is added on top, as above. `[usage].mode = "auto"` reads the sources on
 every `[usage].interval`; `"manual"` keeps calibration-only behavior. A pool may override the mode.
+The shipped `opencode-go` source reads the OpenCode Go plan meters (`rolling`, `weekly`,
+`monthly`) from the vendor usage endpoint; a failed read yields a reason code (`missing_api_key`,
+`unauthorized`, `forbidden`, `http_error`, `timeout`, `unavailable`, `malformed_response`) instead
+of an exception, and the key from `api_key_env` never reaches a reason or a log.
 
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —

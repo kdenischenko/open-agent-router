@@ -11,7 +11,10 @@ All notable changes are documented here. The format follows
 - Each release tag also creates a GitHub release with the changelog notes, the wheel and the
   source archive, and a signed build provenance attestation that `gh attestation verify` checks.
 - `[usage]` and `[pools.usage]` config tables and the `agent_router.usage_sources` entry point
-  group for sources that read a pool's usage from the vendor; no source ships yet.
+  group for sources that read a pool's usage from the vendor.
+- `opencode-go` usage source: reads the OpenCode Go plan's rolling, weekly and monthly meters
+  from the vendor usage endpoint; the API key comes from the environment variable named by
+  `api_key_env` and is never stored or logged.
 
 ## [0.2.0] - 2026-11-21
 
