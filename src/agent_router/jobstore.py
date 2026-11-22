@@ -53,6 +53,20 @@ class JobStore(Protocol):
         """Jobs, newest first."""
         ...
 
+    def search(
+        self,
+        *,
+        status: Status | None = None,
+        route: str | None = None,
+        caller: str | None = None,
+        q: str | None = None,
+        sort: str = "newest",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[builtins.list[Job], int]:
+        """One sorted page of the jobs matching every given filter, with the total match count."""
+        ...
+
     def purge(
         self, before: datetime, jobs_dir: Path, dry_run: bool = False
     ) -> tuple[builtins.list[str], builtins.list[Path]]:
@@ -600,6 +614,53 @@ class SqliteJobStore:
                 (status, int(limit)),
             )
         return [_job(row) for row in rows.fetchall()]
+
+    def search(
+        self,
+        *,
+        status: Status | None = None,
+        route: str | None = None,
+        caller: str | None = None,
+        q: str | None = None,
+        sort: str = "newest",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[builtins.list[Job], int]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        if route is not None:
+            conditions.append(
+                "(json_extract(data, '$.route') = ?"
+                " OR json_extract(data, '$.approval_route') = ?"
+                " OR json_extract(data, '$.approved_route') = ?)"
+            )
+            params.extend((route, route, route))
+        if caller is not None:
+            conditions.append("json_extract(data, '$.request.caller') = ?")
+            params.append(caller)
+        if q is not None:
+            conditions.append(
+                "(id = ? OR instr(lower(json_extract(data, '$.request.prompt')), lower(?)) > 0)"
+            )
+            params.extend((q, q))
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        order = {
+            "oldest": "created_at ASC, seq ASC",
+            "duration": (
+                "finished_at IS NULL ASC, (finished_at - created_at) DESC,"
+                " created_at DESC, seq DESC"
+            ),
+        }.get(sort, "created_at DESC, seq DESC")
+        conn = self._store.connection()
+        total = int(conn.execute(f"SELECT COUNT(*) FROM jobs{where}", params).fetchone()[0])
+        rows = conn.execute(
+            f"SELECT {self._JOB_COLUMNS} FROM jobs{where} ORDER BY {order} LIMIT ? OFFSET ?",
+            (*params, int(limit), int(offset)),
+        )
+        return [_job(row) for row in rows.fetchall()], total
 
     def purge(
         self, before: datetime, jobs_dir: Path, dry_run: bool = False

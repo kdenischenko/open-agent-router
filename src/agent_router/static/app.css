@@ -654,3 +654,113 @@ a[data-confirm-action] {
 .confirm-dialog::backdrop {
   background: rgb(0 0 0 / 0.5);
 }
+
+/* Job list: filters, rows and pages */
+
+.job-filters {
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  margin-bottom: var(--space-4);
+}
+
+.job-filters label {
+  display: grid;
+  font-size: var(--text-sm);
+  gap: var(--space-1);
+}
+
+.job-filters input,
+.job-filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+.job-filters__actions {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.job-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.job-row {
+  align-items: baseline;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.job-row code {
+  overflow-wrap: anywhere;
+}
+
+.job-row__meta {
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  gap: var(--space-1) var(--space-3);
+}
+
+.job-row__reason {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.job-row__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.status-badge {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 0 var(--space-2);
+}
+
+.status-badge--ok {
+  background: var(--color-ok-bg);
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
+.status-badge--warn {
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
+  color: var(--color-warn);
+}
+
+.status-badge--danger {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.status-badge--info {
+  background: var(--color-info-bg);
+  border-color: var(--color-info);
+  color: var(--color-info);
+}
+
+.pager {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}

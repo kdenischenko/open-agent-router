@@ -10,28 +10,45 @@
   {% endif %}
   {% if tasks_disabled %}
   <p>Jobs are disabled: the job dispatcher is not running.</p>
+  {% elif not jobs and filters %}
+  <p class="empty">No jobs match these filters. <a href="/jobs">Clear filters</a></p>
   {% elif not jobs %}
   <p class="empty">No jobs yet.</p>
   {% else %}
-  <div class="job-list">
+  <p class="job-count">Jobs {{ listing.first }}–{{ listing.last }} of {{ listing.total }}</p>
+  <ul class="job-rows">
     {% for job in jobs %}
-    <article class="panel job" data-status="{{ job.status }}">
-      <h2><a href="/jobs/{{ job.id }}"><code>{{ job.id }}</code></a></h2>
-      <p>Status: <strong>{{ job.status }}</strong></p>
-      <p>Route: {{ job.approval_route or job.route or 'not chosen yet' }}</p>
-      {% if job.reason %}<p>Reason: {{ job.reason }}</p>{% endif %}
-      {% if job.status == 'awaiting_approval' %}
-      <form method="post" action="/jobs/{{ job.id }}/approve" class="inline">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit">Approve</button>
-      </form>
-      <a href="/jobs/{{ job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ job.id }}">Deny</a>
-      {% endif %}
+    <li class="job-row" data-status="{{ job.status }}">
+      <a href="/jobs/{{ job.id }}"><code>{{ job.id }}</code></a>
+      <span class="status-badge status-badge--{{ status_kind.get(job.status, 'muted') }}">{{ job.status }}</span>
+      <span class="job-row__meta">
+        <span>Route: {{ job.approval_route or job.route or 'not chosen yet' }}</span>
+        {% if job.request.caller %}<span>Caller: {{ job.request.caller }}</span>{% endif %}
+        <span>Created: <time datetime="{{ job.created_at.isoformat() }}">{{ local(job.created_at) }}</time></span>
+        {% if job.finished_at %}<span>Took: {{ (job.finished_at - job.created_at).total_seconds()|age }}</span>{% endif %}
+      </span>
+      {% if job.reason %}<span class="job-row__reason">Reason: {{ job.reason }}</span>{% endif %}
       {% if job.status in ['queued', 'awaiting_approval', 'running'] %}
-      <a href="/jobs/{{ job.id }}/cancel" data-confirm-action="cancel" aria-label="Cancel {{ job.id }}">Cancel</a>
+      <span class="job-row__actions">
+        {% if job.status == 'awaiting_approval' %}
+        <form method="post" action="/jobs/{{ job.id }}/approve" class="inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" aria-label="Approve {{ job.id }}">Approve</button>
+        </form>
+        <a href="/jobs/{{ job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ job.id }}">Deny</a>
+        {% endif %}
+        <a href="/jobs/{{ job.id }}/cancel" data-confirm-action="cancel" aria-label="Cancel {{ job.id }}">Cancel</a>
+      </span>
       {% endif %}
-    </article>
+    </li>
     {% endfor %}
-  </div>
+  </ul>
+  {% if listing.pages > 1 %}
+  <nav class="pager" aria-label="Job list pages">
+    {% if listing.prev_href %}<a href="{{ listing.prev_href }}" rel="prev">Previous</a>{% endif %}
+    <span>Page {{ listing.page }} of {{ listing.pages }}</span>
+    {% if listing.next_href %}<a href="{{ listing.next_href }}" rel="next">Next</a>{% endif %}
+  </nav>
+  {% endif %}
   {% endif %}
 </div>

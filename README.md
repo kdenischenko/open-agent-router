@@ -153,7 +153,10 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 the top of the home page with Approve and Deny. Below them the home page shows one card per
 pool with usage, expected pace, reset countdowns and observation age for each window,
 including stale and blocked states; the full limits table stays under a disclosure. The job
-page refreshes itself, shows the error, and lets you rate a finished job.
+list filters by status, route and caller, searches by job id or prompt text, sorts by
+creation time or duration and pages through 50 jobs at a time; the filters live in the
+address, so a filtered view can be bookmarked. The job page refreshes itself, shows the
+error, and lets you rate a finished job.
 
 ## Harnesses
 

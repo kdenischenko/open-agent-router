@@ -48,13 +48,14 @@ class WebRig:
         text=None,
         tier="standard",
         tier_source="default",
+        caller=None,
         **fields,
     ) -> Job:
         self._number += 1
         awaiting = status == "awaiting_approval"
         job = Job(
             id=f"j_web_{self._number}",
-            request=JobRequest(prompt=prompt, cwd=self.home),
+            request=JobRequest(prompt=prompt, cwd=self.home, caller=caller),
             status=status,
             tier=tier,
             tier_source=tier_source,
@@ -344,7 +345,10 @@ def test_jobs_script_refreshes_fragment_every_five_seconds(client) -> None:
     response = client.get("/static/app.js")
 
     assert response.status_code == 200
-    assert "setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000)" in response.text
+    assert (
+        "setInterval(() => refresh('/fragments/jobs' + location.search, 'jobs'), 5000)"
+        in response.text
+    )
 
 
 # --- job page: error, live fragment, details, rating --------------------------------------

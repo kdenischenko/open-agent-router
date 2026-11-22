@@ -33,7 +33,8 @@ async function refresh(path, id) {
 
 setInterval(() => refresh('/fragments/limits', 'limits'), 30000);
 setInterval(() => refresh('/fragments/advice', 'advice'), 30000);
-setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000);
+// the job list keeps its filters and page from the query string
+setInterval(() => refresh('/fragments/jobs' + location.search, 'jobs'), 5000);
 setInterval(() => refresh('/fragments/approvals', 'approvals'), 5000);
 
 // limits cards enhance the server markup progressively: pace markers appear and
