@@ -287,9 +287,10 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `api.py` | FastAPI app: routes, token checks, host guard, lifespan wiring |
 | `auth.py` | Token files, dashboard session cookies, CSRF tokens |
 | `classifier.py` | systemone/ollama/openai clients, vote queue, tier resolution, offline eval, report |
-| `cli.py` | `agent-router` root app and commands not yet split into their own module |
+| `cli.py` | `agent-router` root app and the `advice`, `calibrate`, `purge`, `export`, `classifier`, `doctor` and `mcp` commands |
 | `cli_common.py` | Helpers shared by the CLI command modules (config loading, gateway client, quoting) |
 | `cli_gateway.py` | CLI commands `init`, `serve` and `status` with their helpers |
+| `cli_jobs.py` | CLI job commands: `run`, `wait`, `result`, `rate`, `cancel`, `jobs`, `approve`, `deny`, `unblock` |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
 | `config.py` | TOML schema, validation, defaults, levers, tiers |
