@@ -365,7 +365,9 @@ job ends as `declined` with error `approval_expired` and does not move to anothe
 A writing job uses `--mode write`; check its changes yourself with `git diff`. Rate the result
 with `agent-router rate <id> good|bad|partial`. Ratings are used by `classifier report` and
 `agent-router export`. The dashboard job page refreshes itself, shows the error, and lets
-you rate a finished job.
+you rate a finished job. Attempt, token, cost and duration totals, a per-attempt timeline,
+and expandable prompt, result and output blocks keep the details together; copy buttons
+appear when clipboard scripting is available.
 
 ## 9. Delegation skill for orchestrators
 

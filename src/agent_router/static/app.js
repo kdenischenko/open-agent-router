@@ -22,6 +22,8 @@ async function refresh(path, id) {
         if (!fresh.hasAttribute(attr.name)) current.removeAttribute(attr.name);
       });
       Array.from(fresh.attributes).forEach((attr) => current.setAttribute(attr.name, attr.value));
+      // the swap drops the unhiding the copy buttons got at load, so reveal them again
+      revealCopyButtons(current);
     }
   } catch (_error) {
     return;
@@ -149,3 +151,27 @@ function setupConfirmDialog() {
 }
 
 setupConfirmDialog();
+
+// copy buttons stay hidden without scripts or clipboard access; one delegated listener
+// covers buttons that appear later, since a refresh swaps #job instead of rebinding
+function revealCopyButtons(root) {
+  if (!navigator.clipboard) return;
+  root.querySelectorAll('.copy-button').forEach((button) => { button.hidden = false; });
+}
+
+function setupCopyButtons() {
+  if (!navigator.clipboard) return;
+  revealCopyButtons(document);
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.copy-button[data-copy-target]');
+    if (!button) return;
+    const target = document.getElementById(button.dataset.copyTarget);
+    if (!target) return;
+    navigator.clipboard.writeText(target.textContent).then(() => {
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+    }).catch(() => {});
+  });
+}
+
+setupCopyButtons();

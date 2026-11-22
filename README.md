@@ -154,6 +154,9 @@ the top of the home page with Approve and Deny. The job list filters by status, 
 caller, searches by job id or prompt text, sorts by creation time or duration and pages
 through 50 jobs at a time; the filters live in the address, so a filtered view can be
 bookmarked. The job page refreshes itself, shows the error, and lets you rate a finished job.
+It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
+final text and per-attempt output in expandable blocks, with a copy button when clipboard
+scripting is available.
 
 ## Harnesses
 

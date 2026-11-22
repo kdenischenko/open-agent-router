@@ -1,90 +1,32 @@
 <div id="job" data-job-id="{{ job.id }}" data-terminal="{{ 'true' if terminal else 'false' }}">
 <p><a href="/jobs">All jobs</a></p>
-<dl>
-  <dt>Status</dt>
-  <dd>{{ job.status }}</dd>
+<header class="job-header">
+  <h2><code>{{ job.id }}</code> <span class="status-badge status-badge--{{ status_kind.get(job.status, 'muted') }}">{{ job.status }}</span></h2>
+  <ul class="job-meta">
+    <li>Route: {{ job.approval_route or job.route or 'not chosen yet' }}</li>
+    <li>Caller: {{ caller or '—' }}</li>
+    <li>Mode: {{ job.request.mode }}</li>
+    <li>Tier: {{ job.tier or '—' }}</li>
+    <li>Directory: {{ job.request.cwd }}</li>
+    <li>Reason: {{ job.reason or '—' }}</li>
+  </ul>
   {% if job.error_code or job.error_message %}
-  <dd>Error: {% if job.error_code %}<code>{{ job.error_code }}</code>{% if job.error_message %}: {% endif %}{% endif %}{{ job.error_message or '' }}</dd>
+  <p class="flash flash--danger" role="alert"><span class="flash__prefix">Error:</span> {% if job.error_code %}<code>{{ job.error_code }}</code>{% if job.error_message %}: {% endif %}{% endif %}{{ job.error_message or '' }}</p>
   {% endif %}
-  <dt>Directory</dt>
-  <dd>{{ job.request.cwd }}</dd>
-  <dt>Mode</dt>
-  <dd>{{ job.request.mode }}</dd>
-  <dt>Route</dt>
-  <dd>{{ job.approval_route or job.route or 'not chosen yet' }}</dd>
-  <dt>Reason</dt>
-  <dd>{{ job.reason or '—' }}</dd>
-</dl>
-{% if job.status == 'awaiting_approval' %}
-<p>Awaiting approval of route <code>{{ job.approval_route or '—' }}</code> until {{ local(job.approval_deadline) }}</p>
-{% endif %}
-{% if job.status == 'awaiting_approval' %}
-<form method="post" action="/jobs/{{ job.id }}/approve" class="inline">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <button type="submit">Approve</button>
-</form>
-<a href="/jobs/{{ job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ job.id }}">Deny</a>
-{% endif %}
-{% if job.status in ['queued', 'awaiting_approval', 'running'] %}
-<a href="/jobs/{{ job.id }}/cancel" data-confirm-action="cancel" aria-label="Cancel {{ job.id }}">Cancel</a>
-{% endif %}
-<section>
-  <h2>Prompt</h2>
-  <pre>{{ prompt }}</pre>
-  {% if prompt_truncated %}
-  <p>Showing the first 2000 of {{ prompt_chars }} characters.</p>
+  {% if job.status == 'awaiting_approval' %}
+  <p>Awaiting approval of route <code>{{ job.approval_route or '—' }}</code> until {{ local(job.approval_deadline) }}</p>
+  <form method="post" action="/jobs/{{ job.id }}/approve" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Approve</button>
+  </form>
+  <a href="/jobs/{{ job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ job.id }}">Deny</a>
   {% endif %}
-</section>
-<section>
-  <h2>Attempts</h2>
-  {% if attempts %}
-  <div class="table-scroll">
-  <table>
-    <thead>
-      <tr><th>#</th><th>Route</th><th>Pool</th><th>Started</th><th>Finished</th><th>Outcome</th><th>Duration</th><th>Tokens</th><th>Cost</th></tr>
-    </thead>
-    <tbody>
-      {% for attempt in attempts %}
-      <tr>
-        <td>{{ attempt.n }}</td>
-        <td>{{ attempt.route }}</td>
-        <td>{{ attempt.pool }}</td>
-        <td>{{ local(attempt.started_at) }}</td>
-        <td>{{ local(attempt.finished_at) }}</td>
-        <td>{{ attempt.outcome or '—' }}</td>
-        <td>{{ '%.1f' % attempt.duration_s if attempt.duration_s is not none else '—' }}</td>
-        <td>{% if attempt.tokens_in is none and attempt.tokens_out is none %}—{% else %}{{ attempt.tokens_in if attempt.tokens_in is not none else '—' }} / {{ attempt.tokens_out if attempt.tokens_out is not none else '—' }}{% endif %}</td>
-        <td>{{ '$%.4f' % attempt.cost_usd if attempt.cost_usd is not none else '' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% else %}
-  <p>No attempts yet.</p>
+  {% if job.status in ['queued', 'awaiting_approval', 'running'] %}
+  <a href="/jobs/{{ job.id }}/cancel" data-confirm-action="cancel" aria-label="Cancel {{ job.id }}">Cancel</a>
   {% endif %}
-</section>
-<section>
-  <h2>Final text</h2>
-  <pre>{{ job.text or '—' }}</pre>
-</section>
-<section>
-  <h2>Changed files</h2>
-  {% if 'changes_unknown' in job.violations %}
-  <p>Could not measure the changed files.</p>
-  {% endif %}
-  {% if job.changed_files is none and job.repo_root is none %}
-  <p>Not tracked: the directory is outside git.</p>
-  {% elif job.changed_files is none %}
-  <p>Not measured yet.</p>
-  {% elif job.changed_files %}
-  <ul>{% for path in job.changed_files %}<li>{{ path }}</li>{% endfor %}</ul>
-  {% elif 'changes_unknown' not in job.violations %}
-  <p>No files changed.</p>
-  {% endif %}
-</section>
+</header>
 {% if terminal %}
-<section>
+<section class="panel job-rating">
   <h2>Rating</h2>
   {% if last_rating %}
   <p>Rated: {{ last_rating.value }}{% if last_rating.should_tier %}, should be tier {{ last_rating.should_tier }}{% endif %}{% if last_rating.by %}, by {{ last_rating.by }}{% endif %}</p>
@@ -110,6 +52,92 @@
   </form>
 </section>
 {% endif %}
+<dl class="job-totals">
+  <div>
+    <dt>Attempts</dt>
+    <dd>{{ totals.attempts }}</dd>
+  </div>
+  <div>
+    <dt>Tokens</dt>
+    <dd>{% if totals.tokens_in is none and totals.tokens_out is none %}—{% else %}{{ totals.tokens_in if totals.tokens_in is not none else '—' }} / {{ totals.tokens_out if totals.tokens_out is not none else '—' }}{% endif %}</dd>
+  </div>
+  <div>
+    <dt>Cost</dt>
+    <dd>{{ '$%.4f' % totals.cost_usd if totals.cost_usd is not none else '—' }}</dd>
+  </div>
+  <div>
+    <dt>Duration</dt>
+    <dd>{{ totals.duration_s|age }}</dd>
+  </div>
+</dl>
+<details open>
+  <summary>Prompt</summary>
+  <pre class="wrap" id="job-prompt">{{ prompt }}</pre>
+  <button type="button" class="copy-button" data-copy-target="job-prompt" hidden>Copy</button>
+  {% if prompt_truncated %}
+  <p>Showing the first 2000 of {{ prompt_chars }} characters.</p>
+  {% endif %}
+</details>
+<details open>
+  <summary>Final text</summary>
+  <pre class="wrap" id="job-text">{{ job.text or '—' }}</pre>
+  <button type="button" class="copy-button" data-copy-target="job-text" hidden>Copy</button>
+</details>
+<section>
+  <h2>Attempts</h2>
+  {% if attempts %}
+  <ol class="attempt-timeline">
+    {% for attempt in attempts %}
+    <li>
+      <h3>#{{ attempt.n }} {{ attempt.route }}</h3>
+      <dl>
+        <dt>Pool</dt>
+        <dd>{{ attempt.pool }}</dd>
+        <dt>Started</dt>
+        <dd>{{ local(attempt.started_at) }}</dd>
+        <dt>Finished</dt>
+        <dd>{{ local(attempt.finished_at) }}</dd>
+        <dt>Outcome</dt>
+        <dd><span class="status-badge status-badge--{{ status_kind.get(attempt.outcome, 'muted') }}">{{ attempt.outcome or '—' }}</span></dd>
+        <dt>Duration</dt>
+        <dd>{{ '%.1f' % attempt.duration_s if attempt.duration_s is not none else '—' }}</dd>
+        <dt>Tokens</dt>
+        <dd>{% if attempt.tokens_in is none and attempt.tokens_out is none %}—{% else %}{{ attempt.tokens_in if attempt.tokens_in is not none else '—' }} / {{ attempt.tokens_out if attempt.tokens_out is not none else '—' }}{% endif %}</dd>
+        <dt>Cost</dt>
+        <dd>{{ '$%.4f' % attempt.cost_usd if attempt.cost_usd is not none else '' }}</dd>
+      </dl>
+      {% if attempt.log_tail %}
+      <details>
+        <summary>Output tail</summary>
+        <pre class="wrap" id="attempt-{{ attempt.n }}-tail">{{ attempt.log_tail }}</pre>
+        <button type="button" class="copy-button" data-copy-target="attempt-{{ attempt.n }}-tail" hidden>Copy</button>
+      </details>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% if not attempts | selectattr("log_tail") | list %}
+  <p>No output.</p>
+  {% endif %}
+  {% else %}
+  <p>No attempts yet.</p>
+  {% endif %}
+</section>
+<section>
+  <h2>Changed files</h2>
+  {% if 'changes_unknown' in job.violations %}
+  <p>Could not measure the changed files.</p>
+  {% endif %}
+  {% if job.changed_files is none and job.repo_root is none %}
+  <p>Not tracked: the directory is outside git.</p>
+  {% elif job.changed_files is none %}
+  <p>Not measured yet.</p>
+  {% elif job.changed_files %}
+  <ul>{% for path in job.changed_files %}<li>{{ path }}</li>{% endfor %}</ul>
+  {% elif 'changes_unknown' not in job.violations %}
+  <p>No files changed.</p>
+  {% endif %}
+</section>
 <section>
   <h2>Violations</h2>
   {% if job.violations %}
@@ -117,14 +145,5 @@
   {% else %}
   <p>No violations.</p>
   {% endif %}
-</section>
-<section>
-  <h2>Output tail</h2>
-  {% for attempt in attempts if attempt.log_tail %}
-  <h3>Attempt {{ attempt.n }}</h3>
-  <pre>{{ attempt.log_tail }}</pre>
-  {% else %}
-  <p>No output.</p>
-  {% endfor %}
 </section>
 </div>

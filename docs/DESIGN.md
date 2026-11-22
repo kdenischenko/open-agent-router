@@ -285,6 +285,9 @@ same routes. `GET /jobs` and its refresh fragment `/fragments/jobs` take `status
 `sort` (`newest`, `oldest`, `duration`) and `page`; unknown or malformed values are ignored,
 and a page past the end shows the last one. The search is `JobStore.search` in SQL over the
 stored job data. The job page refreshes itself, shows the error and lets you rate a finished job.
+It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
+final text and per-attempt output in expandable blocks; copy buttons appear when clipboard
+scripting is available.
 
 ## Module map
 
