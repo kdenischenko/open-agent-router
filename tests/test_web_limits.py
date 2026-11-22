@@ -52,7 +52,7 @@ def test_known_window_renders_a_limit_card(web, rig, monkeypatch, path):
 
     limits = element_block(text, r'<div\b[^>]*\bid="limits"[^>]*>')
     grid = element_block(limits, r'<div\b[^>]*class="grid limit-grid"[^>]*>')
-    card = element_block(grid, r'<article\b[^>]*class="panel limit-card"[^>]*>')
+    card = element_block(grid, r'<article\b[^>]*class="panel limit-card(?: [^"]*)?"[^>]*>')
 
     labelledby = re.search(r'aria-labelledby="([^"]+)"', card)
     assert labelledby is not None

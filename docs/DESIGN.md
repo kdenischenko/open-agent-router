@@ -279,8 +279,10 @@ frontend build) logs in with the admin token and sets a signed `ar_session` cook
 the admin token, revocable via a settings epoch); every POST form carries a per-session CSRF token.
 Pages: limits cards with usage bars, pacing, reset countdowns, data age, stale and blocked
 states, pool unblock forms and a collapsible table; advice; jobs with approve/deny/cancel;
-calibration form. The job page refreshes itself, shows the error and lets you rate a finished
-job.
+calibration form. Calibration re-renders submitted values with field errors, enhances the form
+with inline validation and a usage/reset preview, and highlights the recorded pool after the
+redirect and subsequent limits-fragment refreshes. The job page refreshes itself, shows the error
+and lets you rate a finished job.
 
 ## Module map
 

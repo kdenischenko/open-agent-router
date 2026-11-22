@@ -116,6 +116,8 @@ def web_router(deps: Gateway) -> APIRouter:
         sid: str,
         *,
         error: str | None = None,
+        errors: dict[str, str] | None = None,
+        values: dict[str, str] | None = None,
         status_code: int = 200,
     ) -> HTMLResponse:
         return render_page(
@@ -125,6 +127,8 @@ def web_router(deps: Gateway) -> APIRouter:
                 "title": "Manual calibration",
                 "pools": deps.config.pools,
                 "error": error,
+                "errors": errors or {},
+                "values": values or {},
             },
             sid=sid,
             nav="calibrate",
@@ -204,12 +208,13 @@ def web_router(deps: Gateway) -> APIRouter:
         found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
         return sorted(found, key=lambda job: job.status != "awaiting_approval")
 
-    def limits_context(snapshot: dict) -> dict:
+    def limits_context(request: Request, snapshot: dict) -> dict:
         return {
             "pools": snapshot["pools"],
             "local": local,
             "now": deps.clock.now(),
             "stale_after_s": LIMIT_STALE_AFTER_S,
+            "recorded_pool": request.query_params.get("recorded_pool"),
         }
 
     def advice_context(snapshot: dict) -> dict:
@@ -261,7 +266,7 @@ def web_router(deps: Gateway) -> APIRouter:
                 "title": "Limits",
                 "recorded": recorded_line(request, snapshot),
             }
-            | limits_context(snapshot)
+            | limits_context(request, snapshot)
             | advice_context(snapshot)
         )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
@@ -272,7 +277,7 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        return render_page(request, "_limits.html", limits_context(snapshot), sid=sid)
+        return render_page(request, "_limits.html", limits_context(request, snapshot), sid=sid)
 
     @router.get("/fragments/advice")
     def get_advice(request: Request) -> Response:
@@ -445,42 +450,69 @@ def web_router(deps: Gateway) -> APIRouter:
         form = await request.form()
         if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
             return csrf_failed(request, sid)
-        target = _field(form, "target")
-        if not target:
-            return calibration_page(request, sid, error="choose a pool and window", status_code=422)
-        reset_date, reset_time = _field(form, "resets_date"), _field(form, "resets_time")
-        resets_in = _field(form, "resets_in") or None
-        if reset_time and not reset_date:
-            return calibration_page(request, sid, error="set the reset date", status_code=422)
-        if reset_date and resets_in:
+        values = {
+            name: _field(form, name)
+            for name in ("target", "percent", "resets_date", "resets_time", "resets_in")
+        }
+
+        def invalid(
+            message: str, field: str, *, status: int = 422, field_message: str | None = None
+        ) -> HTMLResponse:
             return calibration_page(
                 request,
                 sid,
-                error="set either the reset date or reset in, not both",
-                status_code=422,
+                error=message,
+                errors={field: field_message or message},
+                values=values,
+                status_code=status,
             )
+
+        target = values["target"]
+        if not target:
+            return invalid("choose a pool and window", "target")
+        reset_date, reset_time = values["resets_date"], values["resets_time"]
+        resets_in = values["resets_in"] or None
+        if reset_time and not reset_date:
+            return invalid("set the reset date", "resets_date")
+        if reset_date and resets_in:
+            return invalid("set either the reset date or reset in, not both", "resets_in")
         try:
-            resets_at = parse_moment(f"{reset_date} {reset_time}", deps.tz) if reset_date else None
             pool_index, window_index = (int(part) for part in target.split(":"))
             if pool_index < 0 or window_index < 0:
                 raise ValueError
             pool = deps.config.pools[pool_index]
             window = pool.windows[window_index]
+        except (ValueError, IndexError):
+            return invalid("check the calibration field values", "target")
+        bad_percent = {"field_message": "enter a number from 0 to 100"}
+        try:
+            percent = float(values["percent"])
+        except ValueError:
+            return invalid("check the calibration field values", "percent", **bad_percent)
+        try:
+            resets_at = parse_moment(f"{reset_date} {reset_time}", deps.tz) if reset_date else None
+        except ValueError:
+            return invalid("check the calibration field values", "resets_date")
+        try:
+            # every other field is already checked: a validation error here is the percent range
             body = api.ObservationBody(
                 pool=pool.id,
                 window=window.id,
-                percent=float(_field(form, "percent")),
+                percent=percent,
                 resets_at=resets_at,
                 resets_in=resets_in,
             )
+        except ValidationError:
+            return invalid("check the calibration field values", "percent", **bad_percent)
+        try:
             api.calibrate(deps, body)
         except api.ApiError as exc:
-            return calibration_page(request, sid, error=exc.message, status_code=exc.status)
-        except (ValidationError, ValueError, IndexError):
-            return calibration_page(
-                request, sid, error="check the calibration field values", status_code=422
-            )
+            if exc.code in {"unknown_pool", "unknown_window"}:
+                field = "target"
+            else:
+                field = "resets_in" if resets_in else "resets_date"
+            return invalid(exc.message, field, status=exc.status)
         query = urlencode({"recorded_pool": pool.id, "recorded_window": window.id})
-        return RedirectResponse(f"/?{query}", status_code=303)
+        return RedirectResponse(f"/?{query}#limit-{pool.id}", status_code=303)
 
     return router

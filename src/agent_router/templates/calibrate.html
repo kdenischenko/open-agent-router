@@ -13,27 +13,36 @@
     </select>
   </div>
   <label for="target">Window</label>
-  <select id="target" name="target" required>
-    <option value="" disabled selected>Choose a window</option>
+  <select id="target" name="target" required aria-describedby="target-hint{% if errors.get('target') %} target-error{% endif %}"{% if errors.get('target') %} aria-invalid="true"{% endif %}>
+    <option value="" disabled{% if not values.get('target') %} selected{% endif %}>Choose a window</option>
     {% for pool in pools %}
       {% set pool_index = loop.index0 %}
       <optgroup label="{{ pool.title }}" data-pool="{{ pool_index }}">
       {% for window in pool.windows %}
-        <option value="{{ pool_index }}:{{ loop.index0 }}" data-kind="{{ window.kind }}">{{ window.id }}</option>
+        <option value="{{ pool_index }}:{{ loop.index0 }}" data-kind="{{ window.kind }}" data-months="{{ window.duration.months }}" data-days="{{ window.duration.days }}" data-hours="{{ window.duration.hours }}"{% if values.get('target') == pool_index|string + ':' + loop.index0|string %} selected{% endif %}>{{ window.id }}</option>
       {% endfor %}
       </optgroup>
     {% endfor %}
   </select>
+  <p id="target-hint" class="hint">The pool window this observation is for.</p>
+  <p id="target-error" class="field-error"{% if not errors.get('target') %} hidden{% endif %}>{{ errors.get('target', '') }}</p>
   <label for="percent">Used, %</label>
-  <input id="percent" name="percent" type="number" min="0" max="100" step="any" required>
+  <input id="percent" name="percent" type="number" min="0" max="100" step="any" required value="{{ values.get('percent', '') }}" aria-describedby="percent-hint{% if errors.get('percent') %} percent-error{% endif %}"{% if errors.get('percent') %} aria-invalid="true"{% endif %}>
+  <p id="percent-hint" class="hint">Share of the window already used, as the provider's usage page shows it.</p>
+  <p id="percent-error" class="field-error"{% if not errors.get('percent') %} hidden{% endif %}>{{ errors.get('percent', '') }}</p>
   <label for="resets_date">Reset date, local time</label>
   <div class="calibration-moment">
-    <input id="resets_date" name="resets_date" type="date">
-    <input id="resets_time" name="resets_time" type="time" aria-label="Reset time, optional">
+    <input id="resets_date" name="resets_date" type="date" value="{{ values.get('resets_date', '') }}" aria-describedby="resets_date-hint{% if errors.get('resets_date') %} resets_date-error{% endif %}"{% if errors.get('resets_date') %} aria-invalid="true"{% endif %}>
+    <input id="resets_time" name="resets_time" type="time" aria-label="Reset time, optional" value="{{ values.get('resets_time', '') }}">
   </div>
+  <p id="resets_date-hint" class="hint">When the window resets, in the dashboard time zone. The time is optional and defaults to midnight.</p>
+  <p id="resets_date-error" class="field-error"{% if not errors.get('resets_date') %} hidden{% endif %}>{{ errors.get('resets_date', '') }}</p>
   <label for="resets_in">Or reset in, e.g. 3h20m</label>
-  <input id="resets_in" name="resets_in" type="text">
+  <input id="resets_in" name="resets_in" type="text" value="{{ values.get('resets_in', '') }}" aria-describedby="resets_in-hint{% if errors.get('resets_in') %} resets_in-error{% endif %}"{% if errors.get('resets_in') %} aria-invalid="true"{% endif %}>
+  <p id="resets_in-hint" class="hint">Time left until the reset, e.g. 3h20m, 45m or 2d. Leave empty when you set the date.</p>
+  <p id="resets_in-error" class="field-error"{% if not errors.get('resets_in') %} hidden{% endif %}>{{ errors.get('resets_in', '') }}</p>
   <p id="rolling-hint" class="hint" hidden></p>
+  <output id="calibration-preview" class="calibration-preview" for="target percent resets_date resets_time resets_in" aria-live="polite" hidden></output>
   <button type="submit">Record observation</button>
 </form>
 {% endblock %}

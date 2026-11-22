@@ -26,7 +26,7 @@ async function refresh(path, id) {
   }
 }
 
-setInterval(() => refresh('/fragments/limits', 'limits'), 30000);
+setInterval(() => refresh('/fragments/limits' + location.search, 'limits'), 30000);
 setInterval(() => refresh('/fragments/advice', 'advice'), 30000);
 setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000);
 
@@ -104,13 +104,131 @@ function setupCalibration() {
   const provider = document.getElementById('provider');
   const target = document.getElementById('target');
   const field = document.getElementById('provider-field');
-  if (!provider || !target || !field) return;
+  const percent = document.getElementById('percent');
+  const resetDate = document.getElementById('resets_date');
+  const resetTime = document.getElementById('resets_time');
+  const resetsIn = document.getElementById('resets_in');
+  const preview = document.getElementById('calibration-preview');
+  if (!provider || !target || !field || !percent || !resetDate || !resetTime || !resetsIn) return;
   const groups = Array.from(target.querySelectorAll('optgroup')).map((group) => group.cloneNode(true));
   const placeholder = target.querySelector('option[value=""]');
-  const resets = ['resets_date', 'resets_time', 'resets_in']
-    .map((id) => document.getElementById(id))
-    .filter(Boolean);
+  const initialTarget = target.value;
+  const initialGroup = target.selectedOptions[0]?.closest('optgroup');
+  if (initialGroup) provider.value = initialGroup.dataset.pool;
+  const resets = [resetDate, resetTime, resetsIn];
   const hint = document.getElementById('rolling-hint');
+  const SPAN = /(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?/;
+
+  const spanMilliseconds = (value) => {
+    const match = SPAN.exec(value);
+    if (!value || !match || match[0] !== value) return null;
+    const [days, hours, minutes] = match.slice(1).map((part) => Number(part || 0));
+    return ((days * 24 + hours) * 60 + minutes) * 60 * 1000;
+  };
+
+  const resetMoment = () => {
+    if (resetsIn.value) {
+      const span = spanMilliseconds(resetsIn.value);
+      return span === null || span <= 0 ? null : new Date(Date.now() + span);
+    }
+    if (!resetDate.value) return null;
+    const reset = new Date(`${resetDate.value}T${resetTime.value || '00:00'}:00`);
+    return Number.isFinite(reset.getTime()) ? reset : null;
+  };
+
+  // the start of a fixed window that resets at `reset`, in calendar months, days and hours
+  const windowStart = (reset, option) => {
+    const start = new Date(reset);
+    start.setMonth(start.getMonth() - Number(option.dataset.months || 0));
+    start.setDate(start.getDate() - Number(option.dataset.days || 0));
+    start.setHours(start.getHours() - Number(option.dataset.hours || 0));
+    return start;
+  };
+
+  const updatePreview = () => {
+    if (!preview) return;
+    const lines = [];
+    if (percent.value.trim()) {
+      const used = Number(percent.value);
+      if (Number.isFinite(used)) lines.push(`used ${used}%`);
+    }
+    const reset = resetMoment();
+    const chosen = target.selectedOptions[0];
+    if (reset && chosen?.dataset.kind === 'fixed') {
+      const start = windowStart(reset, chosen);
+      const length = reset.getTime() - start.getTime();
+      if (length > 0) {
+        const expected = Math.min(100, Math.max(0, (Date.now() - start.getTime()) / length * 100));
+        lines.push(`expected ${expected.toFixed(1)}%`);
+      }
+    }
+    if (reset) {
+      const pad = (value) => String(value).padStart(2, '0');
+      const date = `${pad(reset.getDate())}.${pad(reset.getMonth() + 1)}`;
+      const time = `${pad(reset.getHours())}:${pad(reset.getMinutes())}`;
+      lines.push(`resets ${date} ${time}`);
+    }
+    preview.textContent = lines.join('\n');
+    preview.hidden = lines.length === 0;
+  };
+
+  // a field shows its message once the visitor has changed it, or every field on submit
+  const touched = new Set(['target', 'percent', 'resets_date', 'resets_in']
+    .filter((name) => document.getElementById(`${name}-error`)?.hidden === false));
+  const showErrors = (errors, all) => {
+    const controls = {target, percent, resets_date: resetDate, resets_in: resetsIn};
+    Object.entries(controls).forEach(([name, control]) => {
+      const message = all || touched.has(name) ? errors[name] || '' : '';
+      const error = document.getElementById(`${name}-error`);
+      if (error) {
+        error.textContent = message;
+        error.hidden = !message;
+      }
+      control.setAttribute('aria-describedby', `${name}-hint${message ? ` ${name}-error` : ''}`);
+      if (message) control.setAttribute('aria-invalid', 'true');
+      else control.removeAttribute('aria-invalid');
+    });
+  };
+
+  const validate = (all = false) => {
+    const errors = {};
+    if (!target.value) errors.target = 'choose a pool and window';
+    const used = Number(percent.value);
+    if (!percent.value.trim() || !Number.isFinite(used) || used < 0 || used > 100) {
+      errors.percent = 'enter a number from 0 to 100';
+    }
+    if (resetTime.value && !resetDate.value) errors.resets_date = 'set the reset date';
+    if (resetDate.value && resetsIn.value) {
+      errors.resets_in = 'set either the reset date or reset in, not both';
+    }
+    if (resetsIn.value) {
+      const span = spanMilliseconds(resetsIn.value);
+      if (span === null) {
+        errors.resets_in = `invalid span: '${resetsIn.value}' (expected 3h20m, 45m, or 2d)`;
+      } else if (span <= 0) {
+        errors.resets_in = `invalid span: '${resetsIn.value}' (must be positive)`;
+      }
+    }
+    const chosen = target.selectedOptions[0];
+    if (chosen?.dataset.kind === 'rolling' && resets.some((input) => input.value)) {
+      const name = resetsIn.value ? 'resets_in' : 'resets_date';
+      errors[name] = `window ${chosen.textContent} is rolling: it has no reset time, calibrate without a reset`;
+    }
+    const reset = resetMoment();
+    const resetField = resetsIn.value ? 'resets_in' : 'resets_date';
+    if (reset && reset.getTime() <= Date.now()) {
+      errors[resetField] = 'reset time is already in the past';
+    } else if (
+      reset && chosen?.dataset.kind === 'fixed'
+      && windowStart(reset, chosen).getTime() > Date.now() + 5 * 60 * 1000
+    ) {
+      errors[resetField] = `reset is more than one ${chosen.textContent} window ahead`;
+    }
+    showErrors(errors, all);
+    updatePreview();
+    return errors;
+  };
+
   const syncReset = () => {
     const chosen = target.selectedOptions[0];
     const rolling = Boolean(chosen && chosen.dataset.kind === 'rolling');
@@ -120,17 +238,39 @@ function setupCalibration() {
       hint.textContent = 'rolling window: no reset time';
     }
   };
-  const show = () => {
+  const show = (selected = '') => {
     const group = groups.find((item) => item.dataset.pool === provider.value);
     const options = group ? Array.from(group.children) : [];
     target.replaceChildren(placeholder, ...options.map((option) => option.cloneNode(true)));
-    target.value = '';
+    target.value = selected;
     syncReset();
   };
   target.addEventListener('change', syncReset);
-  provider.addEventListener('change', show);
+  [target, percent, resetDate, resetTime, resetsIn].forEach((control) => {
+    const name = control === resetTime ? 'resets_date' : control.id;
+    const check = () => {
+      touched.add(name);
+      validate();
+    };
+    control.addEventListener('input', check);
+    control.addEventListener('change', check);
+  });
+  provider.addEventListener('change', () => {
+    show();
+    validate();
+  });
+  if (target.form) target.form.noValidate = true;
+  target.form?.addEventListener('submit', (event) => {
+    const errors = validate(true);
+    const first = ['target', 'percent', 'resets_date', 'resets_in']
+      .find((name) => errors[name]);
+    if (!first) return;
+    event.preventDefault();
+    document.getElementById(first)?.focus();
+  });
   field.hidden = false;
-  show();
+  show(initialTarget);
+  updatePreview();
 }
 
 setupCalibration();
