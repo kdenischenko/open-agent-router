@@ -2809,7 +2809,7 @@ def test_repeated_failure_is_logged_once(make_rig, monkeypatch, caplog) -> None:
     assert len(dispatcher_errors(caplog)) == 2  # new failure after success — a new record
 
 
-def test_recover_processes_every_job_then_fails(make_rig) -> None:
+def test_recover_processes_every_job_then_fails(make_rig, caplog) -> None:
     rig = make_rig()
     flaky = flaky_jobs(rig)
     first = orphan(rig, rig.repo("первая"), "read")  # non-ascii on purpose
@@ -2821,6 +2821,9 @@ def test_recover_processes_every_job_then_fails(make_rig) -> None:
         rig.restart().recover()
     assert failed.value.job_ids == (middle.id,)
     assert str(failed.value) == f"recovery failed for jobs: {middle.id}"
+    assert [record.getMessage() for record in dispatcher_errors(caplog)] == [
+        f"job recovery failed: {middle.id}"
+    ]
     for job in (first, last):
         done = rig.job(job)
         assert (done.status, done.error_code) == ("failed", "gateway_restarted")
