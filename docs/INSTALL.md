@@ -234,6 +234,33 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    awaiting-approval jobs are always kept. Usage and spend records are kept for pool window
    accounting. Purge never runs automatically when the gateway starts.
 
+10. **Usage sources (optional).** A usage source reads the used share of a plan's windows from
+    the vendor (for example a usage endpoint) instead of manual calibration. The root table sets
+    the defaults for all pools:
+
+    ```toml
+    [usage]
+    mode = "auto"    # "auto" reads usage sources; "manual" is calibration only
+    interval = "1h"  # how often sources are read; a span like 1h or 30m, at least 1m
+    ```
+
+    Each pool says which source feeds it, how source fields map onto its window ids, and which
+    environment variable holds the API key (`api_key_env`, a variable name — never the key
+    itself). The sub-table goes after the pool's `[[pools.windows]]`:
+
+    ```toml
+    [pools.usage]
+    source = "opencode-go"
+    mode = "manual"  # optional; omit to inherit [usage].mode
+    api_key_env = "OPENCODE_GO_API_KEY"
+    windows = { rolling = "5h", weekly = "week", monthly = "month" }
+    ```
+
+    Every key of `windows` is a field the source reports; its value is a window id of that pool.
+    An unmapped field is ignored, two fields cannot map to the same window, and a `source` needs
+    at least one mapped window. No usage source is registered yet: `source = "..."` fails with
+    `unknown usage source` until one is installed.
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 

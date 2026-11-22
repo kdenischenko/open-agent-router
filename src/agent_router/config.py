@@ -6,7 +6,7 @@ import os
 import re
 import tomllib
 from collections.abc import Collection, Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,7 @@ from agent_router.config_model import (
     Mode,
     ModelSettings,
     Pool,
+    PoolUsage,
     Route,
     RouteKind,
     SinkSettings,
@@ -36,6 +37,7 @@ from agent_router.config_model import (
     TaskSettings,
     Tier,
     UpstreamSettings,
+    UsageSettings,
     Window,
     effort_of,
     model_key,
@@ -55,7 +57,7 @@ from agent_router.config_values import (
     _tables,
     _text,
 )
-from agent_router.periods import Duration, parse_duration
+from agent_router.periods import Duration, parse_duration, parse_span
 from agent_router.prices import PriceTable, load_prices
 
 # the config model lives in config_model; callers keep importing it from here
@@ -73,6 +75,7 @@ __all__ = [
     "model_key",
     "ModelSettings",
     "Pool",
+    "PoolUsage",
     "Route",
     "RouteKind",
     "SinkSettings",
@@ -83,6 +86,7 @@ __all__ = [
     "Tier",
     "TIERS",
     "UpstreamSettings",
+    "UsageSettings",
     "Window",
 ]
 
@@ -197,8 +201,52 @@ _POOL_KEYS = frozenset(
         "limit_base_usd",
         "model_limits",
         "model_limits_date",
+        "usage",
     }
 )
+
+
+_POOL_USAGE_KEYS = frozenset({"source", "mode", "api_key_env", "windows"})
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _parse_pool_usage(value: Any, label: str, window_ids: set[str], errors: list[str]) -> PoolUsage:
+    if value is None:
+        return PoolUsage()
+    raw = _table(value, f"{label}.usage", errors)
+    _check_keys(raw, _POOL_USAGE_KEYS, f"{label}.usage", errors)
+    source = _optional_text(raw.get("source"), f"{label}.usage.source", errors)
+    if source is not None and not source.strip():
+        errors.append(f"{label}.usage.source: must not be empty")
+        source = None
+    mode = _optional_text(raw.get("mode"), f"{label}.usage.mode", errors)
+    if mode is not None and mode not in ("auto", "manual"):
+        errors.append(f"{label}.usage.mode: invalid value: {mode!r}; allowed: auto, manual")
+        mode = None
+    api_key_env = _optional_text(raw.get("api_key_env"), f"{label}.usage.api_key_env", errors)
+    if api_key_env is not None and _ENV_NAME.fullmatch(api_key_env) is None:
+        errors.append(f"{label}.usage.api_key_env: must look like an environment variable name")
+        api_key_env = None
+    windows: dict[str, str] = {}
+    mapped: dict[str, str] = {}  # window id -> first field mapped to it
+    for key, item in _table(raw.get("windows"), f"{label}.usage.windows", errors).items():
+        if not isinstance(item, str):
+            errors.append(f"{label}.usage.windows.{key}: expected a window id string")
+            continue
+        if item not in window_ids:
+            errors.append(f'{label}.usage.windows.{key}: unknown window "{item}"')
+            continue
+        if item in mapped:
+            reason = f'window "{item}" is already mapped from field "{mapped[item]}"'
+            errors.append(f"{label}.usage.windows.{key}: {reason}")
+            continue
+        mapped[item] = key
+        windows[key] = item
+    if source is None and (windows or api_key_env is not None):
+        errors.append(f"{label}.usage: windows and api_key_env require source")
+    if source is not None and not windows:
+        errors.append(f"{label}.usage.windows: map at least one source field to a window")
+    return PoolUsage(source=source, mode=mode, api_key_env=api_key_env, windows=windows)
 
 
 def _parse_pools(value: Any, directory: Path, errors: list[str]) -> tuple[Pool, ...]:
@@ -214,6 +262,9 @@ def _parse_pools(value: Any, directory: Path, errors: list[str]) -> tuple[Pool, 
         title = _text(raw.get("title"), f"{label}.title", errors)
         unit = _choice(raw.get("unit"), ("percent", "usd"), f"{label}.unit", errors, "percent")
         windows = _parse_windows(raw.get("windows"), unit, label, errors)
+        usage = _parse_pool_usage(
+            raw.get("usage"), label, {window.id for window in windows}, errors
+        )
         if not any(window.role == "pace" for window in windows):
             errors.append(f"{label}: the pool must have at least one pace window")
         reserve = _number(raw.get("reserve", 0.0), f"{label}.reserve", errors, 0.0)
@@ -288,6 +339,7 @@ def _parse_pools(value: Any, directory: Path, errors: list[str]) -> tuple[Pool, 
                 limit_base_usd=limit_base_usd,
                 model_limits=model_limits,
                 model_limits_date=model_limits_date,
+                usage=usage,
             )
         )
     return tuple(pools)
@@ -645,9 +697,34 @@ _ROOT_KEYS = frozenset(
         "sinks",
         "server",
         "upstreams",
+        "usage",
     }
 )
 _SERVER_KEYS = frozenset({"port", "counter_interval_s", "snapshot_ttl_s", "panel_session_days"})
+
+_USAGE_KEYS = frozenset({"mode", "interval"})
+_MIN_USAGE_INTERVAL = timedelta(minutes=1)
+
+
+def _parse_usage(value: Any, errors: list[str]) -> UsageSettings:
+    raw = _table(value, "usage", errors)
+    _check_keys(raw, _USAGE_KEYS, "usage", errors)
+    mode = _choice(raw.get("mode", "auto"), ("auto", "manual"), "usage.mode", errors, "auto")
+    interval_s = 3600
+    if raw.get("interval") is not None:
+        if not isinstance(raw["interval"], str):
+            errors.append("usage.interval: a span string like 1h or 30m is required")
+        else:
+            try:
+                span = parse_span(raw["interval"])
+            except ValueError as exc:
+                errors.append(f"usage.interval: {exc}")
+            else:
+                if span < _MIN_USAGE_INTERVAL:
+                    errors.append("usage.interval: must be at least 1m")
+                else:
+                    interval_s = int(span.total_seconds())
+    return UsageSettings(mode=mode, interval_s=interval_s)
 
 
 def load_config(path: Path) -> Config:
@@ -671,6 +748,7 @@ def load_config(path: Path) -> Config:
     statusline = _parse_statusline(raw.get("statusline"), pools, errors)
     classifier = _parse_classifier(raw.get("classifier"), errors)
     storage = _parse_storage(raw.get("storage"), errors)
+    usage = _parse_usage(raw.get("usage"), errors)
     sinks = _parse_sinks(raw.get("sinks"), errors)
     server = _table(raw.get("server"), "server", errors)
     _check_keys(server, _SERVER_KEYS, "server", errors)
@@ -710,6 +788,7 @@ def load_config(path: Path) -> Config:
         models=models,
         upstreams=upstreams,
         panel_session_days=panel_session_days,
+        usage=usage,
     )
     from agent_router import registry
 

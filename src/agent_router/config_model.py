@@ -40,6 +40,27 @@ class BackendSection:
 
 
 @dataclass(frozen=True)
+class UsageSettings:
+    """Root [usage] table: how the gateway reads usage sources."""
+
+    mode: str = "auto"  # "auto" reads sources on the interval; "manual" is calibration only
+    interval_s: int = 3600
+
+
+@dataclass(frozen=True)
+class PoolUsage:
+    """A pool's [pools.usage] sub-table: which source feeds its windows."""
+
+    source: str | None = None
+    mode: str | None = None  # None inherits [usage].mode
+    api_key_env: str | None = None
+    windows: Mapping[str, str] = field(default_factory=dict)  # source field -> window id
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "windows", MappingProxyType(dict(self.windows)))
+
+
+@dataclass(frozen=True)
 class Window:
     id: str
     duration: Duration
@@ -68,6 +89,7 @@ class Pool:
     limit_base_usd: float | None = None
     model_limits: Mapping[str, float] = field(default_factory=dict)
     model_limits_date: str | None = None
+    usage: PoolUsage = field(default_factory=PoolUsage)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "windows", tuple(self.windows))
@@ -268,6 +290,7 @@ class Config:
     models: Mapping[str, ModelSettings] = field(default_factory=dict)
     upstreams: Mapping[str, UpstreamSettings] = field(default_factory=dict)
     panel_session_days: int = 30
+    usage: UsageSettings = field(default_factory=UsageSettings)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "pools", tuple(self.pools))
@@ -280,6 +303,13 @@ class Config:
 
     def backend_section(self, name: str) -> BackendSection:
         return self.backends.get(name) or BackendSection(name, name, "")
+
+    def usage_mode(self, pool_id: str) -> str:
+        """Effective usage mode of a pool: its own override, else the root [usage].mode."""
+        pool = next((item for item in self.pools if item.id == pool_id), None)
+        if pool is not None and pool.usage.mode is not None:
+            return pool.usage.mode
+        return self.usage.mode
 
     def levers(self, route: Route) -> tuple[int, float]:
         if route.kind == "api":
