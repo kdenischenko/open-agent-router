@@ -1,5 +1,6 @@
 """Delegation skill files for supported orchestrators."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -62,3 +63,38 @@ def test_skill_hands_approval_to_human(path: Path) -> None:
     handover = [p for p in paragraphs if "job awaits approval" in p]
     assert handover, "the skill must explain the approval message"
     assert any("agent-router approve" in p and "human" in p.lower() for p in handover)
+
+
+EXPECTED_TARGETS = [
+    ("claude-code", ".claude/skills"),
+    ("kimi-code", ".kimi-code/skills"),
+    ("opencode", ".config/opencode/skills"),
+    ("cline", ".cline/skills"),
+]
+
+
+def _install_section() -> str:
+    text = (ROOT / "docs/INSTALL.md").read_text(encoding="utf-8")
+    section = text[text.index("## 9. Delegation skill") :]
+    return section[: section.index("\n## ", 1)]
+
+
+def test_install_powershell_block_targets_all_harnesses() -> None:
+    section = _install_section()
+    block = re.search(r"```powershell\n(.*?)```", section, flags=re.DOTALL)
+    assert block, "section 9 must keep the PowerShell install block"
+
+    pairs = re.findall(r'"\s*(\S+?)\s*"\s*=\s*"\$HOME/(\S+?)\s*"', block[1])
+    assert pairs == EXPECTED_TARGETS
+
+
+def test_install_bash_block_targets_all_harnesses() -> None:
+    section = _install_section()
+    block = re.search(r"```bash\n(.*?)```", section, flags=re.DOTALL)
+    assert block, "section 9 must keep the bash install block"
+
+    pairs = re.findall(r"^(\S+)\s+\$HOME/(\S+)$", block[1], flags=re.MULTILINE)
+    assert pairs == EXPECTED_TARGETS
+    assert "mkdir -p" in block[1]
+    assert "read -r" in block[1]
+    assert 'cp -R "integrations/$harness/agent-router-delegate" "$dir"' in block[1]

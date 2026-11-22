@@ -1194,7 +1194,7 @@ def test_serve_passes_no_fixed_tz(home, monkeypatch: pytest.MonkeyPatch) -> None
 def test_serve_closes_store_when_jobstore_fails(home, monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    from agent_router import cli
+    from agent_router import cli, cli_gateway
 
     monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
     closed: list[bool] = []
@@ -1206,8 +1206,8 @@ def test_serve_closes_store_when_jobstore_fails(home, monkeypatch: pytest.Monkey
     def broken(*args: Any) -> None:
         raise OSError("migration failed")
 
-    monkeypatch.setattr(cli, "open_store", lambda storage, home: Store())
-    monkeypatch.setattr(cli, "open_jobstore", broken)
+    monkeypatch.setattr(cli_gateway, "open_store", lambda storage, home: Store())
+    monkeypatch.setattr(cli_gateway, "open_jobstore", broken)
     runner = CliRunner()
     assert runner.invoke(cli.app, ["init"]).exit_code == 0
     result = runner.invoke(cli.app, ["serve"])
@@ -1280,6 +1280,7 @@ def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
             log_dir,
             cancel,
             is_final_line=None,
+            is_progress_line=None,
             exit_grace_s=60,
             on_start=None,
             idle_timeout_s=None,
