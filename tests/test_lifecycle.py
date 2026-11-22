@@ -9,7 +9,7 @@ import pytest
 import uvicorn
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_gateway
 from agent_router.lifecycle import InstanceLocked, instance_lock
 
 
@@ -95,7 +95,7 @@ def test_serve_reports_lock_io_error(
 
     started: list[bool] = []
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: started.append(True))
-    monkeypatch.setattr(cli, "instance_lock", failing)
+    monkeypatch.setattr(cli_gateway, "instance_lock", failing)
 
     result = CliRunner().invoke(cli.app, ["serve"])
 

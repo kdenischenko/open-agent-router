@@ -15,7 +15,7 @@ from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from typer.testing import CliRunner
 
-from agent_router import cli, mcp_server
+from agent_router import cli, cli_common, mcp_server
 from agent_router.auth import ensure_tokens
 from agent_router.client import GatewayError, GatewayUnavailable
 
@@ -281,7 +281,7 @@ def test_mcp_command_uses_the_client_token(
         seen["url"], seen["token"] = base_url, token
         return FakeGateway()
 
-    monkeypatch.setattr(cli, "make_client", make_client)
+    monkeypatch.setattr(cli_common, "make_client", make_client)
     monkeypatch.setattr(mcp_server, "serve", lambda gateway: seen.setdefault("served", gateway))
 
     result = CliRunner().invoke(cli.app, ["mcp"])

@@ -373,7 +373,7 @@ appear when clipboard scripting is available.
 
 To let an agent delegate jobs through the gateway, copy your harness's skill into its skills
 directory. The skills are not part of the PyPI package: run this from the root of a clone of the
-repository (remove unused lines from `$targets`):
+repository (remove unused lines for harnesses you do not use). With PowerShell on Windows:
 
 ```powershell
 $targets = @{
@@ -388,7 +388,22 @@ foreach ($h in $targets.Keys) {
 }
 ```
 
-The directory is created first: without it, `Copy-Item` would copy the skill under the name `skills`.
+With bash or zsh (Linux, macOS, Git Bash):
+
+```bash
+while read -r harness dir; do
+  mkdir -p "$dir"
+  cp -R "integrations/$harness/agent-router-delegate" "$dir"
+done <<EOF
+claude-code $HOME/.claude/skills
+kimi-code $HOME/.kimi-code/skills
+opencode $HOME/.config/opencode/skills
+cline $HOME/.cline/skills
+EOF
+```
+
+The directory is created first: without it, `Copy-Item` and `cp -R` would copy the skill under
+the name `skills`.
 The skill is visible from the next harness session. Each skill passes `--caller <harness>`, and the
 gateway uses `[callers]` to map the caller to its own pool, so that the job is not routed back
 to the caller's subscription. When the gateway picks the route itself, it never sends a

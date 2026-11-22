@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
@@ -41,6 +42,15 @@ STATUS_KIND = {
     "cancelled": "muted",
 }
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
+LIMIT_STALE_AFTER_S = 6 * 3600
+
+
+def _countdown(moment: str, now: datetime) -> str:
+    seconds = (datetime.fromisoformat(moment) - now).total_seconds()
+    return "now" if seconds <= 0 else f"in {format_age(seconds)}"
+
+
+TEMPLATES.env.filters["countdown"] = _countdown
 
 
 def job_totals(job: Job, attempts: list[Attempt]) -> dict:
@@ -227,7 +237,8 @@ def web_router(deps: Gateway) -> APIRouter:
 
     def job_page_number(request: Request) -> int:
         raw = request.query_params.get("page", "")
-        return int(raw) if raw.isdecimal() and 0 < int(raw) < 10**6 else 1
+        # a length check first: int() refuses strings of thousands of digits
+        return int(raw) if raw.isdecimal() and len(raw) <= 6 and int(raw) > 0 else 1
 
     def job_list(request: Request) -> dict | None:
         if deps.dispatcher is None:
@@ -332,6 +343,14 @@ def web_router(deps: Gateway) -> APIRouter:
             )
         return items
 
+    def limits_context(snapshot: dict) -> dict:
+        return {
+            "pools": snapshot["pools"],
+            "local": local,
+            "now": deps.clock.now(),
+            "stale_after_s": LIMIT_STALE_AFTER_S,
+        }
+
     def advice_context(snapshot: dict) -> dict:
         decisions = [
             decision_json(tier, deps.advise(tier, None)) | {"title": TIER_TITLES[tier]}
@@ -376,12 +395,15 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        context = {
-            "title": "Limits",
-            "pools": snapshot["pools"],
-            "recorded": recorded_line(request, snapshot),
-            "approvals": approval_items(),
-        } | advice_context(snapshot)
+        context = (
+            {
+                "title": "Limits",
+                "recorded": recorded_line(request, snapshot),
+                "approvals": approval_items(),
+            }
+            | limits_context(snapshot)
+            | advice_context(snapshot)
+        )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
 
     @router.get("/fragments/approvals")
@@ -393,12 +415,11 @@ def web_router(deps: Gateway) -> APIRouter:
 
     @router.get("/fragments/limits")
     def get_limits(request: Request) -> Response:
-        if session_id(request) is None:
+        sid = session_id(request)
+        if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        return TEMPLATES.TemplateResponse(
-            request, "_limits.html", {"pools": snapshot["pools"], "local": local}
-        )
+        return render_page(request, "_limits.html", limits_context(snapshot), sid=sid)
 
     @router.get("/fragments/advice")
     def get_advice(request: Request) -> Response:
