@@ -8,13 +8,13 @@ async function refresh(path, id) {
     const current = document.getElementById(id);
     // a swap must not pull focus or a disclosure state from under the visitor: skip the
     // refresh while focus is inside or a confirmation dialog is open, since closing the dialog
-    // returns focus to the link that opened it; reopen the disclosures that were open
+    // returns focus to the link that opened it; disclosures keep the state the visitor left
     if (fresh && current && !current.contains(document.activeElement)
         && !document.querySelector('dialog[open]')) {
       const open = Array.from(current.querySelectorAll('details')).map((item) => item.open);
       current.innerHTML = fresh.innerHTML;
       current.querySelectorAll('details').forEach((item, index) => {
-        if (open[index]) item.open = true;
+        if (index < open.length) item.open = open[index];
       });
       // the wrapper's own attributes change too, e.g. the inbox loses its heading reference
       // when it empties

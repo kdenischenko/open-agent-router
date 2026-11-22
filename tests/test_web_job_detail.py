@@ -258,3 +258,11 @@ def test_app_js_sets_up_copy_buttons(client) -> None:
 
     assert "setupCopyButtons" in script
     assert "navigator.clipboard" in script
+
+
+def test_refresh_keeps_closed_disclosures_closed(client) -> None:
+    script = client.get("/static/app.js").text
+    refresh = script[script.index("async function refresh") : script.index("setInterval(")]
+
+    # prompt and final text render open: a refresh restores what the visitor chose, both ways
+    assert "item.open = open[index]" in refresh
