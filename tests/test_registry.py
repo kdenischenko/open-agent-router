@@ -192,6 +192,7 @@ def test_third_party_counter_is_called(
         "agent_router.adapters.opencode",
         "agent_router.adapters.claude",
         "agent_router.collectors.opencode_stats",
+        "agent_router.collectors.opencode_go_usage",
     ],
 )
 def test_imports_are_acyclic(module: str) -> None:
