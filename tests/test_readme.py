@@ -69,7 +69,12 @@ def test_readme_assets_are_small() -> None:
         "banner-light.svg",
         "demo.svg",
         "cycle.svg",
-        "dashboard.png",
+        "dashboard-light.png",
+        "dashboard-dark.png",
+        "jobs-light.png",
+        "jobs-dark.png",
+        "job-light.png",
+        "job-dark.png",
     }
     missing = sorted(name for name in required if not (ASSETS / name).is_file())
     assert missing == []

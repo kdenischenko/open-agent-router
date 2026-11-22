@@ -17,7 +17,7 @@ delegated to a harness.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
-  <img src="assets/architecture-light.svg" alt="Architecture: orchestrators, CLI, HTTP API, dispatcher, route policy, adapters, runner and harness CLIs on the main path; access control, the tier classifier with local and cloud models, the dashboard, the opencode stats counter, SQLite and the ledger beside it">
+  <img src="assets/architecture-light.svg" alt="Architecture: an orchestrator agent reaches the gateway through the CLI or the MCP server and you through the dashboard; inside the gateway the HTTP API checks tokens, the dispatcher keeps the queue and asks the tier classifier and the route policy, the ledger feeds pace and blocks to the policy, and the runner starts a coding agent CLI; usage figures reach the ledger from calibration, the Claude Code status line, the OpenCode Go usage API, the opencode stats counter and the harness journal">
 </picture>
 
 ## Concepts
@@ -378,6 +378,8 @@ scripting is available.
 | `jobs.py` | Job/attempt/rating/vote data model, statuses and transitions |
 | `jobstore.py` | SQLite storage for jobs, attempts, ratings, votes, blocks, spend |
 | `ledger.py` | Window state from observations, counters, and spend |
+| `lifecycle.py` | One `serve` process per gateway home: an OS lock on `serve.lock` |
+| `liveness.py` | Liveness of a running harness: the idle limit on silent output and the hard time cap |
 | `mcp_server.py` | MCP tools over stdio for orchestrators; gateway client API, no admin actions |
 | `pacing.py` | Expected vs used usage, lag, reserve and block computation |
 | `periods.py` | Window durations and boundary arithmetic |
@@ -392,7 +394,10 @@ scripting is available.
 | `spend.py` | Spend records and attempt cost estimation |
 | `statusline.py` | Claude Code status line script (posts rate limits to the gateway) |
 | `store.py` | SQLite storage for observations and counter samples |
+| `usage.py` | Usage source protocol and spec, mapping of source points to window observations, staleness rule (`is_stale`) |
+| `usage_reader.py` | Scheduled and on-demand reads of usage sources into observations, per-pool read health |
 | `web.py` | Dashboard pages and fragments |
+| `winjob.py` | Windows job objects: every process an attempt starts stops with the attempt |
 | `worktree.py` | Git snapshots, changed-file detection, path sanitizing |
 | `adapters/base.py` | Adapter protocol, preamble, outcome settling, limit hints |
 | `adapters/{kimi,claude,opencode,cline}.py` | Per-harness argv and output parsing |
