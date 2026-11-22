@@ -14,7 +14,7 @@ The server exposes exactly these 8 tools:
 
 | Tool | Purpose |
 |---|---|
-| `submit_job` | Submit a job: prompt, working directory, mode, tier and caller name |
+| `submit_job` | Submit a job: prompt, working directory, mode, tier, route and caller name |
 | `wait_job` | Wait up to 100 seconds for a job, returns its current state |
 | `job_result` | Get the full result text of a finished job |
 | `list_jobs` | List jobs, optionally filtered by status, with a limit |
@@ -33,6 +33,9 @@ The server exposes exactly these 8 tools:
 - `caller` is the name of your own harness as listed in `[callers]` of the gateway
   config, for example `claude-code`. The gateway then keeps the job off the
   subscription the orchestrator itself runs on.
+- `route` is a route id from `advice`, for example `opencode/glm-5.3`; it pins the job
+  to that route instead of letting the gateway choose, and the job is still rejected
+  if the route cannot serve it.
 - Write the job with full context: the directory it may work in, the expected result
   and the constraints. Do not submit a second write job in the same directory until
   the first one has finished.
