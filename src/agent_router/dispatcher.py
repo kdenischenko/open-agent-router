@@ -6,7 +6,6 @@ import concurrent.futures
 import contextlib
 import hashlib
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -20,6 +19,18 @@ from agent_router.adapters import with_preamble
 from agent_router.classifier import resolve_tier
 from agent_router.clock import Clock, format_local
 from agent_router.config import Config, Route
+from agent_router.dispatcher_support import (
+    ERROR_TEXT_MAX,
+    LOG_TAIL_CHARS,
+    _cwd_matches,
+    _measurement_tail,
+    _read,
+    _repo_key,
+    _safe_error,
+    _tail,
+    _writer_key,
+    decision_snapshot,
+)
 from agent_router.events import EventBus
 from agent_router.jobs import (
     TERMINAL,
@@ -31,7 +42,6 @@ from agent_router.jobs import (
     Status,
     WrongState,
     can_transition,
-    directory_key,
     new_job_id,
     validate_request_directory,
 )
@@ -41,7 +51,6 @@ from agent_router.policy import (
     Choice,
     Decision,
     PoolBlock,
-    RouteMetrics,
     RouteRequest,
     RouteView,
     Snapshot,
@@ -68,15 +77,12 @@ from agent_router.store import Store
 
 LIMIT_REASON = "limit hit"
 EXPLICIT_REASON = "route set by caller"
-LOG_TAIL_CHARS = 4000
-ERROR_TEXT_MAX = 500
 VIEWS_TTL_S = 60.0
 ROUTE_ERROR_STREAK = 2
 ROUTE_ERROR_COOLDOWN_S = 1800
 LOCK_GRACE_S = 1.0
 REAP_RETRY_PAUSE_S = 0.5  # pause before retrying the failed first process query in _reap
 QUEUE_PAGE = 50
-_READ_MAX_BYTES = 20 * 2**20 + 4096
 _RECOVER_LIST = 1000
 _CWD_CHANGED = "job directory changed after validation"
 
@@ -93,87 +99,6 @@ class _Active:
     cancel: threading.Event
     repo: str | None  # writer lock key; None for a read-mode job
     future: concurrent.futures.Future[AttemptResult] | None = None
-
-
-def _repo_key(root: Path | None) -> str | None:
-    return None if root is None else os.path.normcase(str(root))
-
-
-def _writer_key(root: Path | None) -> str | None:
-    """Writer lock key: one for every spelling of a repository, whatever the volume's case rules."""
-    return None if root is None else directory_key(root)
-
-
-def _cwd_matches(job: Job, checked: Path) -> bool:
-    try:
-        current = Path(job.request.cwd).resolve()
-    except (OSError, RuntimeError, ValueError):
-        return False
-    return _repo_key(current) == _repo_key(checked)
-
-
-def _read(path: Path) -> str:
-    try:
-        with path.open("rb") as stream:
-            return stream.read(_READ_MAX_BYTES).decode("utf-8", "replace")
-    except OSError:
-        return ""
-
-
-def _tail(stdout: str, stderr: str) -> str:
-    joined = stdout if not stderr.strip() else f"{stdout}\n[stderr]\n{stderr}"
-    return joined[-LOG_TAIL_CHARS:]
-
-
-def _safe_error(text: str, cwd: Path) -> str:
-    safe = worktree.without_paths(text, cwd)
-    return safe if len(safe) <= ERROR_TEXT_MAX else safe[:ERROR_TEXT_MAX] + "…"
-
-
-def _measurement_tail(tail: str | None, exc: Exception) -> str:
-    detail = str(exc) if isinstance(exc, worktree.WorktreeError) else type(exc).__name__
-    line = f"[agent-router: post-run measurement failed: {detail}]"
-    return f"{tail}\n{line}"[-LOG_TAIL_CHARS:] if tail else line[-LOG_TAIL_CHARS:]
-
-
-_METRIC_FIELDS = (
-    "pool",
-    "priority",
-    "weight",
-    "lag",
-    "score",
-    "quality",
-    "has_data",
-    "prefer_rank",
-)
-
-
-def decision_snapshot(job: Job, decision: Decision, at: datetime) -> dict:
-    """Route choice snapshot for an attempt: candidates with metrics and the excluded ones."""
-
-    def metrics(metrics: RouteMetrics | None) -> dict:
-        if metrics is None:
-            return {}
-        return {name: getattr(metrics, name) for name in _METRIC_FIELDS}
-
-    def entry(choice: Choice) -> dict:
-        return {
-            "route": choice.route.id,
-            "model": choice.route.model,
-            **metrics(decision.metrics.get(choice.route.id)),
-        }
-
-    chosen = decision.chosen[0] if decision.chosen else None
-    return {
-        "at": at.isoformat(),
-        "tier": job.tier,
-        "tier_source": job.tier_source,
-        "mode": job.request.mode,
-        "caller": job.request.caller,
-        "chosen": None if chosen is None else entry(chosen),
-        "candidates": [entry(choice) for choice in decision.chosen],
-        "excluded": [{"route": item.route.id, "reason": item.reason} for item in decision.excluded],
-    }
 
 
 class _WriteFailed(Exception):
@@ -1330,3 +1255,6 @@ class Dispatcher:
                 self._lock.release()
         else:
             log.warning("dispatcher step held the lock: recover() will settle the outcomes")
+
+
+__all__ = ["ERROR_TEXT_MAX", "LOG_TAIL_CHARS", "Dispatcher", "RecoverFailed", "decision_snapshot"]

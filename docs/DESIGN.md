@@ -305,6 +305,7 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config`, `ConfigError` |
 | `config_values.py` | Generic TOML value checks (keys, tables, scalars) used by the config parsers |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
+| `dispatcher_support.py` | Dispatcher helpers without dispatcher state: writer lock keys, output tails, route-choice snapshots |
 | `events.py` | In-process event bus with per-subscriber threads |
 | `export.py` | Redacted JSONL/CSV export of jobs, spend, observations |
 | `jobs.py` | Job/attempt/rating/vote data model, statuses and transitions |
