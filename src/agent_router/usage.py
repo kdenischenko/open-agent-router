@@ -58,6 +58,8 @@ class UsageSourceSpec:
     observation_source: str  # value of Observation.source, e.g. "opencode_go_usage"
     # the variable doctor checks for presence when the pool sets no api_key_env
     default_api_key_env: str | None = None
+    # doctor's own check of the source's prerequisites: a warning text, or None when all is well
+    check: Callable[[PoolUsage, Mapping[str, str]], str | None] | None = None
 
 
 def is_stale(state: UsageReadState | None, now: datetime, interval_s: float) -> bool:

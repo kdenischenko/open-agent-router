@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from agent_router import cli, cli_common, registry
 from agent_router import runner as runner_module
 from agent_router.client import GatewayError, GatewayUnavailable
+from agent_router.config_model import PoolUsage
 from agent_router.registry import CounterSpec
 from agent_router.runner import ResolvedExecutable
 from agent_router.usage import UsageSourceSpec
@@ -761,6 +762,40 @@ def test_doctor_names_the_sources_default_key_variable(
         "Warning: pool opencode-go: usage source fake-usage needs environment variable "
         "FAKE_DEFAULT_KEY, which is not set" in _warnings(result)
     )
+
+
+def test_doctor_prints_the_sources_own_check(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    seen: list[PoolUsage] = []
+
+    def check(pool_usage: PoolUsage, env) -> str | None:
+        seen.append(pool_usage)
+        return "the CLI is not signed in"
+
+    spec = UsageSourceSpec(
+        name="fake-usage",
+        factory=lambda pool_usage, env: None,
+        windows=frozenset({"monthly"}),
+        observation_source="fake_usage",
+        check=check,
+    )
+    monkeypatch.setitem(registry._USAGE_SOURCES, "fake-usage", spec)
+    body = 'source = "fake-usage"\nexecutable = "fake-cli"\nwindows = { monthly = "month" }'
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), body))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Warning: pool opencode-go: usage source fake-usage: the CLI is not signed in"
+        in _warnings(result)
+    )
+    assert [item.executable for item in seen] == ["fake-cli"]
 
 
 def _snapshot_pool_usage(**changes) -> dict[str, Any]:

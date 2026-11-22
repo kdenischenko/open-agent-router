@@ -144,6 +144,7 @@ came from (`figure:` in `agent-router status`, the pool card on the dashboard):
 | Manual calibration | any | `agent-router calibrate` or the dashboard's Calibrate page |
 | Claude Code status line | Claude | the status line script posts rate limits to the gateway |
 | OpenCode Go usage API | OpenCode Go | read every `[usage].interval` in `auto` mode, or now with `agent-router usage refresh` |
+| Claude Code `/usage` | Claude | the signed-in Claude Code CLI, read like the OpenCode Go usage API |
 | `opencode stats` counter | `usd` pools | cumulative cost sampled from OpenCode |
 | Harness journal | `usd` pools | cost each job reports or is estimated at, added on top of the last figure |
 

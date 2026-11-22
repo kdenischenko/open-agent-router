@@ -76,6 +76,7 @@ cline = "agent_router.adapters.cline:HARNESS"
 opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
 
 [project.entry-points."agent_router.usage_sources"]
+claude-code = "agent_router.collectors.claude_code_usage:SOURCE"
 opencode-go = "agent_router.collectors.opencode_go_usage:SOURCE"
 
 [dependency-groups]
