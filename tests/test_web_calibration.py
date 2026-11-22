@@ -48,13 +48,18 @@ def test_valid_calibration_redirects_to_and_highlights_only_saved_card(client, t
     assert_recorded_card(fragment)
 
 
-def test_unknown_recorded_pool_highlights_nothing(client, tokens):
+@pytest.mark.parametrize(
+    "query",
+    [
+        "recorded_pool=nope&recorded_window=month",
+        "recorded_pool=kimi-code",
+        "recorded_pool=kimi-code&recorded_window=nope",
+    ],
+)
+def test_unknown_recorded_pair_highlights_nothing(client, tokens, query):
     authenticated_client(client, tokens)
 
-    for path in (
-        "/?recorded_pool=nope&recorded_window=month",
-        "/fragments/limits?recorded_pool=nope&recorded_window=month",
-    ):
+    for path in (f"/?{query}", f"/fragments/limits?{query}"):
         text = client.get(path).text
         assert "limit-card--recorded" not in text
         assert ">updated</span>" not in text
@@ -81,6 +86,11 @@ def test_unknown_recorded_pool_highlights_nothing(client, tokens):
             {"resets_in": "3x"},
             "resets_in",
             "invalid span: '3x' (expected 3h20m, 45m, or 2d)",
+        ),
+        (
+            {"resets_in": "99999999999d"},
+            "resets_in",
+            "invalid span: '99999999999d' (too long)",
         ),
         (
             {"resets_in": "", "resets_date": "2026-11-12"},
@@ -172,16 +182,19 @@ def test_calibration_script_has_preview_validation_and_persistent_highlight(clie
     script = client.get("/static/app.js").text
 
     assert "calibration-preview" in script
-    assert r"/(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?/" in script
-    assert "start.setMonth" in script
-    assert "start.setDate" in script
-    assert "start.setHours" in script
+    # the same grammar as periods.parse_span, where \d matches any Unicode decimal digit
+    assert r"/^(?:(\p{Nd}+)d)?(?:(\p{Nd}+)h)?(?:(\p{Nd}+)m)?$/u" in script
+    assert "Math.min(reset.getUTCDate(), lastDay)" in script  # month end clamps like shift
+    assert "dataset.utcOffsetMinutes" in script  # dates in the dashboard time zone
+    assert "input.disabled ? '' : input.value" in script  # disabled reset fields are not sent
     assert "expected ${expected.toFixed(1)}%" in script
     assert "aria-invalid" in script
     assert "aria-describedby" in script
     assert "event.preventDefault()" in script
     assert "target.form.noValidate = true" in script
-    assert "window ahead" in script  # mirrors the server check for a fixed window
+    # whether a reset is past or too far ahead depends on the clock: the server decides
+    assert "already in the past" not in script
+    assert "window ahead" not in script
     assert "touched.has(name)" in script  # untouched fields keep quiet until submit
     assert "refresh('/fragments/limits' + location.search, 'limits')" in script
 
@@ -199,3 +212,11 @@ def test_calibration_styles_use_existing_tokens(client):
     assert recorded is not None
     assert "outline: 2px solid var(--color-accent)" in recorded.group(1)
     assert ".calibration-preview" in css
+
+
+def test_calibration_form_carries_the_dashboard_time_zone_offset(client, tokens):
+    authenticated_client(client, tokens)
+
+    text = client.get("/calibrate").text
+
+    assert 'data-utc-offset-minutes="0"' in text  # the test dashboard runs in UTC

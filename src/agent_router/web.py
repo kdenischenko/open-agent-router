@@ -111,6 +111,11 @@ def web_router(deps: Gateway) -> APIRouter:
             request, sid, "invalid CSRF token", "/", "Back to the dashboard", status_code=403
         )
 
+    def utc_offset_minutes() -> int:
+        """The dashboard time zone offset now, for the calibration preview in the browser."""
+        offset = deps.clock.now().astimezone(deps.tz).utcoffset()
+        return 0 if offset is None else int(offset.total_seconds() // 60)
+
     def calibration_page(
         request: Request,
         sid: str,
@@ -129,6 +134,7 @@ def web_router(deps: Gateway) -> APIRouter:
                 "error": error,
                 "errors": errors or {},
                 "values": values or {},
+                "utc_offset_minutes": utc_offset_minutes(),
             },
             sid=sid,
             nav="calibrate",
@@ -214,7 +220,7 @@ def web_router(deps: Gateway) -> APIRouter:
             "local": local,
             "now": deps.clock.now(),
             "stale_after_s": LIMIT_STALE_AFTER_S,
-            "recorded_pool": request.query_params.get("recorded_pool"),
+            "recorded_pool": recorded_pool(request),
         }
 
     def advice_context(snapshot: dict) -> dict:
@@ -227,6 +233,15 @@ def web_router(deps: Gateway) -> APIRouter:
             "closed_pools": [pool for pool in snapshot["pools"] if pool["block"]],
             "local": local,
         }
+
+    def recorded_pool(request: Request) -> str | None:
+        """The pool of the recorded pair in the query, or None unless the pair is configured."""
+        pool_id = request.query_params.get("recorded_pool")
+        window_id = request.query_params.get("recorded_window")
+        pool = next((item for item in deps.config.pools if item.id == pool_id), None)
+        if pool is None or not any(window.id == window_id for window in pool.windows):
+            return None
+        return pool.id
 
     def recorded_line(request: Request, snapshot: dict) -> str | None:
         """The confirmation line for a just-recorded pair, or None when the params are absent."""

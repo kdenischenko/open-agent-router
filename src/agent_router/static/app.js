@@ -117,32 +117,47 @@ function setupCalibration() {
   if (initialGroup) provider.value = initialGroup.dataset.pool;
   const resets = [resetDate, resetTime, resetsIn];
   const hint = document.getElementById('rolling-hint');
-  const SPAN = /(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?/;
+  // a rolling window disables the reset fields, and a disabled field is not submitted
+  const value = (input) => (input.disabled ? '' : input.value);
+  // the dashboard time zone offset, so dates mean what the server reads, not the browser zone
+  const offsetMs = Number(target.form?.dataset.utcOffsetMinutes || 0) * 60 * 1000;
+  // the grammar of periods.parse_span: \d there matches any Unicode decimal digit
+  const SPAN = /^(?:(\p{Nd}+)d)?(?:(\p{Nd}+)h)?(?:(\p{Nd}+)m)?$/u;
 
-  const spanMilliseconds = (value) => {
-    const match = SPAN.exec(value);
-    if (!value || !match || match[0] !== value) return null;
+  // null for a malformed span, NaN when only the server can convert its digits
+  const spanMilliseconds = (text) => {
+    const match = text ? SPAN.exec(text) : null;
+    if (!match) return null;
     const [days, hours, minutes] = match.slice(1).map((part) => Number(part || 0));
     return ((days * 24 + hours) * 60 + minutes) * 60 * 1000;
   };
 
   const resetMoment = () => {
-    if (resetsIn.value) {
-      const span = spanMilliseconds(resetsIn.value);
-      return span === null || span <= 0 ? null : new Date(Date.now() + span);
+    if (value(resetsIn)) {
+      const span = spanMilliseconds(value(resetsIn));
+      return Number.isFinite(span) && span > 0 ? new Date(Date.now() + span) : null;
     }
-    if (!resetDate.value) return null;
-    const reset = new Date(`${resetDate.value}T${resetTime.value || '00:00'}:00`);
-    return Number.isFinite(reset.getTime()) ? reset : null;
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value(resetDate));
+    if (!day) return null;
+    const [hour, minute] = (value(resetTime) || '00:00').split(':').map(Number);
+    const wall = Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]), hour, minute);
+    return Number.isFinite(wall) ? new Date(wall - offsetMs) : null;
   };
 
-  // the start of a fixed window that resets at `reset`, in calendar months, days and hours
+  // the start of a fixed window that resets at `reset`: calendar months in UTC with the day
+  // clamped to the month end, as periods.shift counts them, then days and hours
   const windowStart = (reset, option) => {
-    const start = new Date(reset);
-    start.setMonth(start.getMonth() - Number(option.dataset.months || 0));
-    start.setDate(start.getDate() - Number(option.dataset.days || 0));
-    start.setHours(start.getHours() - Number(option.dataset.hours || 0));
-    return start;
+    const months = Number(option.dataset.months || 0);
+    const total = reset.getUTCFullYear() * 12 + reset.getUTCMonth() - months;
+    const year = Math.floor(total / 12);
+    const month = total - year * 12;
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const start = Date.UTC(
+      year, month, Math.min(reset.getUTCDate(), lastDay),
+      reset.getUTCHours(), reset.getUTCMinutes(), reset.getUTCSeconds(),
+    );
+    const hours = Number(option.dataset.days || 0) * 24 + Number(option.dataset.hours || 0);
+    return new Date(start - hours * 60 * 60 * 1000);
   };
 
   const updatePreview = () => {
@@ -163,9 +178,10 @@ function setupCalibration() {
       }
     }
     if (reset) {
-      const pad = (value) => String(value).padStart(2, '0');
-      const date = `${pad(reset.getDate())}.${pad(reset.getMonth() + 1)}`;
-      const time = `${pad(reset.getHours())}:${pad(reset.getMinutes())}`;
+      const wall = new Date(reset.getTime() + offsetMs);
+      const pad = (part) => String(part).padStart(2, '0');
+      const date = `${pad(wall.getUTCDate())}.${pad(wall.getUTCMonth() + 1)}`;
+      const time = `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}`;
       lines.push(`resets ${date} ${time}`);
     }
     preview.textContent = lines.join('\n');
@@ -190,6 +206,8 @@ function setupCalibration() {
     });
   };
 
+  // only checks that do not depend on the clock or time zone block a submit;
+  // the server decides whether a reset is in the past or too far ahead
   const validate = (all = false) => {
     const errors = {};
     if (!target.value) errors.target = 'choose a pool and window';
@@ -197,32 +215,17 @@ function setupCalibration() {
     if (!percent.value.trim() || !Number.isFinite(used) || used < 0 || used > 100) {
       errors.percent = 'enter a number from 0 to 100';
     }
-    if (resetTime.value && !resetDate.value) errors.resets_date = 'set the reset date';
-    if (resetDate.value && resetsIn.value) {
-      errors.resets_in = 'set either the reset date or reset in, not both';
-    }
-    if (resetsIn.value) {
-      const span = spanMilliseconds(resetsIn.value);
-      if (span === null) {
-        errors.resets_in = `invalid span: '${resetsIn.value}' (expected 3h20m, 45m, or 2d)`;
-      } else if (span <= 0) {
-        errors.resets_in = `invalid span: '${resetsIn.value}' (must be positive)`;
+    const date = value(resetDate);
+    const span = value(resetsIn);
+    if (value(resetTime) && !date) errors.resets_date = 'set the reset date';
+    if (date && span) errors.resets_in = 'set either the reset date or reset in, not both';
+    if (span) {
+      const length = spanMilliseconds(span);
+      if (length === null) {
+        errors.resets_in = `invalid span: '${span}' (expected 3h20m, 45m, or 2d)`;
+      } else if (length <= 0) {
+        errors.resets_in = `invalid span: '${span}' (must be positive)`;
       }
-    }
-    const chosen = target.selectedOptions[0];
-    if (chosen?.dataset.kind === 'rolling' && resets.some((input) => input.value)) {
-      const name = resetsIn.value ? 'resets_in' : 'resets_date';
-      errors[name] = `window ${chosen.textContent} is rolling: it has no reset time, calibrate without a reset`;
-    }
-    const reset = resetMoment();
-    const resetField = resetsIn.value ? 'resets_in' : 'resets_date';
-    if (reset && reset.getTime() <= Date.now()) {
-      errors[resetField] = 'reset time is already in the past';
-    } else if (
-      reset && chosen?.dataset.kind === 'fixed'
-      && windowStart(reset, chosen).getTime() > Date.now() + 5 * 60 * 1000
-    ) {
-      errors[resetField] = `reset is more than one ${chosen.textContent} window ahead`;
     }
     showErrors(errors, all);
     updatePreview();
