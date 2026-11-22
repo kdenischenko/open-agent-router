@@ -161,12 +161,31 @@ returns points — a source field name, a fraction 0..1 and an optional `resets_
 code when there is no data. Each pool maps source fields to its window ids with
 `[pools.usage] windows`, and the mapped points become observations with
 `source = spec.observation_source` (e.g. `opencode_go_usage`); the newest observation of a window
-wins, and for `usd` windows journal spend after it is added on top, as above. `[usage].mode = "auto"` reads the sources on
-every `[usage].interval`; `"manual"` keeps calibration-only behavior. A pool may override the mode.
+wins, and for `usd` windows journal spend after it is added on top, as above. A rolling window
+gets no reset time, and a fixed window's reset is dropped when it is not in the future or lies
+more than one window ahead, the same bounds manual calibration enforces. `[usage].mode = "auto"`
+reads the sources on every `[usage].interval`; `"manual"` keeps calibration-only behavior. A pool
+may override the mode.
 The shipped `opencode-go` source reads the OpenCode Go plan meters (`rolling`, `weekly`,
 `monthly`) from the vendor usage endpoint; a failed read yields a reason code (`missing_api_key`,
 `unauthorized`, `forbidden`, `http_error`, `timeout`, `unavailable`, `malformed_response`) instead
 of an exception, and the key from `api_key_env` never reaches a reason or a log.
+
+**The usage reader** builds one source instance per pool with `usage.source` and reads it on a
+schedule and on demand. In auto mode a background thread (`usage-reader`) calls
+`refresh(scheduled=True)` on a short tick of `min(60 s, interval)`; the reader itself gates per
+pool: a scheduled pass skips a pool whose last attempt is younger than `[usage].interval_s`, any
+pass skips a pool attempted within the last 60 seconds (`MIN_REFRESH_S`, reason `too_soon`), and a
+pool whose effective mode is `manual` is never read. The check and the new attempt time are taken
+in one step, so a refresh arriving while another one reads the same pool is skipped. A forced read is available through
+`POST /api/v1/usage/refresh` (admin token, optional `{"pool": "<id>"}` body), the
+`agent-router usage refresh [POOL]` command, and the **Refresh limits** buttons of the dashboard.
+Each read writes its observations through the same path as a calibration and runs the same
+out-of-schedule counter check; a source exception becomes the reason `error`, and a read in which
+no point maps onto a window becomes `no_data`. Each pass publishes one event per pool on the bus: `usage.read` with
+`{pool, source, windows}` on success, `usage.read_failed` with `{pool, source, reason}` on
+failure. Events, results and reasons carry ids only: never keys or response bodies. Per pool the
+reader keeps `last_attempt_at`, `last_success_at` and `last_reason` in memory for display.
 
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —

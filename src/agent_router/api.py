@@ -54,6 +54,7 @@ from agent_router.registry import Counter, load_counter
 from agent_router.service import Gateway, decision_json, worker_loop
 from agent_router.sinks import EventSink, attach_sinks
 from agent_router.store import Observation, Store
+from agent_router.usage_reader import UnknownPoolError, UsageReader
 
 STOP_WAIT_S = 2.0
 WAIT_MAX_S = 110.0  # max time to wait for a job in a single request
@@ -204,6 +205,14 @@ class ObservationBody(BaseModel):
     percent: StrictFloat | StrictInt = Field(ge=0, le=100)
     resets_at: AwareDatetime | None = None
     resets_in: str | None = None
+
+
+class UsageRefreshBody(BaseModel):
+    """POST /api/v1/usage/refresh body: one pool, or every pool with a usage source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pool: StrictStr | None = None
 
 
 def calibrate(gateway: Gateway, body: ObservationBody) -> dict[str, Any]:
@@ -468,6 +477,19 @@ def api_router(gateway: Gateway) -> APIRouter:
     def post_observation(body: ObservationBody, role: Role = admin) -> dict[str, Any]:
         return calibrate(gateway, body)
 
+    @router.post("/usage/refresh")
+    def post_usage_refresh(
+        body: UsageRefreshBody | None = None, role: Role = admin
+    ) -> dict[str, Any]:
+        reader = gateway.usage_reader
+        if reader is None:
+            raise ApiError(503, "usage_disabled", "usage reader is not running")
+        try:
+            result = reader.refresh(None if body is None else body.pool)
+        except UnknownPoolError as exc:
+            raise ApiError(422, "unknown_pool", str(exc)) from exc
+        return result.to_json()
+
     @router.post("/signals/claude-statusline")
     async def post_statusline(request: Request, role: Role = client) -> dict[str, Any]:
         try:
@@ -651,6 +673,8 @@ def create_app(
             counters[pool.counter].sample_once()
 
     gateway.after_calibration.append(hook)
+    usage_reader = UsageReader(config, gateway, clock, bus)
+    gateway.usage_reader = usage_reader
     if dispatcher is not None:
         bus.subscribe("waiters", gateway.waiters.notify)
 
@@ -660,6 +684,15 @@ def create_app(
                 with contextlib.suppress(Exception):
                     sampler.sample_once()
             if stop.wait(config.counter_interval_s):
+                return
+
+    def usage_loop(stop: threading.Event) -> None:
+        # short tick: the reader itself decides per pool whether the interval has passed
+        tick = min(60, config.usage.interval_s)
+        while True:
+            with contextlib.suppress(Exception):
+                usage_reader.refresh(scheduled=True)
+            if stop.wait(tick):
                 return
 
     threads = Background()
@@ -672,6 +705,8 @@ def create_app(
             if background:
                 sinks.extend(attach_sinks(bus, config, gateway.home))
                 threads.start("counter-sampler", loop)
+                if usage_reader.has_sources:
+                    threads.start("usage-reader", usage_loop)
                 if dispatcher is not None:
                     await run_in_threadpool(dispatcher.recover)
                     threads.start("job-worker", lambda stop: worker_loop(dispatcher, bus, stop))
@@ -705,6 +740,7 @@ def create_app(
     app.state.gateway = gateway
     app.state.counters = counters
     app.state.counter_sampler = counters.get("opencode_stats")
+    app.state.usage_reader = usage_reader
     app.state.background = threads
     app.state.waiters = gateway.waiters
 

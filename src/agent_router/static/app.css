@@ -547,7 +547,9 @@ dd {
   padding: var(--space-2) var(--space-3);
 }
 
-.limit-unblock {
+.limit-unblock,
+.limit-refresh,
+.limits-refresh {
   margin: 0;
 }
 

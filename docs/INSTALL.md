@@ -273,6 +273,21 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     The gateway reads the key from the environment on every request; it never stores the key and
     never writes it to a log, a reason code or an error message.
 
+    **When sources are read.** With `mode = "auto"` the gateway reads every pool's source on its
+    own schedule: about once per `interval`, and never more than once a minute per pool. You can
+    also force a read at any time:
+
+    - `agent-router usage refresh [POOL]` — one pool, or every pool with a source;
+    - the **Refresh limits** button on each pool card of the dashboard, and one global button on
+      the limits page;
+    - `POST /api/v1/usage/refresh` with the admin token and an optional `{"pool": "<id>"}` body.
+
+    A pool whose last read (successful or not) is younger than 60 seconds is skipped with the
+    reason `too_soon`; a pool in manual mode is never read and shows no button. A successful read
+    is recorded the way a manual calibration is: the newest observation of a window wins.
+    A failed read reports a reason (`unauthorized`, `timeout`, `error`, `no_data` when no point
+    maps onto a window, …) and writes nothing.
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 

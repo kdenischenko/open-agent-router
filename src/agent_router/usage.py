@@ -11,10 +11,11 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
-from agent_router.config_model import Pool, PoolUsage
+from agent_router.config_model import Pool, PoolUsage, Window
+from agent_router.periods import shift
 from agent_router.store import Observation
 
 
@@ -59,6 +60,23 @@ def _valid_fraction(value: object) -> bool:
     return math.isfinite(value) and 0.0 <= float(value) <= 1.0
 
 
+RESET_SLACK = timedelta(minutes=5)  # same tolerance as manual calibration
+
+
+def _reset_for(window: Window | None, resets_at: datetime | None, now: datetime) -> datetime | None:
+    """The reset time worth recording for a window, or None.
+
+    A rolling window has no reset time of its own, and the ledger rejects one. For a fixed
+    window, a reset that is not in the future or lies more than one window ahead is dropped
+    the way manual calibration refuses it; the figure itself is still recorded.
+    """
+    if resets_at is None or window is None or window.kind == "rolling":
+        return None
+    if resets_at <= now or resets_at > shift(now, window.duration, 1) + RESET_SLACK:
+        return None
+    return resets_at
+
+
 def observations(
     pool: Pool, spec: UsageSourceSpec, read: UsageRead, observed_at: datetime
 ) -> list[Observation]:
@@ -69,7 +87,7 @@ def observations(
     """
     if not read.ok:
         return []
-    kinds = {window.id: window.kind for window in pool.windows}
+    by_id = {window.id: window for window in pool.windows}
     result: list[Observation] = []
     for point in read.points:
         window = pool.usage.windows.get(point.field)
@@ -83,8 +101,7 @@ def observations(
                 window=window,
                 fraction=float(point.fraction),
                 observed_at=observed_at,
-                # a rolling window has no reset time of its own; the ledger rejects one
-                resets_at=None if kinds.get(window) == "rolling" else point.resets_at,
+                resets_at=_reset_for(by_id.get(window), point.resets_at, observed_at),
                 source=spec.observation_source,
             )
         )

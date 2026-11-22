@@ -15,6 +15,9 @@ All notable changes are documented here. The format follows
 - `opencode-go` usage source: reads the OpenCode Go plan's rolling, weekly and monthly meters
   from the vendor usage endpoint; the API key comes from the environment variable named by
   `api_key_env` and is never stored or logged.
+- Usage sources are read every `[usage].interval` in `auto` mode and on demand with
+  `agent-router usage refresh`, `POST /api/v1/usage/refresh` or the "Refresh limits" button;
+  each read publishes `usage.read` or `usage.read_failed`.
 
 ## [0.2.0] - 2026-11-21
 

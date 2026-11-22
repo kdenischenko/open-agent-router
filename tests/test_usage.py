@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,7 @@ from agent_router.store import Observation
 from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec, observations
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
-RESET = datetime(2026, 12, 1, 0, tzinfo=UTC)
+RESET = datetime(2026, 11, 16, 0, tzinfo=UTC)  # within one week window of NOW
 
 BASE = """\
 [[pools]]
@@ -201,3 +201,15 @@ def test_empty_usage_source_is_config_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as caught:
         load_text(tmp_path, text)
     assert "pools[0].usage.source: must not be empty" in caught.value.messages
+
+
+@pytest.mark.parametrize(
+    "resets_at",
+    [NOW - timedelta(minutes=1), NOW, NOW + timedelta(days=8)],
+    ids=["past", "now", "beyond-one-window"],
+)
+def test_observations_drop_implausible_reset_times(resets_at: datetime) -> None:
+    read = UsageRead(points=(UsagePoint("monthly", 0.4, resets_at),))
+    [item] = observations(pool_with({"monthly": "week"}), fake_spec(), read, NOW)
+    assert item.resets_at is None
+    assert item.fraction == 0.4  # the figure itself is still recorded

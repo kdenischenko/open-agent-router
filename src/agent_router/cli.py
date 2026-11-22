@@ -149,6 +149,27 @@ def calibrate(
     typer.echo(line)
 
 
+usage_app = typer.Typer(help="Read the usage sources of your plans")
+app.add_typer(usage_app, name="usage")
+
+
+@usage_app.command("refresh")
+def usage_refresh(
+    pool: str | None = typer.Argument(
+        None, help="Pool identifier; without it every pool with a usage source"
+    ),
+) -> None:
+    """Read the usage sources now and record what they report."""
+    body: dict[str, Any] = {} if pool is None else {"pool": pool}
+    result = _request(lambda: _gateway(admin=True).post("/api/v1/usage/refresh", body))
+    for item in result.get("read", []):
+        typer.echo(f"Read: {item['pool']} ({', '.join(item['windows'])})")
+    for item in result.get("failed", []):
+        typer.echo(f"Failed: {item['pool']} — {item['reason']}")
+    for item in result.get("skipped", []):
+        typer.echo(f"Skipped: {item['pool']} — {item['reason']}")
+
+
 @app.command()
 def purge(
     dry_run: bool = typer.Option(
