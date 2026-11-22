@@ -181,7 +181,7 @@ def test_app_css_keeps_hex_only_in_token_blocks() -> None:
     assert light_root is not None
     light_block = balanced_block(css, light_root.end() - 1)
 
-    for token in ("--color-bg:", "--color-accent:", "--color-danger:"):
+    for token in ("--color-bg:", "--color-accent:", "--color-danger:", "--color-backdrop:"):
         assert token in light_block
         assert token in dark_block
     assert HEX_COLOUR.search(light_block)
@@ -190,6 +190,8 @@ def test_app_css_keeps_hex_only_in_token_blocks() -> None:
     rest = css.replace(light_block, "", 1).replace(dark_block, "", 1)
     found = HEX_COLOUR.search(rest)
     assert found is None, f"hex colour {found.group(0)} outside the token blocks"
+    function = re.search(r"\b(?:rgba?|hsla?)\(", rest)
+    assert function is None, f"colour function {function.group(0)} outside the token blocks"
 
 
 def test_app_css_defines_layout_classes() -> None:
