@@ -202,7 +202,8 @@ def web_router(deps: Gateway) -> APIRouter:
 
     def job_page_number(request: Request) -> int:
         raw = request.query_params.get("page", "")
-        return int(raw) if raw.isdecimal() and 0 < int(raw) < 10**6 else 1
+        # a length check first: int() refuses strings of thousands of digits
+        return int(raw) if raw.isdecimal() and len(raw) <= 6 and int(raw) > 0 else 1
 
     def job_list(request: Request) -> dict | None:
         if deps.dispatcher is None:

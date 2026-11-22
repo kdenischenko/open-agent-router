@@ -118,6 +118,7 @@ def test_paging_keeps_filters_in_links(web, rig, monkeypatch) -> None:
         "sort=sideways",
         "page=abc",
         "page=-1",
+        "page=" + "9" * 5000,
         "q=" + "x" * 201,
     ],
 )
