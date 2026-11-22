@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from agent_router import classifier as classifier_module
-from agent_router import cli
+from agent_router import cli, cli_common
 from agent_router import jobstore as jobstore_module
 from agent_router import runner as runner_module
 from agent_router.api import create_app
@@ -1439,7 +1439,7 @@ def doctor_home(home: Path, monkeypatch: pytest.MonkeyPatch, tokens) -> Path:
         def get(self, path: str, **params: Any) -> dict:
             return {"seq": 0, "subscribers": {}}
 
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: Gateway())
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: Gateway())
     return home
 
 

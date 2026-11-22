@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli, registry
+from agent_router import cli, cli_common, registry
 from agent_router import runner as runner_module
 from agent_router.client import GatewayError, GatewayUnavailable
 from agent_router.registry import CounterSpec
@@ -72,7 +72,7 @@ def runner() -> CliRunner:
 @pytest.fixture
 def gateway(monkeypatch: pytest.MonkeyPatch, config, tokens) -> FakeGateway:
     fake = FakeGateway()
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: fake)
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: fake)
     return fake
 
 

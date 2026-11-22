@@ -9,7 +9,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from agent_router import cli
+from agent_router import cli, cli_common, cli_jobs
 from agent_router.client import GatewayError, GatewayUnavailable
 from agent_router.clock import format_local
 
@@ -92,7 +92,7 @@ def gateway(monkeypatch: pytest.MonkeyPatch, config, tokens) -> FakeGateway:
         fake.tokens_used.append(token)
         return fake
 
-    monkeypatch.setattr(cli, "make_client", factory)
+    monkeypatch.setattr(cli_common, "make_client", factory)
     return fake
 
 
@@ -405,7 +405,7 @@ class ScriptedGateway:
 
 def _emit_exit_code(job: dict) -> int:
     try:
-        cli._emit_job(job, as_json=False)
+        cli_jobs._emit_job(job, as_json=False)
     except typer.Exit as exc:
         return exc.exit_code
     return 0
@@ -423,7 +423,7 @@ def test_wait_long_timeout_joins_short_waits() -> None:
         advance=100.0,
     )
 
-    job = cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "completed"
     assert [call[2]["timeout"] for call in gateway.calls] == [100.0, 100.0, 50.0]
@@ -434,7 +434,7 @@ def test_wait_survives_short_outage() -> None:
     clock = FakeClock()
     gateway = ScriptedGateway([make_job("completed")], clock, unavailable=2)
 
-    job = cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "completed"
     assert clock.sleeps == [1.0, 1.0]
@@ -446,7 +446,7 @@ def test_wait_gives_up_after_10s_outage() -> None:
     gateway = ScriptedGateway([], clock, unavailable=11)
 
     with pytest.raises(GatewayUnavailable):
-        cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+        cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert clock.sleeps == [1.0] * 10
     assert len(gateway.calls) == 11
@@ -457,7 +457,7 @@ def test_wait_outage_measured_in_seconds_not_attempts() -> None:
     gateway = ScriptedGateway([], clock, advance=4.0, unavailable=100)
 
     with pytest.raises(GatewayUnavailable):
-        cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+        cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert len(gateway.calls) == 3
     assert clock.now <= 16.0
@@ -467,11 +467,11 @@ def test_wait_timeout_returns_running(capsys: pytest.CaptureFixture[str]) -> Non
     clock = FakeClock()
     gateway = ScriptedGateway(None, clock, advance=100.0)
 
-    job = cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "running"
     with pytest.raises(typer.Exit) as exc:
-        cli._emit_job(job, as_json=False)
+        cli_jobs._emit_job(job, as_json=False)
     assert exc.value.exit_code == 4
     assert "agent-router wait job-1" in capsys.readouterr().err
 
@@ -480,7 +480,7 @@ def test_wait_zero_timeout_one_request() -> None:
     clock = FakeClock()
     gateway = ScriptedGateway([make_job("running", text=None)], clock)
 
-    job = cli._wait_until(gateway, "job-1", 0, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 0, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "running"
     assert gateway.calls == [("GET", "/api/v1/jobs/job-1/wait", {"timeout": 0.0})]
@@ -490,7 +490,7 @@ def test_wait_instant_running_no_busy_loop() -> None:
     clock = FakeClock()
     gateway = ScriptedGateway(None, clock)
 
-    job = cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "running"
     assert len(gateway.calls) <= 250
@@ -828,7 +828,7 @@ def test_approve_retries_while_job_is_queued() -> None:
     clock = FakeClock()
     gateway = ApprovalGateway([_queued(), _queued()], clock)
 
-    job = cli._approve_when_ready(gateway, "job-1", "approve", clock=clock, sleep=clock.sleep)
+    job = cli_jobs._approve_when_ready(gateway, "job-1", "approve", clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "queued"
     assert gateway.calls == ["/api/v1/jobs/job-1/approve"] * 3
@@ -840,7 +840,7 @@ def test_approve_gives_up_after_deadline() -> None:
     gateway = ApprovalGateway([_queued()], clock, forever=True)
 
     with pytest.raises(GatewayError) as caught:
-        cli._approve_when_ready(gateway, "job-1", "deny", clock=clock, sleep=clock.sleep)
+        cli_jobs._approve_when_ready(gateway, "job-1", "deny", clock=clock, sleep=clock.sleep)
 
     assert caught.value.status == 409
     assert clock.now <= 10.5
@@ -860,7 +860,7 @@ def test_approve_does_not_retry_other_errors(error: GatewayError) -> None:
     gateway = ApprovalGateway([error], clock)
 
     with pytest.raises(GatewayError):
-        cli._approve_when_ready(gateway, "job-1", "approve", clock=clock, sleep=clock.sleep)
+        cli_jobs._approve_when_ready(gateway, "job-1", "approve", clock=clock, sleep=clock.sleep)
 
     assert len(gateway.calls) == 1
     assert clock.sleeps == []
@@ -915,7 +915,7 @@ def test_cli_wait_stops_on_awaiting_approval(capsys: pytest.CaptureFixture[str])
     )
     gateway = ScriptedGateway([waiting] * 5, clock)
 
-    job = cli._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
+    job = cli_jobs._wait_until(gateway, "job-1", 250, clock=clock, sleep=clock.sleep)
 
     assert job["status"] == "awaiting_approval"
     assert len(gateway.calls) == 1
