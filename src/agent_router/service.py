@@ -278,6 +278,7 @@ class Gateway:
         )
         self.after_calibration: list[Callable[[str], None]] = []  # out-of-schedule counter check
         self.write_lock = threading.Lock()  # observation check-and-write happens as one unit
+        self.usage_reader: Any = None  # set by create_app: reads usage sources on a schedule
         self._view_lock = threading.Lock()
         self._view: tuple[Snapshot, dict[str, Any]] | None = None
 

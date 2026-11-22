@@ -21,6 +21,7 @@ from agent_router.config import TIERS
 from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
+from agent_router.usage_reader import UnknownPoolError
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
@@ -43,6 +44,7 @@ STATUS_KIND = {
 }
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
 LIMIT_STALE_AFTER_S = 6 * 3600
+USAGE_MESSAGE_MAX_CHARS = 300  # the flash after a limits refresh, carried in the query
 
 
 def _countdown(moment: str, now: datetime) -> str:
@@ -353,6 +355,17 @@ def web_router(deps: Gateway) -> APIRouter:
             )
         return items
 
+    def usage_refresh_pools() -> set[str]:
+        """Pools whose card offers a refresh: a source is built and the mode is not manual."""
+        reader = deps.usage_reader
+        if reader is None:
+            return set()
+        return {
+            pool.id
+            for pool in deps.config.pools
+            if reader.state(pool.id) is not None and deps.config.usage_mode(pool.id) != "manual"
+        }
+
     def limits_context(request: Request, snapshot: dict) -> dict:
         return {
             "pools": snapshot["pools"],
@@ -360,6 +373,7 @@ def web_router(deps: Gateway) -> APIRouter:
             "now": deps.clock.now(),
             "stale_after_s": LIMIT_STALE_AFTER_S,
             "recorded_pool": recorded_pool(request),
+            "usage_refresh": usage_refresh_pools(),
         }
 
     def advice_context(snapshot: dict) -> dict:
@@ -409,6 +423,11 @@ def web_router(deps: Gateway) -> APIRouter:
             line += f", reset {local(resets_at)}"
         return line
 
+    def usage_message(request: Request) -> str | None:
+        """The flash line after POST /limits/refresh; the redirect carries it in the query."""
+        message = request.query_params.get("usage_message", "").strip()
+        return message[:USAGE_MESSAGE_MAX_CHARS] or None
+
     @router.get("/")
     def get_index(request: Request) -> Response:
         sid = session_id(request)
@@ -419,6 +438,7 @@ def web_router(deps: Gateway) -> APIRouter:
             {
                 "title": "Limits",
                 "recorded": recorded_line(request, snapshot),
+                "usage_message": usage_message(request),
                 "approvals": approval_items(),
             }
             | limits_context(request, snapshot)
@@ -636,6 +656,32 @@ def web_router(deps: Gateway) -> APIRouter:
             return PlainTextResponse("pool not found", status_code=404)
         deps.dispatcher.unblock(pool_id)
         return RedirectResponse("/", status_code=303)
+
+    @router.post("/limits/refresh")
+    async def post_limits_refresh(request: Request) -> Response:
+        """Reads the usage sources now: one pool from the form field, or all of them."""
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        reader = deps.usage_reader
+        if reader is None:
+            return message_page(
+                request, sid, "usage sources are not available", "/", "Back to the dashboard"
+            )
+        pool = _field(form, "pool") or None
+        try:
+            result = reader.refresh(pool)
+        except UnknownPoolError:
+            return PlainTextResponse("pool not found", status_code=404)
+        parts = [f"Read: {item.pool} ({', '.join(item.windows)})" for item in result.read]
+        parts += [f"Failed: {item.pool} — {item.reason}" for item in result.failed]
+        parts += [f"Skipped: {item.pool} — {item.reason}" for item in result.skipped]
+        anchor = f"#limit-{pool}" if pool is not None else "#limits"
+        query = urlencode({"usage_message": "; ".join(parts)}) if parts else ""
+        return RedirectResponse(f"/{'?' + query if query else ''}{anchor}", status_code=303)
 
     @router.get("/calibrate")
     def get_calibration(request: Request) -> Response:

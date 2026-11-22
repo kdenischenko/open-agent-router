@@ -7,6 +7,13 @@
         <h2 id="limit-pool-{{ pool_index }}">{{ pool.title }}</h2>
         {% if recorded_pool == pool.id %}<span class="approval-badge approval-badge--ok">updated</span>{% endif %}
       </div>
+      {% if pool.id in usage_refresh %}
+      <form class="limit-refresh" method="post" action="/limits/refresh">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="pool" value="{{ pool.id }}">
+        <button type="submit" aria-label="Refresh limits of {{ pool.title }}">Refresh limits</button>
+      </form>
+      {% endif %}
       {% if pool.block %}
       <div class="limit-block">
         <span class="limit-status approval-badge approval-badge--danger">blocked</span>
@@ -69,6 +76,12 @@
     </article>
     {% endfor %}
   </div>
+  {% if usage_refresh %}
+  <form class="limits-refresh" method="post" action="/limits/refresh">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Refresh limits</button>
+  </form>
+  {% endif %}
   <details class="limit-table">
     <summary>All windows as a table</summary>
     <table>

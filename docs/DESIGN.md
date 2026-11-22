@@ -168,6 +168,20 @@ The shipped `opencode-go` source reads the OpenCode Go plan meters (`rolling`, `
 `unauthorized`, `forbidden`, `http_error`, `timeout`, `unavailable`, `malformed_response`) instead
 of an exception, and the key from `api_key_env` never reaches a reason or a log.
 
+**The usage reader** builds one source instance per pool with `usage.source` and reads it on a
+schedule and on demand. In auto mode a background thread (`usage-reader`) calls
+`refresh(scheduled=True)` on a short tick of `min(60 s, interval)`; the reader itself gates per
+pool: a scheduled pass skips a pool whose last attempt is younger than `[usage].interval_s`, any
+pass skips a pool attempted within the last 60 seconds (`MIN_REFRESH_S`, reason `too_soon`), and a
+pool whose effective mode is `manual` is never read. A forced read is available through
+`POST /api/v1/usage/refresh` (admin token, optional `{"pool": "<id>"}` body), the
+`agent-router usage refresh [POOL]` command, and the **Refresh limits** buttons of the dashboard.
+Each read maps onto observations exactly like a calibration — a source exception becomes the
+reason `error` — and publishes one event per pool on the bus: `usage.read` with
+`{pool, source, windows}` on success, `usage.read_failed` with `{pool, source, reason}` on
+failure. Events, results and reasons carry ids only: never keys or response bodies. Per pool the
+reader keeps `last_attempt_at`, `last_success_at` and `last_reason` in memory for display.
+
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —
 multiplied by the model weight `limit_base_usd / model_limits[model]`, and tagged with the price
