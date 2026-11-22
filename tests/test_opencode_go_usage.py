@@ -206,6 +206,11 @@ def test_transport_error_reports_unavailable() -> None:
     assert build(raising(httpx.ConnectError("connection closed"))).read().reason == "unavailable"
 
 
+def test_invalid_url_reports_unavailable() -> None:
+    # httpx.InvalidURL is not an httpx.HTTPError, so it needs its own branch
+    assert build(raising(httpx.InvalidURL("bad url"))).read().reason == "unavailable"
+
+
 @pytest.mark.parametrize(
     "payload",
     [b"not json", b"", b"{}", b"[]", b'{"usage": []}', b'{"usage": {}}', fixture("malformed.json")],
@@ -269,13 +274,15 @@ def test_config_with_the_source_validates(tmp_path: Path) -> None:
 def test_key_never_leaks(caplog: pytest.LogCaptureFixture) -> None:
     key = "distinctive-fake-key-leak-watch"
     env = {"OPENCODE_GO_API_KEY": key}
+    # real transport errors carry the request, and with it the authorization header
+    leaky = httpx.Request("GET", USAGE_URL, headers={"Authorization": f"Bearer {key}"})
     cases = [
         build(responding(b"{}", status=401), env=env),
         build(responding(fixture("forbidden.json"), status=403), env=env),
         build(responding(b"{}", status=500), env=env),
         build(responding(b"not json"), env=env),
-        build(raising(httpx.ReadTimeout("too slow")), env=env),
-        build(raising(httpx.ConnectError("connection closed")), env=env),
+        build(raising(httpx.ReadTimeout("too slow", request=leaky)), env=env),
+        build(raising(httpx.ConnectError("connection closed", request=leaky)), env=env),
         OpenCodeGoUsage({}, client=None),  # missing key: answered before any request
     ]
 
