@@ -42,7 +42,7 @@ def test_empty_inbox_keeps_an_empty_live_region(web, path) -> None:
     text = web.get(path).text
 
     section = approvals_section(text)
-    assert section.startswith('<div id="approvals" aria-live="polite">')
+    assert section.startswith('<section id="approvals" aria-live="polite">')
     assert 'href="/jobs/' not in section
 
 
@@ -226,3 +226,22 @@ def test_deny_links_name_their_job(web, rig) -> None:
     for path in ("/", "/jobs", f"/jobs/{job.id}"):
         text = web.get(path).text
         assert f'aria-label="Deny {job.id}">Deny</a>' in text
+
+
+def test_countdowns_stay_out_of_the_live_region(web, rig) -> None:
+    rig.add_job("awaiting_approval")
+
+    section = approvals_section(web.get("/").text)
+
+    countdowns = re.findall(r"<time\b[^>]*data-approval-countdown[^>]*>", section)
+    assert countdowns
+    assert all('aria-live="off"' in tag for tag in countdowns)
+
+
+def test_refresh_keeps_focus_dialogs_and_wrapper_attributes(client) -> None:
+    script = client.get("/static/app.js").text
+    refresh = script[script.index("async function refresh") : script.index("setInterval(")]
+
+    assert "current.contains(document.activeElement)" in refresh
+    assert "dialog[open]" in refresh
+    assert "fresh.attributes" in refresh
