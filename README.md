@@ -124,14 +124,31 @@ repository and copy the `agent-router-delegate` folder of your harness into its 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-dark.svg">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator calls the agent-router CLI, the gateway HTTP API checks the token and passes the job to the dispatcher; the dispatcher asks the tier classifier (local or cloud models), checks the job directory and human approval, the route policy picks a pool from the ledger and pacing data in SQLite, and the runner starts the harness CLI through its adapter">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator agent submits jobs through the agent-router CLI or the MCP server and you use the web dashboard; the gateway HTTP API checks tokens, the dispatcher gets a tier from the optional classifier (local or cloud models) and a route from the route policy, which ranks pools by pace urgency from the ledger; the runner starts a coding agent CLI in the job directory. Usage figures reach the ledger from manual calibration, the Claude Code status line, the OpenCode Go usage API, the opencode stats counter and the harness journal">
 </picture>
 
 You submit a job: a prompt, a directory, a mode and optional hints. The gateway estimates
 the tier, checks the remaining limits and pace of every pool, picks a route, queues the
 job and — for routes with `confirm = true` — waits until you approve it. It then runs the
-harness CLI as a child process, records the spend and returns the result. See
+coding agent CLI (the *harness*: `claude`, `kimi`, `opencode` or `cline`) as a child process
+in the job directory, records the spend and returns the result. See
 [docs/DESIGN.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/DESIGN.md) for the full architecture.
+
+### Where usage figures come from
+
+The route choice is only as good as the usage it knows. Every window shows where its figure
+came from (`figure:` in `agent-router status`, the pool card on the dashboard):
+
+| Source | Pools | How it arrives |
+|---|---|---|
+| Manual calibration | any | `agent-router calibrate` or the dashboard's Calibrate page |
+| Claude Code status line | Claude | the status line script posts rate limits to the gateway |
+| OpenCode Go usage API | OpenCode Go | read every `[usage].interval` in `auto` mode, or now with `agent-router usage refresh` |
+| `opencode stats` counter | `usd` pools | cumulative cost sampled from OpenCode |
+| Harness journal | `usd` pools | cost each job reports or is estimated at, added on top of the last figure |
+
+A usage source that fails or goes stale is shown as such in `status`, `doctor` and the
+dashboard. Setup is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
 
 ## Tier classifier
 
@@ -145,30 +162,53 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 
 ## Dashboard
 
-![Web dashboard with pool limits, advice and jobs](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-dark.png">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard home page: a job awaiting approval with Approve and Deny, then one card per pool with usage bars, pace badges, reset countdowns, data age and where each figure comes from">
+</picture>
 
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 `server.port`, default 8787). Log in with the admin token: paste the contents of the
-`admin.token` file whose path `init` prints. Jobs waiting for your approval are listed at
-the top of the home page with Approve and Deny. Below them the home page shows one card per
-pool with usage, expected pace, reset countdowns and observation age for each window,
-including stale and blocked states; the full limits table stays under a disclosure. The job
-list filters by status, route and caller, searches by job id or prompt text, sorts by
-creation time or duration and pages through 50 jobs at a time; the filters live in the
-address, so a filtered view can be bookmarked. Manual calibration shows field-specific
-errors and, with scripts on, validates input and previews usage pace and the local reset time;
-after saving, the updated pool card is highlighted. The job page refreshes itself, shows the
-error, and lets you rate a finished job.
-It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
-final text and per-attempt output in expandable blocks, with a copy button when clipboard
-scripting is available.
+`admin.token` file whose path `init` prints.
+
+- **Home** — jobs waiting for your approval come first, with Approve and Deny. Below them
+  is one card per pool: usage, expected pace, reset countdown, data age and figure source for
+  each window, including stale and blocked states, with a **Refresh limits** button for pools
+  that have a usage source. The full limits table stays under a disclosure, followed by the
+  routes each tier would take right now.
+- **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
+  creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
+  view can be bookmarked.
+- **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
+  totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
+  in expandable blocks with copy buttons; lets you rate a finished job.
+- **Calibrate** — record what your subscription page shows. Errors are shown per field and,
+  with scripts on, the form previews the pace and the local reset time; after saving, the
+  updated pool card is highlighted.
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-dark.png">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with status, route, caller and search filters and one row per job with its status badge, route, caller, creation time and duration">
+      </picture>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/job-dark.png">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/job-light.png" alt="Job page with the route, caller, mode and tier, a rating form, attempt, token, cost and duration totals, the prompt and final text, and the attempt timeline">
+      </picture>
+    </td>
+  </tr>
+</table>
 
 ## Harnesses
 
-The gateway runs each harness CLI with the sign-in you already made in it; it never sees
-provider keys.
+A *harness* is the coding agent CLI that does the work. The gateway runs each one with the
+sign-in you already made in it; it never sees provider keys.
 
-| Harness | CLI command | Usage source | Status |
+| Harness | CLI command | Spend source | Status |
 |---|---|---|---|
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
