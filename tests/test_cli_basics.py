@@ -14,7 +14,7 @@ from pathlib import Path, PureWindowsPath
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli, cli_common
+from agent_router import cli, cli_common, cli_gateway
 from agent_router.auth import ensure_tokens
 from agent_router.client import GatewayClient
 from agent_router.clock import format_local
@@ -172,14 +172,14 @@ def test_init_enables_only_found(
 def test_init_skips_broken_harness_plugin(
     home: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real = cli.load_harness
+    real = cli_gateway.load_harness
 
     def load(name: str):
         if name == "kimi":
             raise ImportError("broken plugin")
         return real(name)
 
-    monkeypatch.setattr(cli, "load_harness", load)
+    monkeypatch.setattr(cli_gateway, "load_harness", load)
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
     result = runner.invoke(cli.app, ["init"])

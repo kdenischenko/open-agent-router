@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from agent_router import cli, cli_common
+from agent_router import cli, cli_common, cli_gateway
 from agent_router.auth import ensure_tokens
 from agent_router.client import GatewayClient
 from agent_router.config import load_config
@@ -82,7 +82,7 @@ def test_init_allowed_root_replaces_config_whole_or_not_at_all(
     def locked(source, target) -> None:
         raise PermissionError("file is locked")
 
-    monkeypatch.setattr(cli.os, "replace", locked)
+    monkeypatch.setattr(cli_gateway.os, "replace", locked)
     result = runner.invoke(cli.app, ["init", "--allowed-root", str(repo)])
 
     assert result.exit_code == 1
@@ -143,7 +143,7 @@ def test_init_with_roots_does_not_print_the_command(
 def test_init_prints_next_steps_with_the_configured_port(
     home: Path, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "_found_harnesses", lambda: ["kimi"])
+    monkeypatch.setattr(cli_gateway, "_found_harnesses", lambda: ["kimi"])
     assert runner.invoke(cli.app, ["init"]).exit_code == 0
     config_path = home / "config.toml"
     text = config_path.read_text(encoding="utf-8")
@@ -243,8 +243,8 @@ def test_init_allowed_root_finds_tasks_header_with_spaces_and_comment(
 def test_printed_directories_use_forward_slashes() -> None:
     from pathlib import PureWindowsPath
 
-    assert cli._shell_quote_dir(PureWindowsPath("C:/")) == "C:/"
-    quoted = cli._shell_quote_dir(PureWindowsPath("C:/My Repo"))
+    assert cli_gateway._shell_quote_dir(PureWindowsPath("C:/")) == "C:/"
+    quoted = cli_gateway._shell_quote_dir(PureWindowsPath("C:/My Repo"))
     assert "C:/My Repo" in quoted
     assert quoted != "C:/My Repo"
 
@@ -277,7 +277,7 @@ def test_tokens_create_a_private_home(tmp_path: Path) -> None:
 def _init_with(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, found: list[str], *args: str
 ) -> str:
-    monkeypatch.setattr(cli, "_found_harnesses", lambda: found)
+    monkeypatch.setattr(cli_gateway, "_found_harnesses", lambda: found)
     result = runner.invoke(cli.app, ["init", *args])
     assert result.exit_code == 0, result.output
     return result.output
