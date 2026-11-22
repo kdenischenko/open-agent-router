@@ -75,7 +75,10 @@ def parse_span(text: str) -> timedelta:
     if match is None:
         raise ValueError(f"invalid span: {text!r} (expected 3h20m, 45m, or 2d)")
     days, hours, minutes = (int(part) if part else 0 for part in match.groups())
-    span = timedelta(days=days, hours=hours, minutes=minutes)
+    try:
+        span = timedelta(days=days, hours=hours, minutes=minutes)
+    except OverflowError:
+        raise ValueError(f"invalid span: {text!r} (too long)") from None
     if span <= timedelta(0):
         raise ValueError(f"invalid span: {text!r} (must be positive)")
     return span

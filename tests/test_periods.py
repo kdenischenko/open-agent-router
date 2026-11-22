@@ -38,7 +38,7 @@ def test_parse_span():
     assert parse_span("1d2h3m") == timedelta(days=1, hours=2, minutes=3)
 
 
-@pytest.mark.parametrize("text", ["", "abc", "20m3h", "0m", "3h 20m", "-5m", "5"])
+@pytest.mark.parametrize("text", ["", "abc", "20m3h", "0m", "3h 20m", "-5m", "5", "99999999999d"])
 def test_parse_span_garbage(text):
     with pytest.raises(ValueError):
         parse_span(text)
