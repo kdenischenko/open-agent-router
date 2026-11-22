@@ -8,13 +8,13 @@ async function refresh(path, id) {
     const current = document.getElementById(id);
     // a swap must not pull focus or a disclosure state from under the visitor: skip the
     // refresh while focus is inside or a confirmation dialog is open, since closing the dialog
-    // returns focus to the link that opened it; reopen the disclosures that were open
+    // returns focus to the link that opened it; disclosures keep the state the visitor left
     if (fresh && current && !current.contains(document.activeElement)
         && !document.querySelector('dialog[open]')) {
       const open = Array.from(current.querySelectorAll('details')).map((item) => item.open);
       current.innerHTML = fresh.innerHTML;
       current.querySelectorAll('details').forEach((item, index) => {
-        if (open[index]) item.open = true;
+        if (index < open.length) item.open = open[index];
       });
       // the wrapper's own attributes change too, e.g. the inbox loses its heading reference
       // when it empties
@@ -22,6 +22,8 @@ async function refresh(path, id) {
         if (!fresh.hasAttribute(attr.name)) current.removeAttribute(attr.name);
       });
       Array.from(fresh.attributes).forEach((attr) => current.setAttribute(attr.name, attr.value));
+      // the swap drops the unhiding the copy buttons got at load, so reveal them again
+      revealCopyButtons(current);
       if (id === 'limits') {
         setupLimitCards(current);
       }
@@ -205,3 +207,27 @@ function setupConfirmDialog() {
 }
 
 setupConfirmDialog();
+
+// copy buttons stay hidden without scripts or clipboard access; one delegated listener
+// covers buttons that appear later, since a refresh swaps #job instead of rebinding
+function revealCopyButtons(root) {
+  if (!navigator.clipboard) return;
+  root.querySelectorAll('.copy-button').forEach((button) => { button.hidden = false; });
+}
+
+function setupCopyButtons() {
+  if (!navigator.clipboard) return;
+  revealCopyButtons(document);
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.copy-button[data-copy-target]');
+    if (!button) return;
+    const target = document.getElementById(button.dataset.copyTarget);
+    if (!target) return;
+    navigator.clipboard.writeText(target.textContent).then(() => {
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+    }).catch(() => {});
+  });
+}
+
+setupCopyButtons();

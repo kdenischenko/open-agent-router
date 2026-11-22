@@ -53,6 +53,31 @@ def _countdown(moment: str, now: datetime) -> str:
 TEMPLATES.env.filters["countdown"] = _countdown
 
 
+def job_totals(job: Job, attempts: list[Attempt]) -> dict:
+    """Totals over attempts; a field stays None when no attempt has a value for it."""
+    durations = [attempt.duration_s for attempt in attempts if attempt.duration_s is not None]
+    duration_s: float | None
+    if job.finished_at is not None:
+        duration_s = (job.finished_at - job.created_at).total_seconds()
+    elif durations:
+        duration_s = sum(durations)
+    else:
+        duration_s = None
+    return {
+        "tokens_in": _sum_field(attempts, "tokens_in"),
+        "tokens_out": _sum_field(attempts, "tokens_out"),
+        "cost_usd": _sum_field(attempts, "cost_usd"),
+        "duration_s": duration_s,
+        "attempts": len(attempts),
+    }
+
+
+def _sum_field(attempts: list[Attempt], name: str) -> int | float | None:
+    values = [getattr(attempt, name) for attempt in attempts]
+    values = [value for value in values if value is not None]
+    return sum(values) if values else None
+
+
 def _field(form: FormData, name: str) -> str:
     value = form.get(name)
     return value if isinstance(value, str) else ""
@@ -427,6 +452,9 @@ def web_router(deps: Gateway) -> APIRouter:
             "prompt_truncated": prompt_chars > 2000,
             "prompt_chars": prompt_chars,
             "attempts": attempts,
+            "totals": job_totals(job, attempts),
+            "status_kind": STATUS_KIND,
+            "caller": job.request.caller,
             "last_rating": deps.dispatcher.jobs.last_rating(job.id),
             "local": local,
             "terminal": job.status in TERMINAL,
