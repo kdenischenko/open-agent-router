@@ -186,6 +186,50 @@ def test_truncated_output_still_counts_as_progress(tmp_path: Path) -> None:
     assert pump.truncated is True
 
 
+def _pump_activity(tmp_path: Path, chunks: list[bytes], monkeypatch: pytest.MonkeyPatch) -> int:
+    """Run a pump with the OpenCode progress predicate and count activity calls."""
+    monkeypatch.setattr(runner_module, "_LINE_BUFFER_MAX", 64)
+    touches: list[int] = []
+    pump = runner_module._Pump(
+        _ChunkStream(chunks),
+        tmp_path / "stdout.log",
+        1 << 20,
+        on_activity=lambda: touches.append(1),
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
+    pump.start()
+    pump.join(5)
+    assert not pump.is_alive()
+    return len(touches)
+
+
+def test_unterminated_plain_output_counts_as_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _pump_activity(tmp_path, [b"working", b"..."], monkeypatch) >= 2
+
+
+def test_split_retry_event_is_not_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    chunks = [b'{"type":"ret', b'ry","attempt":1}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 0
+
+
+def test_suffix_of_overlong_retry_line_is_not_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    head = b'{"type":"retry","message":"' + b"x" * 100
+    chunks = [head, b"y" * 10, b'"}\n', b'{"type":"retry"}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 0
+
+
+def test_line_after_overlong_line_is_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    head = b'{"type":"retry","message":"' + b"x" * 100
+    chunks = [head, b'"}\n{"type":"text"}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 1
+
+
 def test_final_line_hang_is_forced_not_idle(work: Path, logs: Path) -> None:
     result = run(
         harness("final-then-hang", "FINAL-LINE"),

@@ -37,6 +37,7 @@ QUERY_WAIT_S = 5.0
 KILL_WAIT_S = 5.0
 _READER_WAIT_S = 5.0
 _LINE_BUFFER_MAX = 2**20
+_LINE_BUFFER_HEAD = 64  # bytes of a dropped line kept to tell whether it was a JSON event
 _MONTHS = {
     "Jan": 1,
     "Feb": 2,
@@ -356,14 +357,20 @@ class _Pump(threading.Thread):
     def run(self) -> None:
         written = 0
         pending = b""
+        # an overlong line is dropped up to its newline; its tail must not pass for a new line
+        discarding = False
         line_activity = self._on_activity is not None and self._is_progress_line is not None
 
-        def handle_line(raw: bytes) -> None:
+        def handle_line(raw: bytes) -> bool:
             line = raw.decode("utf-8", "replace").rstrip("\r")
             if self._on_line is not None:
                 self._on_line(line)
-            if line_activity and self._is_progress_line(line):
-                self._on_activity()
+            return line_activity and self._is_progress_line(line)
+
+        def fragment_is_progress(fragment: bytes) -> bool:
+            # an unterminated JSON event waits for its newline to be judged; other output is
+            # progress right away, so a harness printing without newlines stays alive
+            return line_activity and not fragment.lstrip().startswith(b"{")
 
         with contextlib.suppress(OSError, ValueError), self._path.open("wb", buffering=0) as out:
             while True:
@@ -381,15 +388,33 @@ class _Pump(threading.Thread):
                     else:
                         out.write(chunk)
                         written += len(chunk)
-                if self._on_line is not None or line_activity:
-                    pending += chunk
-                    *lines, pending = pending.split(b"\n")
-                    for line in lines:
-                        handle_line(line)
-                    if len(pending) > _LINE_BUFFER_MAX:
+                if self._on_line is None and not line_activity:
+                    continue
+                progress = False
+                if discarding:
+                    _, newline, chunk = chunk.partition(b"\n")
+                    if not newline:
+                        progress = fragment_is_progress(pending)
+                        chunk = b""
+                    else:
                         pending = b""
-            if (self._on_line is not None or line_activity) and pending:
-                handle_line(pending)
+                    discarding = not newline
+                if not discarding:
+                    data = pending + chunk
+                    *lines, rest = data.split(b"\n")
+                    for line in lines:
+                        progress = handle_line(line) or progress
+                    if len(rest) > _LINE_BUFFER_MAX:
+                        discarding = True
+                        rest = rest[:_LINE_BUFFER_HEAD]
+                    elif rest:
+                        progress = progress or fragment_is_progress(rest)
+                    pending = rest
+                if progress:
+                    self._on_activity()  # type: ignore[misc]
+            tracking = self._on_line is not None or line_activity
+            if tracking and pending and not discarding and handle_line(pending):
+                self._on_activity()  # type: ignore[misc]
         with contextlib.suppress(OSError, ValueError):
             self._stream.close()
 
