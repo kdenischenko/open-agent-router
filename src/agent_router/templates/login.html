@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="flash flash--danger" role="alert"><span class="flash__prefix">Error:</span> {{ error }}</p>{% endif %}
 <form method="post" action="/login" class="panel login-form">
   <label for="token">Admin token</label>
   <input id="token" name="token" type="password" required autocomplete="current-password">
