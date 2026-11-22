@@ -23,6 +23,7 @@ from agent_router.jobs import TierSource, Vote
 __all__ = [
     "BUSY_FLAG",
     "classify",
+    "classify_one",
     "CLASSIFY_BACKLOG",
     "EVAL_FLAG",
     "EvalBusy",
@@ -30,6 +31,7 @@ __all__ = [
     "flag_value",
     "get",
     "is_local_ollama",
+    "is_loopback_url",
     "post",
     "report",
     "resolve_tier",
