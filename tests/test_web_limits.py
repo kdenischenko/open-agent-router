@@ -181,3 +181,27 @@ def test_app_js_enhances_limit_cards(client):
     assert "Date.parse" in script
     assert script.count("setInterval(") == 3
     assert "30000" in script
+
+
+def test_limit_status_keeps_badge_colours(client):
+    css = client.get("/static/app.css").text
+
+    rule = re.search(r"^\.limit-status\s*\{([^}]*)\}", css, re.M)
+    assert rule is not None
+    assert "color:" not in rule.group(1)
+
+
+def test_unblock_buttons_name_their_pool(web, rig, monkeypatch):
+    text = show_limits(web, rig, monkeypatch, [pool_json(window_json(), block=BLOCK)]).text
+
+    assert re.search(r'<button\b[^>]*aria-label="Unblock [^"]+"[^>]*>\s*Unblock\s*</button>', text)
+
+
+def test_refresh_keeps_disclosures_and_focus(client):
+    script = client.get("/static/app.js").text
+    refresh = script[script.index("async function refresh") : script.index("setInterval(")]
+
+    # a swap must not pull focus or a disclosure state from under the visitor
+    assert "current.contains(document.activeElement)" in refresh
+    assert ".open" in refresh
+    assert "setupLimitCards(current)" in refresh

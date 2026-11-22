@@ -6,8 +6,14 @@ async function refresh(path, id) {
     const parsed = new DOMParser().parseFromString(html, 'text/html');
     const fresh = parsed.getElementById(id);
     const current = document.getElementById(id);
-    if (fresh && current) {
+    // a swap must not pull focus or a disclosure state from under the visitor: skip the
+    // refresh while focus is inside, and reopen the disclosures that were open
+    if (fresh && current && !current.contains(document.activeElement)) {
+      const open = Array.from(current.querySelectorAll('details')).map((item) => item.open);
       current.innerHTML = fresh.innerHTML;
+      current.querySelectorAll('details').forEach((item, index) => {
+        if (open[index]) item.open = true;
+      });
       if (fresh.hasAttribute('data-terminal')) {
         current.dataset.terminal = fresh.dataset.terminal;
       }
