@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from agent_router import cli, plugins
+from agent_router import cli, cli_common, plugins
 from agent_router.api import create_app
 from agent_router.collectors.opencode_stats import CounterSampler
 from agent_router.config import BackendSection, ConfigError
@@ -222,7 +222,7 @@ def test_doctor_implicit_third_party_section(
     monkeypatch.delenv("AGENT_ROUTER_URL", raising=False)
     write_config(home, full_config_text() + route("x/model", "third"))
     ensure_tokens(home)
-    monkeypatch.setattr(cli, "make_client", lambda base_url, token: StubGateway())
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: StubGateway())
     monkeypatch.setattr(
         cli, "resolve_executable", lambda name: ResolvedExecutable(None, False), raising=False
     )
