@@ -17,7 +17,7 @@ from starlette.templating import Jinja2Templates
 from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
-from agent_router.jobs import TERMINAL, Attempt, Job
+from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 
@@ -25,6 +25,21 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
 TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
+
+JOBS_PAGE_SIZE = 50
+JOB_SORTS = ("newest", "oldest", "duration")
+JOB_FILTER_MAX_CHARS = 200
+# the badge colour of each job status; the status name itself is always shown as text
+STATUS_KIND = {
+    "queued": "info",
+    "running": "info",
+    "awaiting_approval": "warn",
+    "completed": "ok",
+    "partial": "warn",
+    "failed": "danger",
+    "declined": "danger",
+    "cancelled": "muted",
+}
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
 
 
@@ -164,10 +179,73 @@ def web_router(deps: Gateway) -> APIRouter:
         response.delete_cookie("ar_session", path="/", httponly=True, samesite="strict")
         return response
 
+    def job_filters(request: Request) -> dict[str, str]:
+        """Filters from the query string; unknown or malformed values are dropped, not errors."""
+        params = request.query_params
+        filters: dict[str, str] = {}
+        status = params.get("status", "")
+        if status in STATUSES:
+            filters["status"] = status
+        route = params.get("route", "")
+        if any(item.id == route for item in deps.config.routes):
+            filters["route"] = route
+        caller = params.get("caller", "").strip()
+        if 0 < len(caller) <= JOB_FILTER_MAX_CHARS:
+            filters["caller"] = caller
+        q = params.get("q", "").strip()
+        if 0 < len(q) <= JOB_FILTER_MAX_CHARS:
+            filters["q"] = q
+        sort = params.get("sort", "")
+        if sort in JOB_SORTS and sort != JOB_SORTS[0]:
+            filters["sort"] = sort
+        return filters
+
+    def job_page_number(request: Request) -> int:
+        raw = request.query_params.get("page", "")
+        return int(raw) if raw.isdecimal() and 0 < int(raw) < 10**6 else 1
+
+    def job_list(request: Request) -> dict | None:
+        if deps.dispatcher is None:
+            return None
+        filters = job_filters(request)
+        search = {
+            "status": filters.get("status"),
+            "route": filters.get("route"),
+            "caller": filters.get("caller"),
+            "q": filters.get("q"),
+            "sort": filters.get("sort", JOB_SORTS[0]),
+            "limit": JOBS_PAGE_SIZE,
+        }
+        page = job_page_number(request)
+        found, total = deps.dispatcher.jobs.search(**search, offset=(page - 1) * JOBS_PAGE_SIZE)
+        pages = max(1, -(-total // JOBS_PAGE_SIZE))
+        if page > pages:
+            page = pages
+            found, total = deps.dispatcher.jobs.search(**search, offset=(page - 1) * JOBS_PAGE_SIZE)
+        if "sort" not in filters:
+            # jobs waiting for a human come first within the page, as on the home page
+            found = sorted(found, key=lambda job: job.status != "awaiting_approval")
+
+        def page_href(number: int) -> str:
+            query = {**filters, "page": str(number)} if number > 1 else filters
+            return "/jobs" + ("?" + urlencode(query) if query else "")
+
+        return {
+            "jobs": found,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "first": (page - 1) * JOBS_PAGE_SIZE + 1 if found else 0,
+            "last": (page - 1) * JOBS_PAGE_SIZE + len(found),
+            "prev_href": page_href(page - 1) if page > 1 else None,
+            "next_href": page_href(page + 1) if page < pages else None,
+            "filters": filters,
+        }
+
     def jobs_page(
         request: Request,
         sid: str,
-        jobs: list | None,
+        listing: dict | None,
         *,
         fragment: bool = False,
     ) -> HTMLResponse:
@@ -181,18 +259,20 @@ def web_router(deps: Gateway) -> APIRouter:
             }
         context = {
             "title": "Jobs",
-            "jobs": jobs or [],
-            "tasks_disabled": jobs is None,
+            "jobs": [] if listing is None else listing["jobs"],
+            "listing": listing,
+            "filters": {} if listing is None else listing["filters"],
+            "tasks_disabled": listing is None,
             "classifier": classifier,
+            "statuses": STATUSES,
+            "routes": [item.id for item in deps.config.routes],
+            "callers": sorted(deps.config.callers),
+            "sorts": JOB_SORTS,
+            "status_kind": STATUS_KIND,
+            "local": local,
         }
         template = "_jobs.html" if fragment else "jobs.html"
         return render_page(request, template, context, sid=sid, nav=None if fragment else "jobs")
-
-    def job_list() -> list | None:
-        if deps.dispatcher is None:
-            return None
-        found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
-        return sorted(found, key=lambda job: job.status != "awaiting_approval")
 
     def approval_items() -> list[dict]:
         if deps.dispatcher is None:
@@ -308,14 +388,14 @@ def web_router(deps: Gateway) -> APIRouter:
         sid = session_id(request)
         if sid is None:
             return login_redirect()
-        return jobs_page(request, sid, job_list())
+        return jobs_page(request, sid, job_list(request))
 
     @router.get("/fragments/jobs")
     def get_jobs_fragment(request: Request) -> Response:
         sid = session_id(request)
         if sid is None:
             return login_redirect()
-        return jobs_page(request, sid, job_list(), fragment=True)
+        return jobs_page(request, sid, job_list(request), fragment=True)
 
     def job_context(job: Job, attempts: list[Attempt]) -> dict:
         prompt_chars = job.prompt_chars if job.prompt_chars is not None else len(job.request.prompt)

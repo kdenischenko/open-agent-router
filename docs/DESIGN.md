@@ -280,7 +280,11 @@ the admin token, revocable via a settings epoch); every POST form carries a per-
 Pages: an approvals inbox on the home page, limits with pacing, advice, jobs with
 approve/deny/cancel, calibration form. Deny and Cancel ask for confirmation: a dialog with
 JavaScript, a `GET /jobs/{id}/deny` or `/cancel` confirmation page without it; both post to the
-same routes. The job page refreshes itself, shows the error and lets you rate a finished job.
+same routes. `GET /jobs` and its refresh fragment `/fragments/jobs` take `status`, `route`,
+`caller`, `q` (job id, or a substring of the prompt, case-insensitive for ASCII letters),
+`sort` (`newest`, `oldest`, `duration`) and `page`; unknown or malformed values are ignored,
+and a page past the end shows the last one. The search is `JobStore.search` in SQL over the
+stored job data. The job page refreshes itself, shows the error and lets you rate a finished job.
 
 ## Module map
 

@@ -150,8 +150,10 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 `server.port`, default 8787). Log in with the admin token: paste the contents of the
 `admin.token` file whose path `init` prints. Jobs waiting for your approval are listed at
-the top of the home page with Approve and Deny. The job page refreshes itself, shows the
-error, and lets you rate a finished job.
+the top of the home page with Approve and Deny. The job list filters by status, route and
+caller, searches by job id or prompt text, sorts by creation time or duration and pages
+through 50 jobs at a time; the filters live in the address, so a filtered view can be
+bookmarked. The job page refreshes itself, shows the error, and lets you rate a finished job.
 
 ## Harnesses
 

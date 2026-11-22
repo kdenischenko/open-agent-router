@@ -497,12 +497,12 @@ def test_limits_script_refreshes_only_successful_fragment(client):
     assert script.count("async function refresh(") == 1
     assert "fetch(path, {credentials: 'same-origin'})" in script
     for path, element_id, period in (
-        ("/fragments/limits", "limits", 30000),
-        ("/fragments/advice", "advice", 30000),
-        ("/fragments/jobs", "jobs", 5000),
-        ("/fragments/approvals", "approvals", 5000),
+        ("'/fragments/limits'", "limits", 30000),
+        ("'/fragments/advice'", "advice", 30000),
+        ("'/fragments/jobs' + location.search", "jobs", 5000),
+        ("'/fragments/approvals'", "approvals", 5000),
     ):
-        assert f"setInterval(() => refresh('{path}', '{element_id}'), {period})" in script
+        assert f"setInterval(() => refresh({path}, '{element_id}'), {period})" in script
     # the four fragment pollers above plus one interval that ticks the approval countdowns
     assert script.count("setInterval(") == 5
     assert script.count("fetch(") == 1
