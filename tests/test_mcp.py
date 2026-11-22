@@ -116,6 +116,8 @@ def test_submit_job_parameters_say_what_to_pass() -> None:
     assert "allowed_roots" in submit["cwd"]["description"]
     assert "your own harness" in submit["caller"]["description"]
     assert "[callers]" in submit["caller"]["description"]
+    assert "route id" in submit["route"]["description"].lower()
+    assert "advice" in submit["route"]["description"].lower()
     assert "seconds" in submit["timeout_s"]["description"]
     assert "capped at 100" in wait["timeout_s"]["description"]
 
@@ -134,6 +136,7 @@ def test_submit_job_posts_the_job() -> None:
                 "mode": "write",
                 "tier": "cheap",
                 "caller": "claude-code",
+                "route": "opencode-cli/glm-5.3",
             },
         )
     )
@@ -147,6 +150,7 @@ def test_submit_job_posts_the_job() -> None:
         "mode": "write",
         "tier": "cheap",
         "caller": "claude-code",
+        "route": "opencode-cli/glm-5.3",
     }
 
 

@@ -24,9 +24,10 @@ _INSTRUCTIONS = (
 _SUBMIT_DESCRIPTION = (
     "Submit a coding job to the gateway. Write the prompt with full context: the goal, the "
     "working directory, the result you want back and constraints such as files that are off "
-    "limits. mode is read or write; tier is cheap, standard or strong. A job on a route that "
-    "needs confirmation waits for a human to run agent-router approve or use the dashboard, "
-    "and you must never approve on behalf of the human"
+    "limits. mode is read or write; tier is cheap, standard or strong; route pins a route id "
+    "from advice. A job on a route that needs confirmation waits for a human to run "
+    "agent-router approve or use the dashboard, and you must never approve on behalf of the "
+    "human"
 )
 _WAIT_DESCRIPTION = (
     "Wait up to 100 seconds for a job and return its state; a still-running status is "
@@ -64,6 +65,11 @@ _CALLER = Field(
     description="Name of your own harness as listed in [callers] of the gateway config, e.g. "
     "claude-code; the gateway then keeps the job off the subscription you are running on"
 )
+_ROUTE = Field(
+    description="Route id from advice, e.g. opencode-cli/glm-5.3, to run the job on that route "
+    "instead of letting the gateway choose; the job is still rejected if the route cannot "
+    "serve it"
+)
 _JOB_TIMEOUT = Field(
     description="Job hard time limit in seconds; the route timeout_s or tasks.default_timeout_s "
     "applies when it is omitted; the job also stops after tasks.idle_timeout_s without output"
@@ -94,6 +100,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         mode: str = "read",
         tier: str | None = None,
         caller: Annotated[str | None, _CALLER] = None,
+        route: Annotated[str | None, _ROUTE] = None,
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt, "cwd": cwd, "mode": mode}
@@ -101,6 +108,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["tier"] = tier
         if caller is not None:
             body["caller"] = caller
+        if route is not None:
+            body["route"] = route
         if timeout_s is not None:
             body["timeout_s"] = timeout_s
         return run(lambda: gateway.post("/api/v1/jobs", body))
