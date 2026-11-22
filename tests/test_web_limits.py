@@ -52,7 +52,7 @@ def test_known_window_renders_a_limit_card(web, rig, monkeypatch, path):
 
     limits = element_block(text, r'<div\b[^>]*\bid="limits"[^>]*>')
     grid = element_block(limits, r'<div\b[^>]*class="grid limit-grid"[^>]*>')
-    card = element_block(grid, r'<article\b[^>]*class="panel limit-card"[^>]*>')
+    card = element_block(grid, r'<article\b[^>]*class="panel limit-card(?: [^"]*)?"[^>]*>')
 
     labelledby = re.search(r'aria-labelledby="([^"]+)"', card)
     assert labelledby is not None
@@ -179,7 +179,8 @@ def test_app_js_enhances_limit_cards(client):
     assert "data-countdown" in script
     assert "data-countdown-relative" in script
     assert "Date.parse" in script
-    assert "setInterval(() => refresh('/fragments/limits', 'limits'), 30000)" in script
+    limits_poll = "refresh('/fragments/limits' + location.search, 'limits'), 30000)"
+    assert f"setInterval(() => {limits_poll}" in script
     # reset countdowns tick on a timeout chain, not on an interval of their own
     assert "setTimeout(tick, 30000)" in script
     assert not re.search(r"setInterval\([^;]*updateLimitCountdowns", script, re.DOTALL)

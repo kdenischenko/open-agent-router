@@ -214,7 +214,9 @@ def test_calibration_form_offers_only_real_pairs(client, tokens):
     groups = re.findall(group, target, re.S)
     options = {
         (label, pool): re.findall(
-            r'<option value="([^"]+)" data-kind="(fixed|rolling)">([^<]+)</option>', body
+            r'<option value="([^"]+)" data-kind="(fixed|rolling)"'
+            r' data-months="\d+" data-days="\d+" data-hours="\d+">([^<]+)</option>',
+            body,
         )
         for label, pool, body in groups
     }
@@ -497,7 +499,7 @@ def test_limits_script_refreshes_only_successful_fragment(client):
     assert script.count("async function refresh(") == 1
     assert "fetch(path, {credentials: 'same-origin'})" in script
     for path, element_id, period in (
-        ("'/fragments/limits'", "limits", 30000),
+        ("'/fragments/limits' + location.search", "limits", 30000),
         ("'/fragments/advice'", "advice", 30000),
         ("'/fragments/jobs' + location.search", "jobs", 5000),
         ("'/fragments/approvals'", "approvals", 5000),
@@ -597,7 +599,7 @@ def test_calibration_redirects_with_confirmation(client, tokens):
     response = client.post("/calibrate", data=CALIBRATION | {"csrf": csrf}, follow_redirects=False)
     assert response.status_code == 303
     location = response.headers["location"]
-    assert location == "/?recorded_pool=kimi-code&recorded_window=month"
+    assert location == "/?recorded_pool=kimi-code&recorded_window=month#limit-kimi-code"
     page = client.get(location).text
     assert re.search(r"Recorded Kimi Code / month: used 38%, reset \d\d\.\d\d \d\d:\d\d", page)
     assert "Recorded" not in client.get("/").text
@@ -619,8 +621,16 @@ def test_calibration_confirmation_without_reset_has_no_tail(client, tokens):
 def test_calibration_form_marks_rolling_windows(client, tokens):
     authenticated_client(client, tokens)
     text = client.get("/calibrate").text
-    assert '<option value="1:0" data-kind="rolling">5h</option>' in text
-    assert '<option value="1:1" data-kind="fixed">month</option>' in text
+    rolling = (
+        '<option value="1:0" data-kind="rolling" '
+        'data-months="0" data-days="0" data-hours="5">5h</option>'
+    )
+    fixed = (
+        '<option value="1:1" data-kind="fixed" '
+        'data-months="1" data-days="0" data-hours="0">month</option>'
+    )
+    assert rolling in text
+    assert fixed in text
 
 
 def test_calibration_script_handles_rolling_windows(client):

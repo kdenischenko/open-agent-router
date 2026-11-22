@@ -2,8 +2,11 @@
   <div class="grid limit-grid">
     {% for pool in pools %}
     {% set pool_index = loop.index %}
-    <article class="panel limit-card" aria-labelledby="limit-pool-{{ pool_index }}">
-      <h2 id="limit-pool-{{ pool_index }}">{{ pool.title }}</h2>
+    <article id="limit-{{ pool.id }}" class="panel limit-card{% if recorded_pool == pool.id %} limit-card--recorded{% endif %}" aria-labelledby="limit-pool-{{ pool_index }}">
+      <div class="limit-card__header">
+        <h2 id="limit-pool-{{ pool_index }}">{{ pool.title }}</h2>
+        {% if recorded_pool == pool.id %}<span class="approval-badge approval-badge--ok">updated</span>{% endif %}
+      </div>
       {% if pool.block %}
       <div class="limit-block">
         <span class="limit-status approval-badge approval-badge--danger">blocked</span>

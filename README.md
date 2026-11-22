@@ -155,7 +155,9 @@ pool with usage, expected pace, reset countdowns and observation age for each wi
 including stale and blocked states; the full limits table stays under a disclosure. The job
 list filters by status, route and caller, searches by job id or prompt text, sorts by
 creation time or duration and pages through 50 jobs at a time; the filters live in the
-address, so a filtered view can be bookmarked. The job page refreshes itself, shows the
+address, so a filtered view can be bookmarked. Manual calibration shows field-specific
+errors and, with scripts on, validates input and previews usage pace and the local reset time;
+after saving, the updated pool card is highlighted. The job page refreshes itself, shows the
 error, and lets you rate a finished job.
 It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
 final text and per-attempt output in expandable blocks, with a copy button when clipboard

@@ -282,8 +282,11 @@ frontend build) logs in with the admin token and sets a signed `ar_session` cook
 the admin token, revocable via a settings epoch); every POST form carries a per-session CSRF token.
 Pages: an approvals inbox on the home page; limits cards with usage bars, pacing, reset
 countdowns, data age, stale and blocked states, pool unblock forms and a collapsible table;
-advice; jobs with approve/deny/cancel; calibration form. Deny and Cancel ask for confirmation:
-a dialog with JavaScript, a `GET /jobs/{id}/deny` or `/cancel` confirmation page without it;
+advice; jobs with approve/deny/cancel; calibration form. Calibration re-renders submitted
+values with field errors, enhances the form with inline validation and a usage/reset preview,
+and highlights the recorded pool after the redirect and subsequent limits-fragment refreshes.
+Deny and Cancel ask for confirmation: a dialog with JavaScript, a `GET /jobs/{id}/deny` or
+`/cancel` confirmation page without it;
 both post to the same routes. `GET /jobs` and its refresh fragment `/fragments/jobs` take
 `status`, `route`, `caller`, `q` (job id, or a substring of the prompt, case-insensitive for
 ASCII letters), `sort` (`newest`, `oldest`, `duration`) and `page`; unknown or malformed values
