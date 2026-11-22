@@ -286,9 +286,10 @@ page refreshes itself, shows the error and lets you rate a finished job.
 |---|---|
 | `api.py` | FastAPI app: routes, token checks, host guard, lifespan wiring |
 | `auth.py` | Token files, dashboard session cookies, CSRF tokens |
-| `classifier.py` | tier resolution, report |
+| `classifier.py` | facade re-exporting the classifier modules; tier resolution and dashboard snapshot |
 | `classifier_backends.py` | systemone/ollama/openai backend clients, prompts and answer parsing |
 | `classifier_eval.py` | offline evaluation and live-model unloading |
+| `classifier_report.py` | classifier accuracy/latency report |
 | `classifier_votes.py` | vote queue and flag coordination |
 | `cli.py` | `agent-router` command line (init, serve, run, calibrate, export, ...) |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
