@@ -15,7 +15,8 @@ from agent_router.runner import PROC_START_TOLERANCE_S, ProcessQueryError
 REAP_RETRY_PAUSE_S = 0.5  # pause before retrying the failed first process query in _reap
 _RECOVER_LIST = 1000
 
-log = logging.getLogger(__name__)
+# recovery is part of the dispatcher, so its records keep the dispatcher's logger name
+log = logging.getLogger("agent_router.dispatcher")
 
 
 class RecoverFailed(Exception):
