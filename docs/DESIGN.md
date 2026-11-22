@@ -292,6 +292,7 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
 | `config.py` | TOML schema, validation, defaults, levers, tiers |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
+| `dispatcher_support.py` | Dispatcher helpers without dispatcher state: writer lock keys, output tails, route-choice snapshots |
 | `events.py` | In-process event bus with per-subscriber threads |
 | `export.py` | Redacted JSONL/CSV export of jobs, spend, observations |
 | `jobs.py` | Job/attempt/rating/vote data model, statuses and transitions |
