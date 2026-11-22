@@ -62,6 +62,7 @@ _METRIC_FIELDS = (
     "priority",
     "weight",
     "lag",
+    "urgency",
     "score",
     "quality",
     "has_data",

@@ -155,10 +155,10 @@ def test_weight_shifts_by_points() -> None:
     a = make_route("a/1", "a")
     b = make_route("b/1", "b")
     snap = snapshot(status("a", 0.15), status("b", 0.08))
-    decision = decide(CHEAP, snap, [RouteView(a, weight=-10.0), RouteView(b)])
+    decision = decide(CHEAP, snap, [RouteView(a, weight=-20.0), RouteView(b)])
     assert ids(decision) == ["b/1", "a/1"]
     assert reason_of(decision, "a/1") == (
-        "behind pace by 15 pp (week: 50% elapsed, 35% used), weight −10"
+        "behind pace by 15 pp (week: 50% of time elapsed, 35% used, 50% left), weight −20"
     )
     assert reason_of(decision, "b/1") == _pace_reason(snap.pools["b"])
 

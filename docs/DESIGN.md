@@ -121,16 +121,21 @@ reserve filters and ignore `priority`/`weight`.
 Survivors are ordered by a key built from: `prefer` rank (when several routes share a
 `model_key`, `[models."<key>"] prefer = [pools...]` orders their pools), `priority` (lower
 first), pacing score, `quality` (higher first), and route id. The score is
-`lag * 100 + weight`, where `weight` nudges the score in percentage points. Levers resolve
-route → backend → pool default. Routes with no usage data get score 0 and sort after routes with
-data at equal priority.
+`lag * 100 / max(1 - expected, 0.02) + weight` — the window's `urgency` in percentage points,
+plus a `weight` nudge. Levers resolve route → backend → pool default. Routes with no usage
+data get score 0 and sort after routes with data at equal priority.
 
 Pacing compares expected and actual usage per `pace` window: `expected` is the elapsed share of
 the current window, `used` is the consumed share, `lag = expected - used`. Positive lag means the
-pool is under-consuming and should be preferred; the pool's lag is the minimum across its pace
-windows (the window closest to exhaustion dominates). The same function backs the
-`advice` API and CLI, so the shown recommendation is exactly what a job with the same tier, mode
-and caller would get.
+pool is under-consuming and should be preferred. Lag alone ignores how little time may be left
+before the reset, so the score divides it by the remaining share of the window (with a floor of
+`0.02` to avoid division by zero): `urgency = lag / (1 - expected)
+= (1 - used) / (1 - expected) - 1` — how many times faster than an even pace the pool must
+spend to use up its window. The pool's urgency, like its lag, is the minimum across its pace
+windows (the window closest to exhaustion dominates), so a pool whose reset is near and whose
+allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
+function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
+the same tier, mode and caller would get.
 
 ## Usage tracking
 

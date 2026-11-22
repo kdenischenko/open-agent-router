@@ -25,7 +25,7 @@ spend a strong model on a task a cheap one handles fine. open-agent-router is a 
 gateway that keeps your subscriptions busy without surprises:
 
 - **Subscriptions do not sit idle.** The gateway tracks usage in every limit window and
-  prefers the pool that is furthest behind its expected pace.
+  prefers the pool that is furthest behind its pace for the time left in the window.
 - **Limits do not surprise you.** A pool that reports a limit is blocked until its reset;
   on a usage limit and on an executor error the job moves to another route. A writing
   attempt that already changed files ends `partial` and is not retried.
@@ -249,7 +249,8 @@ Common failures and their fixes are in [docs/TROUBLESHOOTING.md](https://github.
 1. **Pool.** Add a `[[pools]]` section with `[[pools.windows]]` for your plan:
    `unit = "percent"` for subscriptions that show a percentage, or `unit = "usd"` with
    `limit_usd` for subscriptions billed in dollars. Optional: `priority`, `weight` (a
-   nudge in percentage points of lag) and `price_file` — a TOML table
+   nudge in percentage points of the pace score, `100 * lag / time left`) and `price_file` —
+   a TOML table
    `"<model>" = [input, output]` (USD per 1M tokens) used when the harness does not
    report a cost.
 2. **Harness.** For a new CLI, write an adapter module like

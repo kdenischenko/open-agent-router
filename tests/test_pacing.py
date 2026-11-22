@@ -180,3 +180,32 @@ def test_missing_state_counts_as_unknown():
     assert len(status.windows) == 2
     assert status.windows[0].state.known is False
     assert status.lag == pytest.approx(0.3)
+
+
+def test_urgency_divides_lag_by_the_time_left_in_the_window():
+    w = win()
+    pace = window_pace(w, fixed_state(w, 0.86, 0.97), NOW)
+    assert pace.urgency == pytest.approx((0.97 - 0.86) / 0.03)
+    early = window_pace(w, fixed_state(w, 0.0, 0.0), NOW)
+    assert early.urgency == pytest.approx(0.0)
+
+
+def test_urgency_time_left_has_a_floor_near_the_reset():
+    w = win()
+    pace = window_pace(w, fixed_state(w, 0.90, 0.999), NOW)
+    assert pace.urgency == pytest.approx((0.999 - 0.90) / 0.02)
+
+
+def test_no_urgency_without_lag():
+    w = win(role="guard")
+    assert window_pace(w, fixed_state(w, 0.5, 0.5), NOW).urgency is None
+
+
+def test_pool_urgency_is_minimum_of_pace_windows():
+    week, month = win("week"), win("month", duration="30d")
+    states = [
+        fixed_state(week, 0.40, 0.50),
+        fixed_state(month, 0.80, 0.90, length=timedelta(days=30)),
+    ]
+    status = pool_status(make_pool(week, month), states, NOW)
+    assert status.urgency == pytest.approx(min(0.10 / 0.50, 0.10 / 0.10))

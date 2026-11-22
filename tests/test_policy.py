@@ -243,8 +243,8 @@ def test_reason_for_lagging_and_leading_pool():
     snap = snapshot(status("a", 0.38, elapsed=0.61), status("b", 0.80, elapsed=0.50))
     decision = decide(REQ, snap, views(route("ra", "a"), route("rb", "b")))
     assert [(item.route.id, item.reason) for item in decision.chosen] == [
-        ("ra", "behind pace by 23 pp (week: 61% elapsed, 38% used)"),
-        ("rb", "ahead of pace by 30 pp (week: 50% elapsed, 80% used)"),
+        ("ra", "behind pace by 23 pp (week: 61% of time elapsed, 38% used, 39% left)"),
+        ("rb", "ahead of pace by 30 pp (week: 50% of time elapsed, 80% used, 50% left)"),
     ]
 
 
@@ -316,20 +316,22 @@ def test_decide_metrics_match_sort_key():
         priority=1,
         weight=5.0,
         lag=0.25,
-        score=30.0,
+        score=55.0,
         quality=3,
         has_data=True,
         prefer_rank=None,
+        urgency=0.5,
     )
     assert decision.metrics["rb"] == RouteMetrics(
         pool="b",
         priority=0,
         weight=0.0,
         lag=-0.25,
-        score=-25.0,
+        score=-50.0,
         quality=3,
         has_data=True,
         prefer_rank=0,
+        urgency=-0.5,
     )
     assert decision.metrics["rc"] == RouteMetrics(
         pool="c",
@@ -340,6 +342,7 @@ def test_decide_metrics_match_sort_key():
         quality=3,
         has_data=False,
         prefer_rank=None,
+        urgency=None,
     )
 
 
@@ -406,3 +409,21 @@ def test_preference_rank_ordinal(rank: int, expected: str) -> None:
     from agent_router.policy import _ordinal
 
     assert _ordinal(rank) == expected
+
+
+def test_pool_close_to_its_reset_outranks_a_pool_with_more_time():
+    # 86% used with 3% of the window left beats 36% used with 45% left, despite a cost weight
+    near = status("near", 0.86, elapsed=0.97)
+    far = status("far", 0.36, elapsed=0.55)
+    routes = [RouteView(route("r-near", "near"), weight=-13.5), RouteView(route("r-far", "far"))]
+    decision = decide(REQ, snapshot(near, far), routes)
+    assert ids(decision) == ["r-near", "r-far"]
+    assert decision.metrics["r-near"].score == pytest.approx(100 * 0.11 / 0.03 - 13.5)
+    assert decision.metrics["r-far"].score == pytest.approx(100 * 0.19 / 0.45)
+
+
+def test_reason_names_the_time_left_in_the_window():
+    decision = decide(REQ, snapshot(status("a", 0.86, elapsed=0.97)), views(route("ra", "a")))
+    assert decision.chosen[0].reason == (
+        "behind pace by 11 pp (week: 97% of time elapsed, 86% used, 3% left)"
+    )

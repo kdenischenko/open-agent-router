@@ -74,6 +74,7 @@ class RouteMetrics:
     quality: int
     has_data: bool
     prefer_rank: int | None
+    urgency: float | None
 
 
 @dataclass(frozen=True)
@@ -131,14 +132,16 @@ def _exclusion(request: RouteRequest, snapshot: Snapshot, view: RouteView) -> st
 
 
 def _pace_reason(status: PoolStatus) -> str:
-    """Choice reason from the window that determines the pool's lag (the smallest lag)."""
-    paces = [pace for pace in status.windows if pace.lag is not None]
-    pace = min(paces, key=lambda item: (item.lag, item.window.id))
+    """Choice reason from the window that determines the pool's urgency (the smallest urgency)."""
+    paces = [pace for pace in status.windows if pace.urgency is not None]
+    pace = min(paces, key=lambda item: (item.urgency, item.window.id))
     lag = pace.lag or 0.0
+    expected = pace.expected or 0.0
     verb = "behind pace" if lag >= 0 else "ahead of pace"
     detail = (
-        f"{pace.window.id}: {_percent(pace.expected or 0.0)}% elapsed,"
-        f" {_percent(pace.state.used or 0.0)}% used"
+        f"{pace.window.id}: {_percent(expected)}% of time elapsed,"
+        f" {_percent(pace.state.used or 0.0)}% used,"
+        f" {_percent(1.0 - expected)}% left"
     )
     return f"{verb} by {_percent(abs(lag))} pp ({detail})"
 
@@ -171,9 +174,14 @@ def decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteView
         priority = 0 if request.explicit else view.priority
         weight = 0.0 if request.explicit else view.weight
         status = snapshot.pools.get(route.pool)
-        has_data = status is not None and status.known and status.lag is not None
+        has_data = (
+            status is not None
+            and status.known
+            and status.lag is not None
+            and status.urgency is not None
+        )
         if has_data:
-            score = status.lag * 100 + weight
+            score = status.urgency * 100 + weight
             reason = _pace_reason(status)
             if weight != 0:
                 reason += f", weight {weight:+g}".replace("-", "−")
@@ -195,6 +203,7 @@ def decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteView
             quality=route.quality,
             has_data=has_data,
             prefer_rank=view.prefer_rank,
+            urgency=None if status is None else status.urgency,
         )
         groups.setdefault(route.model_group, []).append((key, view, Choice(route, reason)))
 
