@@ -11,7 +11,7 @@
   {% if tasks_disabled %}
   <p>Jobs are disabled: the job dispatcher is not running.</p>
   {% elif not jobs %}
-  <p>No jobs yet.</p>
+  <p class="empty">No jobs yet.</p>
   {% else %}
   <div class="job-list">
     {% for job in jobs %}

@@ -4,16 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} — agent-router</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/app.js" defer></script>
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+  <script src="/static/app.js?v={{ asset_version }}" defer></script>
 </head>
 <body>
   <header>
     <strong>agent-router</strong>
     {% if csrf %}
     <nav aria-label="Main navigation">
-      <a href="/">Limits</a>
-      <a href="/calibrate">Calibration</a>
+      <a href="/" class="nav-link"{% if nav == 'limits' %} aria-current="page"{% endif %}>Limits</a>
+      <a href="/jobs" class="nav-link"{% if nav == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
+      <a href="/calibrate" class="nav-link"{% if nav == 'calibrate' %} aria-current="page"{% endif %}>Calibrate</a>
+      {% if awaiting_count|default(none) is not none and awaiting_count > 0 %}
+      <a href="/jobs" class="approval-badge">{{ awaiting_display }} awaiting approval</a>
+      {% endif %}
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <button type="submit">Log out</button>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="flash flash--danger" role="alert"><span class="flash__prefix">Error:</span> {{ error }}</p>{% endif %}
 <form method="post" action="/calibrate" class="panel calibration-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <div id="provider-field" class="calibration-field" hidden>

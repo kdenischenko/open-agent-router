@@ -14,7 +14,7 @@ from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, PlainTextResponse, Response
 from starlette.templating import Jinja2Templates
 
-from agent_router import api
+from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
 from agent_router.jobs import TERMINAL, Attempt, Job
@@ -22,6 +22,8 @@ from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
+# static URLs carry the package version, so a browser does not keep old assets after an upgrade
+TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
 TIER_TITLES = {"cheap": "Economy", "standard": "Standard", "strong": "Strong"}
 
@@ -42,6 +44,32 @@ def web_router(deps: Gateway) -> APIRouter:
     def login_redirect() -> RedirectResponse:
         return RedirectResponse("/login", status_code=303)
 
+    def awaiting_count() -> int | None:
+        if deps.dispatcher is None:
+            return None
+        return len(deps.dispatcher.jobs.list("awaiting_approval", 100))
+
+    def render_page(
+        request: Request,
+        template: str,
+        context: dict,
+        *,
+        sid: str | None,
+        nav: str | None = None,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        context = dict(context)
+        if sid is not None:
+            context["csrf"] = deps.panel.csrf_for(sid)
+            context["nav"] = nav
+        if nav is not None:
+            count = awaiting_count()
+            context["awaiting_count"] = count
+            context["awaiting_display"] = (
+                None if count is None else "99+" if count > 99 else str(count)
+            )
+        return TEMPLATES.TemplateResponse(request, template, context, status_code=status_code)
+
     def message_page(
         request: Request,
         sid: str | None,
@@ -51,7 +79,10 @@ def web_router(deps: Gateway) -> APIRouter:
         *,
         status_code: int = 200,
     ) -> HTMLResponse:
-        return TEMPLATES.TemplateResponse(
+        nav = None
+        if sid is not None:
+            nav = "jobs" if href.startswith("/jobs") else "limits"
+        return render_page(
             request,
             "message.html",
             {
@@ -59,8 +90,9 @@ def web_router(deps: Gateway) -> APIRouter:
                 "message": message,
                 "link_href": href,
                 "link_text": link_text,
-                "csrf": None if sid is None else deps.panel.csrf_for(sid),
             },
+            sid=sid,
+            nav=nav,
             status_code=status_code,
         )
 
@@ -76,15 +108,16 @@ def web_router(deps: Gateway) -> APIRouter:
         error: str | None = None,
         status_code: int = 200,
     ) -> HTMLResponse:
-        return TEMPLATES.TemplateResponse(
+        return render_page(
             request,
             "calibrate.html",
             {
                 "title": "Manual calibration",
                 "pools": deps.config.pools,
-                "csrf": deps.panel.csrf_for(sid),
                 "error": error,
             },
+            sid=sid,
+            nav="calibrate",
             status_code=status_code,
         )
 
@@ -151,10 +184,9 @@ def web_router(deps: Gateway) -> APIRouter:
             "jobs": jobs or [],
             "tasks_disabled": jobs is None,
             "classifier": classifier,
-            "csrf": deps.panel.csrf_for(sid),
         }
         template = "_jobs.html" if fragment else "jobs.html"
-        return TEMPLATES.TemplateResponse(request, template, context)
+        return render_page(request, template, context, sid=sid, nav=None if fragment else "jobs")
 
     def job_list() -> list | None:
         if deps.dispatcher is None:
@@ -162,7 +194,7 @@ def web_router(deps: Gateway) -> APIRouter:
         found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
         return sorted(found, key=lambda job: job.status != "awaiting_approval")
 
-    def advice_context(snapshot: dict, sid: str) -> dict:
+    def advice_context(snapshot: dict) -> dict:
         decisions = [
             decision_json(tier, deps.advise(tier, None)) | {"title": TIER_TITLES[tier]}
             for tier in TIERS
@@ -170,7 +202,6 @@ def web_router(deps: Gateway) -> APIRouter:
         return {
             "decisions": decisions,
             "closed_pools": [pool for pool in snapshot["pools"] if pool["block"]],
-            "csrf": deps.panel.csrf_for(sid),
             "local": local,
         }
 
@@ -207,18 +238,12 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        awaiting_count = None
-        if deps.dispatcher is not None:
-            awaiting_count = len(
-                deps.dispatcher.jobs.list("awaiting_approval", max(1, deps.config.tasks.max_queued))
-            )
         context = {
             "title": "Limits",
             "pools": snapshot["pools"],
-            "awaiting_count": awaiting_count,
             "recorded": recorded_line(request, snapshot),
-        } | advice_context(snapshot, sid)
-        return TEMPLATES.TemplateResponse(request, "index.html", context)
+        } | advice_context(snapshot)
+        return render_page(request, "index.html", context, sid=sid, nav="limits")
 
     @router.get("/fragments/limits")
     def get_limits(request: Request) -> Response:
@@ -235,7 +260,7 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         snapshot = deps.snapshot_view()
-        return TEMPLATES.TemplateResponse(request, "_advice.html", advice_context(snapshot, sid))
+        return render_page(request, "_advice.html", advice_context(snapshot), sid=sid)
 
     @router.get("/jobs")
     def get_jobs(request: Request) -> Response:
@@ -251,7 +276,7 @@ def web_router(deps: Gateway) -> APIRouter:
             return login_redirect()
         return jobs_page(request, sid, job_list(), fragment=True)
 
-    def job_context(job: Job, attempts: list[Attempt], sid: str) -> dict:
+    def job_context(job: Job, attempts: list[Attempt]) -> dict:
         prompt_chars = job.prompt_chars if job.prompt_chars is not None else len(job.request.prompt)
         return {
             "title": f"Job {job.id}",
@@ -261,7 +286,6 @@ def web_router(deps: Gateway) -> APIRouter:
             "prompt_chars": prompt_chars,
             "attempts": attempts,
             "last_rating": deps.dispatcher.jobs.last_rating(job.id),
-            "csrf": deps.panel.csrf_for(sid),
             "local": local,
             "terminal": job.status in TERMINAL,
         }
@@ -276,9 +300,8 @@ def web_router(deps: Gateway) -> APIRouter:
         job = deps.dispatcher.jobs.get(job_id)
         if job is None:
             return PlainTextResponse("job not found", status_code=404)
-        return TEMPLATES.TemplateResponse(
-            request, "job.html", job_context(job, deps.dispatcher.jobs.attempts(job_id), sid)
-        )
+        context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
+        return render_page(request, "job.html", context, sid=sid, nav="jobs")
 
     @router.get("/fragments/jobs/{job_id}")
     def get_job_fragment(request: Request, job_id: str) -> Response:
@@ -290,9 +313,8 @@ def web_router(deps: Gateway) -> APIRouter:
         job = deps.dispatcher.jobs.get(job_id)
         if job is None:
             return PlainTextResponse("job not found", status_code=404)
-        return TEMPLATES.TemplateResponse(
-            request, "_job.html", job_context(job, deps.dispatcher.jobs.attempts(job_id), sid)
-        )
+        context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
+        return render_page(request, "_job.html", context, sid=sid)
 
     async def post_job_action(request: Request, job_id: str, action: str) -> Response:
         sid = session_id(request)

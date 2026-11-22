@@ -44,6 +44,7 @@
 <section>
   <h2>Attempts</h2>
   {% if attempts %}
+  <div class="table-scroll">
   <table>
     <thead>
       <tr><th>#</th><th>Route</th><th>Pool</th><th>Started</th><th>Finished</th><th>Outcome</th><th>Duration</th><th>Tokens</th><th>Cost</th></tr>
@@ -64,6 +65,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p>No attempts yet.</p>
   {% endif %}

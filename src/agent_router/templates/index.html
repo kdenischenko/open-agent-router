@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-{% if recorded %}<p class="recorded">{{ recorded }}</p>{% endif %}
+{% if recorded %}<p class="flash flash--ok" role="status"><span class="flash__prefix">Success:</span> {{ recorded }}</p>{% endif %}
 {% include "_limits.html" %}
 <section>
   <h2>Jobs</h2>
   <p><a href="/jobs">Open the job list</a></p>
   {% if awaiting_count is not none %}
-  <p><a href="/jobs">Awaiting approval: {{ awaiting_count }}</a></p>
+  <p><a href="/jobs">Awaiting approval: {{ awaiting_display }}</a></p>
   {% else %}
   <p>Jobs are disabled: the job dispatcher is not running.</p>
   {% endif %}
