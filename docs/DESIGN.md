@@ -161,7 +161,7 @@ returns points — a source field name, a fraction 0..1 and an optional `resets_
 code when there is no data. Each pool maps source fields to its window ids with
 `[pools.usage] windows`, and the mapped points become observations with
 `source = spec.observation_source` (e.g. `opencode_go_usage`); the newest observation of a window
-wins, and journal spend after it is added on top. `[usage].mode = "auto"` reads the sources on
+wins, and for `usd` windows journal spend after it is added on top, as above. `[usage].mode = "auto"` reads the sources on
 every `[usage].interval`; `"manual"` keeps calibration-only behavior. A pool may override the mode.
 
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated

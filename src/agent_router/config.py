@@ -216,6 +216,9 @@ def _parse_pool_usage(value: Any, label: str, window_ids: set[str], errors: list
     raw = _table(value, f"{label}.usage", errors)
     _check_keys(raw, _POOL_USAGE_KEYS, f"{label}.usage", errors)
     source = _optional_text(raw.get("source"), f"{label}.usage.source", errors)
+    if source is not None and not source.strip():
+        errors.append(f"{label}.usage.source: must not be empty")
+        source = None
     mode = _optional_text(raw.get("mode"), f"{label}.usage.mode", errors)
     if mode is not None and mode not in ("auto", "manual"):
         errors.append(f"{label}.usage.mode: invalid value: {mode!r}; allowed: auto, manual")

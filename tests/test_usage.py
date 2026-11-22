@@ -194,3 +194,10 @@ def test_valid_fake_source_loads(tmp_path: Path, fake_source: UsageSourceSpec) -
     assert usage.api_key_env == "FAKE_USAGE_KEY"
     assert dict(usage.windows) == {"monthly": "week", "rolling": "5h"}
     assert registry.load_usage_source("fake-usage") is fake_source
+
+
+def test_empty_usage_source_is_config_error(tmp_path: Path) -> None:
+    text = with_pool_usage('source = ""\nwindows = { monthly = "week" }\n')
+    with pytest.raises(ConfigError) as caught:
+        load_text(tmp_path, text)
+    assert "pools[0].usage.source: must not be empty" in caught.value.messages
