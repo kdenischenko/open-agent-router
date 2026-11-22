@@ -294,6 +294,7 @@ page refreshes itself, shows the error and lets you rate a finished job.
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
 | `config.py` | TOML parsing and validation: `load_config`, config template, re-exports of the config model |
+| `config_classifier.py` | Parsing of the `[classifier]` section: single-model form, `[[classifier.models]]`, endpoint address checks |
 | `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config`, `ConfigError` |
 | `config_values.py` | Generic TOML value checks (keys, tables, scalars) used by the config parsers |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
