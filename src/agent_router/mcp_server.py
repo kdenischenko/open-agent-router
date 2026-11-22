@@ -66,7 +66,7 @@ _CALLER = Field(
     "claude-code; the gateway then keeps the job off the subscription you are running on"
 )
 _ROUTE = Field(
-    description="Route id from advice, e.g. opencode/glm-5.3, to run the job on that route "
+    description="Route id from advice, e.g. opencode-cli/glm-5.3, to run the job on that route "
     "instead of letting the gateway choose; the job is still rejected if the route cannot "
     "serve it"
 )

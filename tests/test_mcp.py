@@ -136,7 +136,7 @@ def test_submit_job_posts_the_job() -> None:
                 "mode": "write",
                 "tier": "cheap",
                 "caller": "claude-code",
-                "route": "opencode/glm-5.3",
+                "route": "opencode-cli/glm-5.3",
             },
         )
     )
@@ -150,7 +150,7 @@ def test_submit_job_posts_the_job() -> None:
         "mode": "write",
         "tier": "cheap",
         "caller": "claude-code",
-        "route": "opencode/glm-5.3",
+        "route": "opencode-cli/glm-5.3",
     }
 
 
