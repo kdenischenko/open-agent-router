@@ -16,7 +16,7 @@ from agent_router import registry
 from agent_router.auth import PanelAuth, Tokens
 from agent_router.classifier import snapshot_classifier
 from agent_router.clock import Clock, to_utc
-from agent_router.config import Config, Mode, Pool, Tier
+from agent_router.config import Config, ConfigError, Mode, Pool, Tier, UsageSettings
 from agent_router.events import Event, EventBus
 from agent_router.jobstore import JobStore, migrate_jobs_schema
 from agent_router.ledger import window_state
@@ -33,9 +33,11 @@ from agent_router.runner import LocalRunner
 from agent_router.settings_store import SqliteSettings
 from agent_router.spend import SpendReader
 from agent_router.store import Observation, SqliteStore, Store
+from agent_router.usage import is_stale
 
 if TYPE_CHECKING:
     from agent_router.dispatcher import Dispatcher
+    from agent_router.usage_reader import UsageReadState
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +149,7 @@ def _iso(moment: datetime | None) -> str | None:
     return None if moment is None else to_utc(moment).isoformat()
 
 
-def _window_json(pace: WindowPace, now: datetime) -> dict[str, Any]:
+def _window_json(pace: WindowPace, now: datetime, observation_source: str | None) -> dict[str, Any]:
     state = pace.state
     age = None if state.observed_at is None else max(0.0, (now - state.observed_at).total_seconds())
     return {
@@ -160,6 +162,7 @@ def _window_json(pace: WindowPace, now: datetime) -> dict[str, Any]:
         "lag": pace.lag,
         "resets_at": _iso(state.resets_at),
         "source": state.source,
+        "figure_source": _figure_source(state.source, observation_source),
         "observed_at": _iso(state.observed_at),
         "age_s": age,
         "estimated": state.estimated,
@@ -167,6 +170,56 @@ def _window_json(pace: WindowPace, now: datetime) -> dict[str, Any]:
         "blocked": pace.blocked,
         "note": state.note,
         "anchored": pace.window.anchor is not None,
+    }
+
+
+def _figure_source(state_source: str | None, observation_source: str | None) -> str:
+    """Where a window's figure comes from: the pool's usage source, manual entry, or neither.
+
+    "journal" covers every other case — no observation in the current window, a
+    scheduled reset, or a collector that is neither the pool's usage source nor a
+    human calibration.
+    """
+    if observation_source is not None and state_source == observation_source:
+        return "auto"
+    if state_source == "manual":
+        return "manual"
+    return "journal"
+
+
+def _pool_observation_source(pool: Pool) -> str | None:
+    """Observation source name of the pool's usage source; None when the pool has none."""
+    if pool.usage.source is None:
+        return None
+    try:
+        return registry.load_usage_source(pool.usage.source).observation_source
+    except ConfigError:
+        return None  # config validation rejects unknown sources; the snapshot stays buildable
+
+
+def _usage_json(
+    pool: Pool,
+    config: Config | None,
+    states: Mapping[str, UsageReadState] | None,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Read health of the pool's usage source; None when the pool has no source."""
+    if pool.usage.source is None:
+        return None
+    settings = config.usage if config is not None else UsageSettings()
+    mode = config.usage_mode(pool.id) if config is not None else settings.mode
+    state = None if states is None else states.get(pool.id)
+    last_success = None if state is None else state.last_success_at
+    age = None if last_success is None else max(0.0, (now - last_success).total_seconds())
+    return {
+        "source": pool.usage.source,
+        "mode": mode,
+        "last_attempt_at": _iso(None if state is None else state.last_attempt_at),
+        "last_success_at": _iso(last_success),
+        "last_error": None if state is None else state.last_reason,
+        "age_s": age,
+        # auto mode promises reads on the interval; no success within two intervals is stale
+        "stale": mode == "auto" and is_stale(state, now, settings.interval_s),
     }
 
 
@@ -187,13 +240,18 @@ def _via_gateway(jobs: JobStore, status: PoolStatus) -> dict[str, Any]:
 
 
 def snapshot_json(
-    snapshot: Snapshot, store: Store, jobs: JobStore | None = None, config: Config | None = None
+    snapshot: Snapshot,
+    store: Store,
+    jobs: JobStore | None = None,
+    config: Config | None = None,
+    usage_states: Mapping[str, UsageReadState] | None = None,
 ) -> dict[str, Any]:
     pools = []
     for status in snapshot.pools.values():
         pool = status.pool
         block = snapshot.blocks.get(pool.id)
         sampled = store.last_counter(pool.id) if pool.counter else None
+        observation_source = _pool_observation_source(pool)
         pools.append(
             {
                 "id": pool.id,
@@ -209,7 +267,10 @@ def snapshot_json(
                 else {"until": _iso(block.until), "reason": block.reason},
                 "via_gateway": None if jobs is None else _via_gateway(jobs, status),
                 "counter_sampled_at": None if sampled is None else _iso(sampled.sampled_at),
-                "windows": [_window_json(pace, snapshot.now) for pace in status.windows],
+                "windows": [
+                    _window_json(pace, snapshot.now, observation_source) for pace in status.windows
+                ],
+                "usage": _usage_json(pool, config, usage_states, snapshot.now),
             }
         )
     result = {"now": _iso(snapshot.now), "pools": pools}
@@ -293,14 +354,21 @@ class Gateway:
         is not read.
 
         The counter and gateway spend change only together with a bus event, and an event
-        rebuilds the snapshot. The returned dict is shared: do not modify it.
+        rebuilds the snapshot. Usage read state changes only together with a bus event
+        too (a read publishes usage.read or usage.read_failed), so it is safe to gather
+        here. The returned dict is shared: do not modify it.
         """
         snapshot = self.snapshot()
         with self._view_lock:
             if self._view is None or self._view[0] is not snapshot:
+                states = None
+                if self.usage_reader is not None:
+                    states = {
+                        pool.id: self.usage_reader.state(pool.id) for pool in self.config.pools
+                    }
                 self._view = (
                     snapshot,
-                    snapshot_json(snapshot, self.store, self.jobs, self.config),
+                    snapshot_json(snapshot, self.store, self.jobs, self.config, states),
                 )
             return self._view[1]
 

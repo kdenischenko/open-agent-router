@@ -12,7 +12,8 @@ from agent_router.config import ConfigError, load_config
 from agent_router.config_model import Pool, PoolUsage, Window
 from agent_router.periods import Duration
 from agent_router.store import Observation
-from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec, observations
+from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec, is_stale, observations
+from agent_router.usage_reader import UsageReadState
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
 RESET = datetime(2026, 11, 16, 0, tzinfo=UTC)  # within one week window of NOW
@@ -158,6 +159,30 @@ def test_observations_empty_on_failed_read() -> None:
 
 def test_successful_read_is_ok() -> None:
     assert UsageRead(points=(UsagePoint("monthly", 0.4),)).ok
+
+
+# --- staleness: one threshold shared by web, status and doctor --------------------------
+
+
+def test_is_stale_is_false_right_after_a_success() -> None:
+    state = UsageReadState("p", last_attempt_at=NOW, last_success_at=NOW)
+    assert is_stale(state, NOW, 300) is False
+
+
+def test_is_stale_turns_true_only_past_two_intervals() -> None:
+    state = UsageReadState("p", last_attempt_at=NOW, last_success_at=NOW)
+    assert is_stale(state, NOW + timedelta(seconds=600), 300) is False
+    assert is_stale(state, NOW + timedelta(seconds=601), 300) is True
+
+
+def test_is_stale_when_never_read() -> None:
+    assert is_stale(None, NOW, 300) is True
+    assert is_stale(UsageReadState("p"), NOW, 300) is True
+
+
+def test_shipped_source_names_its_default_key_variable() -> None:
+    spec = registry.load_usage_source("opencode-go")
+    assert spec.default_api_key_env == "OPENCODE_GO_API_KEY"
 
 
 def test_unknown_usage_source_is_config_error(tmp_path: Path) -> None:

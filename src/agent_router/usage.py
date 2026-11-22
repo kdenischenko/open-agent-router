@@ -12,11 +12,15 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
+from agent_router.clock import to_utc
 from agent_router.config_model import Pool, PoolUsage, Window
 from agent_router.periods import shift
 from agent_router.store import Observation
+
+if TYPE_CHECKING:
+    from agent_router.usage_reader import UsageReadState
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,20 @@ class UsageSourceSpec:
     factory: Callable[[PoolUsage, Mapping[str, str]], UsageSource]  # pool usage, environment
     windows: frozenset[str]  # source field names the source can report
     observation_source: str  # value of Observation.source, e.g. "opencode_go_usage"
+    # the variable doctor checks for presence when the pool sets no api_key_env
+    default_api_key_env: str | None = None
+
+
+def is_stale(state: UsageReadState | None, now: datetime, interval_s: float) -> bool:
+    """True when no successful read is fresher than two read intervals.
+
+    A pool without state or without a single successful read counts as stale. The
+    caller checks the auto mode first: only auto mode promises reads at all, so
+    web, status and doctor share this one threshold.
+    """
+    if state is None or state.last_success_at is None:
+        return True
+    return (to_utc(now) - to_utc(state.last_success_at)).total_seconds() > 2.0 * interval_s
 
 
 def _valid_fraction(value: object) -> bool:

@@ -13,6 +13,15 @@ __all__ = ["rig", "web"]
 
 PATHS = ["/", "/fragments/limits"]
 BLOCK = {"until": "2026-11-15T06:00:00+00:00", "reason": "limit reached"}
+USAGE = {
+    "source": "opencode-go",
+    "mode": "auto",
+    "last_attempt_at": "2026-11-13T09:12:00+00:00",
+    "last_success_at": "2026-11-13T09:00:00+00:00",
+    "last_error": "unauthorized",
+    "age_s": 720.0,
+    "stale": True,
+}
 
 
 def element_block(text: str, opener: str) -> str:
@@ -105,6 +114,48 @@ def test_window_ahead_of_expected_pace(web, rig, monkeypatch):
     status = class_block(text, "limit-status")
     assert "ahead of pace" in status
     assert "approval-badge--warn" in status
+
+
+@pytest.mark.parametrize("path", PATHS)
+def test_pool_card_shows_the_usage_source_line(web, rig, monkeypatch, path):
+    window = window_json(figure_source="auto")
+    pool = pool_json(window) | {"usage": USAGE}
+    text = show_limits(web, rig, monkeypatch, [pool], path).text
+
+    card = class_block(text, "limit-card")
+    source = class_block(card, "limit-source")
+    assert "Source: opencode-go (auto)" in source
+    assert "read 12 min ago" in source
+    assert "last read failed: unauthorized" in source
+    assert ">stale<" in class_block(card, "limit-stale")
+
+
+def test_pool_card_shows_never_read_usage_without_a_badge(web, rig, monkeypatch):
+    usage = USAGE | {"age_s": None, "last_error": None, "stale": False}
+    text = show_limits(web, rig, monkeypatch, [pool_json(window_json()) | {"usage": usage}]).text
+
+    card = class_block(text, "limit-card")
+    source = class_block(card, "limit-source")
+    assert "Source: opencode-go (auto)" in source
+    assert "never read" in source
+    assert "last read failed" not in source
+    assert "limit-stale" not in card
+
+
+def test_pool_card_without_a_usage_source_has_no_source_line(web, rig, monkeypatch):
+    text = show_limits(web, rig, monkeypatch, [pool_json(window_json())], "/fragments/limits").text
+
+    assert "limit-source" not in text
+    assert "never read" not in text
+
+
+@pytest.mark.parametrize("figure", ["auto", "manual", "journal"])
+def test_window_age_line_names_the_figure_source(web, rig, monkeypatch, figure):
+    window = window_json(figure_source=figure)
+    text = show_limits(web, rig, monkeypatch, [pool_json(window)], "/fragments/limits").text
+
+    age = class_block(text, "limit-age")
+    assert f"figure: {figure}" in age
 
 
 def test_exhausted_window_is_blocked(web, rig, monkeypatch):

@@ -100,6 +100,51 @@ A route with `confirm = true` pauses the job in `awaiting_approval` until a huma
   with `agent-router init --allowed-root <directory>` and restart `agent-router serve`.
 - `queue is full, try again later`: wait for running jobs to finish.
 
+## Usage sources do not refresh
+
+`doctor` prints these warnings for pools with a usage source; the dashboard pool card and
+`agent-router status` show the same facts (`Source: …`, `read … ago`, `stale`).
+
+**`Warning: pool <id>: usage source <name> needs environment variable <VAR>, which is not set`**
+
+- The variable named by the pool's `api_key_env` (or the source's default, `OPENCODE_GO_API_KEY`
+  for `opencode-go`) is missing from the environment of the user that runs `agent-router serve`.
+  `doctor` checks presence only, never the value.
+- Set it for that user — for an autostarted gateway it must be visible to the process started
+  by `start-hidden.vbs`, not only to your terminal. In PowerShell:
+  `[Environment]::SetEnvironmentVariable("OPENCODE_GO_API_KEY", "<key>", "User")`, then sign out
+  and back in, and restart `agent-router serve`.
+
+**`Warning: pool <id>: last usage read failed: <reason>`**
+
+- The source itself explains why: `missing_api_key` — the key variable was not set for the
+  gateway process (see above); `unauthorized` / `forbidden` — the key is wrong or has no access
+  to the plan's usage endpoint, create a new key in the vendor console; `timeout` /
+  `unavailable` / `http_error` — the vendor endpoint did not answer, the next scheduled read
+  retries on its own; `malformed_response` — the endpoint answered in a shape the source does
+  not understand.
+- Force a retry once the cause is fixed: `agent-router usage refresh <pool>` or the pool card's
+  **Refresh limits** button. A failed read writes nothing; the last successful observation stays
+  in place.
+
+**`Warning: pool <id>: usage data is stale, no successful read for <age>` (or `no successful read
+yet`)**
+
+- In auto mode no read has succeeded within twice `[usage].interval` (a pool that was never read
+  counts as stale). The stored figures may be behind the plan.
+- Check the line above it for a failed read and fix that first. With a working source, wait for
+  the next scheduled read or force one. For a plan you calibrate by hand, switch the pool to
+  `mode = "manual"` in `[pools.usage]` (or `[usage]` for all pools): manual mode never goes
+  stale.
+
+**`Warning: pool <id>: usage mode is auto but no source is set`**
+
+- The pool's effective mode is auto — the pool's own `[pools.usage]` sets `mode = "auto"` or the
+  config has a `[usage]` table — but the pool has no `usage.source`, so nothing refreshes its
+  windows automatically.
+- Give it a source (`source = "opencode-go"` with the `windows` mapping), or set
+  `mode = "manual"` on the pool, or remove the `[usage]` table when no pool uses a source.
+
 ## Still stuck
 
 Open an issue with the output of `agent-router doctor` and the failing command. Remove paths,

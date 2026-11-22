@@ -187,6 +187,21 @@ no point maps onto a window becomes `no_data`. Each pass publishes one event per
 failure. Events, results and reasons carry ids only: never keys or response bodies. Per pool the
 reader keeps `last_attempt_at`, `last_success_at` and `last_reason` in memory for display.
 
+The snapshot reports both where a figure comes from and whether the reads behind it are fresh.
+Each window carries `figure_source`: `"auto"` when its latest observation came from the pool's
+usage source (the observation `source` equals the source spec's `observation_source`),
+`"manual"` for `source == "manual"`, and `"journal"` otherwise — no observation in the current
+window, a scheduled reset, or a collector that is neither. Each pool with `usage.source` carries
+a `usage` object — `{source, mode, last_attempt_at, last_success_at, last_error, age_s, stale}` —
+and pools without a source have `usage: null`. `stale` is true when the pool's effective mode is
+`auto` and no successful read is fresher than `2 * [usage].interval_s`, including never; the
+threshold lives in one helper (`agent_router.usage.is_stale`) so the dashboard, `status` and
+`doctor` agree. `doctor` additionally warns when the variable named by `api_key_env` (or the
+source spec's `default_api_key_env`) is missing from the environment, and when a pool is in
+auto mode without a `source` — but only when the pool's own `[pools.usage]` sets
+`mode = "auto"` or the config has a `[usage]` table, so configs that never mention usage stay
+quiet.
+
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —
 multiplied by the model weight `limit_base_usd / model_limits[model]`, and tagged with the price

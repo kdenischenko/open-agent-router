@@ -317,6 +317,7 @@ def window_json(**changes):
         "lag": 0.1,
         "resets_at": None,
         "source": "manual",
+        "figure_source": "manual",
         "observed_at": "2026-11-13T09:00:00+00:00",
         "age_s": 60.0,
         "estimated": False,

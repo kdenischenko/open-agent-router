@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -14,6 +15,7 @@ from agent_router import runner as runner_module
 from agent_router.client import GatewayError, GatewayUnavailable
 from agent_router.registry import CounterSpec
 from agent_router.runner import ResolvedExecutable
+from agent_router.usage import UsageSourceSpec
 from helpers import full_config_text, write_config
 
 
@@ -25,11 +27,14 @@ class FakeGateway:
         self.cancel_statuses: dict[str, int] = {}
         self.statuses_after_cancel: dict[str, str] = {}
         self.cancel_unavailable: set[str] = set()
+        self.snapshot: dict[str, Any] = {"pools": []}
 
     def get(self, path: str, **params) -> dict:
         self.calls.append(("GET", path, params))
         if path == "/api/v1/events/stats":
             return {"seq": 0, "subscribers": {}}
+        if path == "/api/v1/snapshot":
+            return self.snapshot
         job_id = path.removeprefix("/api/v1/jobs/").removesuffix("/wait")
         job = {
             "id": job_id,
@@ -673,3 +678,208 @@ def test_doctor_rejects_unknown_harness(runner: CliRunner, home: Path) -> None:
 
     assert result.exit_code == 1
     assert "unknown harness" in result.output
+
+
+# --- usage sources: env variables, read health, mode without a source -------------------
+
+
+def _register_usage_source(monkeypatch: pytest.MonkeyPatch, default_env: str | None = None) -> None:
+    spec = UsageSourceSpec(
+        name="fake-usage",
+        factory=lambda pool_usage, env: None,
+        windows=frozenset({"monthly"}),
+        observation_source="fake_usage",
+        default_api_key_env=default_env,
+    )
+    monkeypatch.setitem(registry._USAGE_SOURCES, "fake-usage", spec)
+
+
+def _with_pool_usage(text: str, body: str) -> str:
+    """Config text with a [pools.usage] sub-table on the last pool, before the first route."""
+    return text.replace("[[routes]]", f"[pools.usage]\n{body}\n\n[[routes]]", 1)
+
+
+_POOL_WITH_SOURCE = (
+    'source = "fake-usage"\napi_key_env = "FAKE_USAGE_KEY"\nwindows = { monthly = "month" }'
+)
+
+
+def test_doctor_warns_when_usage_api_key_env_is_not_set(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_usage_source(monkeypatch)
+    monkeypatch.delenv("FAKE_USAGE_KEY", raising=False)
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), _POOL_WITH_SOURCE))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Warning: pool opencode-go: usage source fake-usage needs environment variable "
+        "FAKE_USAGE_KEY, which is not set" in _warnings(result)
+    )
+
+
+def test_doctor_quiet_when_usage_api_key_env_is_set(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_usage_source(monkeypatch)
+    # a fake value: the check looks at presence only and never prints what it finds
+    monkeypatch.setenv("FAKE_USAGE_KEY", "test-value")
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), _POOL_WITH_SOURCE))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("needs environment variable" in line for line in _warnings(result))
+
+
+def test_doctor_names_the_sources_default_key_variable(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _register_usage_source(monkeypatch, default_env="FAKE_DEFAULT_KEY")
+    monkeypatch.delenv("FAKE_DEFAULT_KEY", raising=False)
+    body = 'source = "fake-usage"\nwindows = { monthly = "month" }'
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), body))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Warning: pool opencode-go: usage source fake-usage needs environment variable "
+        "FAKE_DEFAULT_KEY, which is not set" in _warnings(result)
+    )
+
+
+def _snapshot_pool_usage(**changes) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "source": "fake-usage",
+        "mode": "auto",
+        "last_attempt_at": "2026-11-13T09:12:00+00:00",
+        "last_success_at": "2026-11-13T09:00:00+00:00",
+        "last_error": None,
+        "age_s": 7200.0,
+        "stale": False,
+    }
+    values.update(changes)
+    return {"pools": [{"id": "opencode-go", "usage": values}]}
+
+
+def _write_source_config(monkeypatch: pytest.MonkeyPatch, home: Path, gateway: FakeGateway) -> None:
+    _register_usage_source(monkeypatch)
+    monkeypatch.setenv("FAKE_USAGE_KEY", "test-value")
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), _POOL_WITH_SOURCE))
+    gateway.snapshot = _snapshot_pool_usage()
+
+
+def test_doctor_warns_when_the_last_usage_read_failed(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _write_source_config(monkeypatch, home, gateway)
+    gateway.snapshot = _snapshot_pool_usage(last_error="unauthorized", age_s=120.0)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning: pool opencode-go: last usage read failed: unauthorized" in _warnings(result)
+    assert not any("usage data is stale" in line for line in _warnings(result))
+
+
+def test_doctor_warns_when_usage_data_is_stale(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _write_source_config(monkeypatch, home, gateway)
+    gateway.snapshot = _snapshot_pool_usage(stale=True)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Warning: pool opencode-go: usage data is stale, no successful read for 2 h"
+        in _warnings(result)
+    )
+
+
+def test_doctor_warns_when_usage_was_never_read(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _write_source_config(monkeypatch, home, gateway)
+    gateway.snapshot = _snapshot_pool_usage(
+        last_success_at=None, last_error=None, age_s=None, stale=True
+    )
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning: pool opencode-go: usage data is stale, no successful read yet" in _warnings(
+        result
+    )
+
+
+def test_doctor_warns_when_pool_mode_is_auto_without_a_source(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+) -> None:
+    write_config(home, _with_pool_usage(full_config_text(confirm=False), 'mode = "auto"'))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    usage_warnings = [line for line in _warnings(result) if "usage mode is auto" in line]
+    assert usage_warnings == ["Warning: pool opencode-go: usage mode is auto but no source is set"]
+
+
+def test_doctor_warns_for_every_pool_when_usage_table_is_present(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    home: Path,
+) -> None:
+    text = '[usage]\ninterval = "1h"\n\n' + full_config_text(confirm=False)
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    mode_warnings = [line for line in _warnings(result) if "usage mode is auto" in line]
+    assert [line.split(":")[1].strip() for line in mode_warnings] == [
+        "pool claude-pro",
+        "pool kimi-code",
+        "pool opencode-go",
+    ]
+
+
+def test_doctor_is_quiet_about_usage_when_the_config_never_mentions_it(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
+) -> None:
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("usage" in line for line in _warnings(result))
+    assert ("GET", "/api/v1/snapshot", {}) not in [call[:3] for call in gateway.calls]

@@ -34,6 +34,7 @@ POOL_FIELDS = {
     "block",
     "via_gateway",
     "counter_sampled_at",
+    "usage",
     "windows",
 }
 WINDOW_FIELDS = {
@@ -46,6 +47,7 @@ WINDOW_FIELDS = {
     "lag",
     "resets_at",
     "source",
+    "figure_source",
     "observed_at",
     "age_s",
     "estimated",
@@ -121,6 +123,34 @@ def test_snapshot_window_has_anchored_flag(config, store, clock):
     snapshot = build_snapshot(anchored_config, store, clock.now(), UTC)
     windows = snapshot_json(snapshot, store)["pools"][0]["windows"]
     assert [window["anchored"] for window in windows] == [True, False]
+
+
+def test_snapshot_figure_source_and_usage_without_a_source(config, store, clock):
+    now = clock.now()
+    store.add_observation(Observation("claude-pro", "week", 0.3, now, None, "manual"))
+    snapshot = build_snapshot(config, store, now, UTC)
+    pools = {pool["id"]: pool for pool in snapshot_json(snapshot, store, config=config)["pools"]}
+
+    claude = pools["claude-pro"]
+    # the template config has no [pools.usage]: every pool reports no usage source at all
+    assert all(pool["usage"] is None for pool in pools.values())
+    week = claude["windows"][1]
+    assert week["figure_source"] == "manual"
+    assert claude["windows"][0]["figure_source"] == "journal"  # no observation in that window
+
+
+def test_snapshot_figure_source_is_journal_after_a_scheduled_reset(config, store, clock):
+    now = clock.now()
+    # a reset in the past turns the observation into a scheduled reset with zero usage
+    store.add_observation(
+        Observation("claude-pro", "week", 0.3, now - timedelta(days=2), now, "manual")
+    )
+    snapshot = build_snapshot(config, store, now, UTC)
+    pools = {pool["id"]: pool for pool in snapshot_json(snapshot, store, config=config)["pools"]}
+
+    week = pools["claude-pro"]["windows"][1]
+    assert week["source"] == "scheduled_reset"
+    assert week["figure_source"] == "journal"
 
 
 def test_snapshot_json_values(config, store, clock):

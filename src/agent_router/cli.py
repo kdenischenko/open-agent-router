@@ -23,7 +23,7 @@ from agent_router import __version__, cli_gateway, cli_jobs
 from agent_router.cli_common import _config, _export_moment, _gateway, _request, _route_harness
 from agent_router.cli_jobs import _job_failure, _job_request
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
-from agent_router.clock import SystemClock, format_local
+from agent_router.clock import SystemClock, format_age, format_local
 from agent_router.config import Config, ConfigError, home_dir, model_key
 from agent_router.export import ExportError
 from agent_router.export import export as export_journal
@@ -35,6 +35,7 @@ from agent_router.registry import (
     harnesses,
     load_counter,
     load_harness,
+    load_usage_source,
     resolve_backend,
 )
 from agent_router.runner import ResolvedExecutable, resolve_executable
@@ -565,6 +566,52 @@ def _doctor_spend(config: Config) -> None:
             )
 
 
+def _doctor_usage(config: Config) -> None:
+    """Usage sources: the variable each key comes from, and auto mode without a source."""
+    for pool in config.pools:
+        if pool.usage.source is None:
+            # a pool that never mentions usage stays quiet unless [usage] opted into reads
+            if config.usage_mode(pool.id) == "auto" and (
+                pool.usage.mode == "auto" or config.usage.present
+            ):
+                typer.echo(f"Warning: pool {pool.id}: usage mode is auto but no source is set")
+            continue
+        try:
+            spec = load_usage_source(pool.usage.source)
+        except ConfigError:
+            continue  # an unknown source is rejected when the config loads
+        variable = pool.usage.api_key_env or spec.default_api_key_env
+        # presence only: an empty value counts as unset, and the value is never printed or logged
+        if variable is not None and not os.environ.get(variable):
+            typer.echo(
+                f"Warning: pool {pool.id}: usage source {pool.usage.source} "
+                f"needs environment variable {variable}, which is not set"
+            )
+
+
+def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
+    """Read health from the running gateway: failed reads and stale usage data per pool."""
+    if not any(pool.usage.source is not None for pool in config.pools):
+        return
+    snapshot = _request(lambda: client.get("/api/v1/snapshot"))
+    for pool in snapshot.get("pools", []):
+        info = pool.get("usage")
+        if info is None:
+            continue
+        if info.get("last_error"):
+            typer.echo(f"Warning: pool {pool['id']}: last usage read failed: {info['last_error']}")
+        if not info.get("stale"):
+            continue
+        age = info.get("age_s")
+        if age is None:
+            typer.echo(f"Warning: pool {pool['id']}: usage data is stale, no successful read yet")
+        else:
+            typer.echo(
+                f"Warning: pool {pool['id']}: usage data is stale, "
+                f"no successful read for {format_age(age)}"
+            )
+
+
 def _doctor_live(config: Config, client: GatewayClient) -> bool:
     if not config.tasks.allowed_roots:
         typer.echo("Warning: allowed_roots is empty — live probes skipped")
@@ -652,7 +699,7 @@ def doctor(
         False, "--live", help="Also run a short read job on each enabled harness"
     ),
 ) -> None:
-    """Check the setup: config, store, harnesses, weights — and optionally the live gateway."""
+    """Check the setup: config, store, harnesses, weights, usage — and the live gateway."""
     home = home_dir()
     if statusline_snippet:
         expanded = home.expanduser()
@@ -684,6 +731,7 @@ def doctor(
     _doctor_spend(config)
     _doctor_classifier(config)
     _doctor_callers(config)
+    _doctor_usage(config)
     if not config.tasks.allowed_roots:
         typer.echo("Warning: tasks.allowed_roots is empty, jobs not accepted")
     client = _gateway()
@@ -696,6 +744,7 @@ def doctor(
         )
         if counters["dropped"] or counters["errors"]:
             typer.echo(f"Warning: subscriber {name} has drops or errors")
+    _doctor_usage_state(config, client)
     if live and not _doctor_live(config, client):
         raise typer.Exit(1)
 
