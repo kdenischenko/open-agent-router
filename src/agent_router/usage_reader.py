@@ -8,10 +8,11 @@ keys or response bodies.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -150,20 +151,26 @@ class UsageReader:
             if self._config.usage_mode(candidate) == "manual":
                 skipped.append(PoolOutcome(candidate, "manual"))
                 continue
-            state = self.state(candidate)
-            age = (
-                None
-                if state is None or state.last_attempt_at is None
-                else (now - state.last_attempt_at).total_seconds()
-            )
-            if age is not None and age < MIN_REFRESH_S:
-                skipped.append(PoolOutcome(candidate, "too_soon"))
-                continue
-            if scheduled and age is not None and age < self._config.usage.interval_s:
+            if not self._reserve(candidate, now, scheduled):
                 skipped.append(PoolOutcome(candidate, "too_soon"))
                 continue
             self._read(candidate, source, now, read, failed)
         return RefreshResult(tuple(read), tuple(failed), tuple(skipped))
+
+    def _reserve(self, pool_id: str, now: datetime, scheduled: bool) -> bool:
+        """Claim the pool's read slot; False when it was read too recently.
+
+        The check and the new attempt time are one step under the lock, so a refresh that
+        arrives while another one is reading the same pool is skipped instead of reading twice.
+        """
+        limit = max(MIN_REFRESH_S, self._config.usage.interval_s) if scheduled else MIN_REFRESH_S
+        with self._lock:
+            previous = self._state[pool_id]
+            last = previous.last_attempt_at
+            if last is not None and (now - last).total_seconds() < limit:
+                return False
+            self._state[pool_id] = replace(previous, last_attempt_at=now)
+            return True
 
     def _read(
         self,
@@ -179,6 +186,10 @@ class UsageReader:
             result = source.read()
         except Exception:
             result = UsageRead(reason="error")  # a crashing source is a failed read
+        found = observations(pool, spec, result, now)
+        if result.ok and not found:
+            # nothing the pool maps was usable: report it rather than a success that wrote nothing
+            result = UsageRead(reason="no_data")
         if not result.ok:
             reason = result.reason or "error"
             self._mark(pool_id, now, reason)
@@ -188,11 +199,14 @@ class UsageReader:
                 {"pool": pool_id, "source": spec.name, "reason": reason},
             )
             return
-        found = observations(pool, spec, result, now)
         for obs in found:
             with self._gateway.write_lock:
                 self._gateway.record_observation(obs)
         self._mark(pool_id, now, None)
+        for hook in list(self._gateway.after_calibration):
+            # the same out-of-schedule counter check a manual calibration triggers
+            with contextlib.suppress(Exception):
+                hook(pool_id)
         windows = [obs.window for obs in found]
         read.append(PoolRead(pool_id, tuple(windows)))
         self._bus.publish("usage.read", {"pool": pool_id, "source": spec.name, "windows": windows})

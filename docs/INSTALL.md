@@ -284,8 +284,9 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
     A pool whose last read (successful or not) is younger than 60 seconds is skipped with the
     reason `too_soon`; a pool in manual mode is never read and shows no button. A successful read
-    is recorded exactly like a manual calibration: the newest observation of a window wins.
-    A failed read reports a reason (`unauthorized`, `timeout`, `error`, …) and writes nothing.
+    is recorded the way a manual calibration is: the newest observation of a window wins.
+    A failed read reports a reason (`unauthorized`, `timeout`, `error`, `no_data` when no point
+    maps onto a window, …) and writes nothing.
 
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).

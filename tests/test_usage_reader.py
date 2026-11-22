@@ -22,7 +22,7 @@ from test_web_dashboard import csrf_from, login
 from test_web_limits import class_block, element_block
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
-RESET = datetime(2026, 12, 1, 0, tzinfo=UTC)
+RESET = datetime(2026, 11, 16, 0, tzinfo=UTC)  # within one week window of the clock
 
 CONFIG_TEXT = """\
 [usage]
@@ -536,3 +536,59 @@ def test_post_limits_refresh_without_session_redirects_to_login(
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
+
+
+# --- reader: concurrency, empty reads, calibration hooks --------------------------------
+
+
+def test_refresh_during_a_read_of_the_same_pool_is_too_soon(
+    usage_config, store, clock, tokens, home, bus
+) -> None:
+    # a second refresh arriving while the first one is still reading (the background thread
+    # and a request at the same moment) must not read the source again
+    nested: list = []
+
+    class Reentrant(FakeSource):
+        def read(self) -> UsageRead:
+            if not nested:
+                nested.append(reader.refresh("auto-pool"))
+            return super().read()
+
+    fake = Reentrant()
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    outer = reader.refresh("auto-pool")
+
+    assert [item.pool for item in outer.read] == ["auto-pool"]
+    assert [(item.pool, item.reason) for item in nested[0].skipped] == [("auto-pool", "too_soon")]
+    assert fake.reads == 1
+
+
+def test_ok_read_without_usable_points_is_a_failure(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(UsageRead(points=(UsagePoint("unmapped", 0.4),)))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    result = reader.refresh("auto-pool")
+
+    assert [(item.pool, item.reason) for item in result.failed] == [("auto-pool", "no_data")]
+    assert events() == [
+        ("usage.read_failed", {"pool": "auto-pool", "source": "fake-usage", "reason": "no_data"})
+    ]
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.last_success_at is None
+    assert state.last_reason == "no_data"
+
+
+def test_successful_read_runs_the_calibration_hooks(
+    usage_config, store, clock, tokens, home, bus
+) -> None:
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": FakeSource()})
+    called: list[str] = []
+    reader._gateway.after_calibration.append(called.append)
+
+    reader.refresh("auto-pool")
+
+    assert called == ["auto-pool"]
