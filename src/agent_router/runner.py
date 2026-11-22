@@ -37,6 +37,7 @@ QUERY_WAIT_S = 5.0
 KILL_WAIT_S = 5.0
 _READER_WAIT_S = 5.0
 _LINE_BUFFER_MAX = 2**20
+_LINE_BUFFER_HEAD = 64  # bytes of a dropped line kept to tell whether it was a JSON event
 _MONTHS = {
     "Jan": 1,
     "Feb": 2,
@@ -325,6 +326,7 @@ class Runner(Protocol):
         log_dir: Path,
         cancel: threading.Event,
         is_final_line: Callable[[str], bool] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
@@ -341,6 +343,7 @@ class _Pump(threading.Thread):
         limit: int,
         on_line: Callable[[str], None] | None = None,
         on_activity: Callable[[], None] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
     ) -> None:
         super().__init__(daemon=True, name=f"runner-pump-{path.name}")
         self._stream = stream
@@ -348,17 +351,33 @@ class _Pump(threading.Thread):
         self._limit = limit
         self._on_line = on_line
         self._on_activity = on_activity
+        self._is_progress_line = is_progress_line
         self.truncated = False
 
     def run(self) -> None:
         written = 0
         pending = b""
+        # an overlong line is dropped up to its newline; its tail must not pass for a new line
+        discarding = False
+        line_activity = self._on_activity is not None and self._is_progress_line is not None
+
+        def handle_line(raw: bytes) -> bool:
+            line = raw.decode("utf-8", "replace").rstrip("\r")
+            if self._on_line is not None:
+                self._on_line(line)
+            return line_activity and self._is_progress_line(line)
+
+        def fragment_is_progress(fragment: bytes) -> bool:
+            # an unterminated JSON event waits for its newline to be judged; other output is
+            # progress right away, so a harness printing without newlines stays alive
+            return line_activity and not fragment.lstrip().startswith(b"{")
+
         with contextlib.suppress(OSError, ValueError), self._path.open("wb", buffering=0) as out:
             while True:
                 chunk = self._stream.read1(65536)  # type: ignore[attr-defined]
                 if not chunk:
                     break
-                if self._on_activity is not None:
+                if self._on_activity is not None and self._is_progress_line is None:
                     self._on_activity()  # a drained pipe is still a live harness
                 if not self.truncated:
                     room = self._limit - written
@@ -369,15 +388,33 @@ class _Pump(threading.Thread):
                     else:
                         out.write(chunk)
                         written += len(chunk)
-                if self._on_line is not None:
-                    pending += chunk
-                    *lines, pending = pending.split(b"\n")
-                    for line in lines:
-                        self._on_line(line.decode("utf-8", "replace").rstrip("\r"))
-                    if len(pending) > _LINE_BUFFER_MAX:
+                if self._on_line is None and not line_activity:
+                    continue
+                progress = False
+                if discarding:
+                    _, newline, chunk = chunk.partition(b"\n")
+                    if not newline:
+                        progress = fragment_is_progress(pending)
+                        chunk = b""
+                    else:
                         pending = b""
-            if self._on_line is not None and pending:
-                self._on_line(pending.decode("utf-8", "replace").rstrip("\r"))
+                    discarding = not newline
+                if not discarding:
+                    data = pending + chunk
+                    *lines, rest = data.split(b"\n")
+                    for line in lines:
+                        progress = handle_line(line) or progress
+                    if len(rest) > _LINE_BUFFER_MAX:
+                        discarding = True
+                        rest = rest[:_LINE_BUFFER_HEAD]
+                    elif rest:
+                        progress = progress or fragment_is_progress(rest)
+                    pending = rest
+                if progress:
+                    self._on_activity()  # type: ignore[misc]
+            tracking = self._on_line is not None or line_activity
+            if tracking and pending and not discarding and handle_line(pending):
+                self._on_activity()  # type: ignore[misc]
         with contextlib.suppress(OSError, ValueError):
             self._stream.close()
 
@@ -404,6 +441,7 @@ class LocalRunner:
         log_dir: Path,
         cancel: threading.Event,
         is_final_line: Callable[[str], bool] | None = None,
+        is_progress_line: Callable[[str], bool] | None = None,
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
@@ -486,6 +524,7 @@ class LocalRunner:
                 self.max_stream_bytes,
                 on_line if is_final_line is not None else None,
                 on_activity,
+                is_progress_line,
             )
             err_pump = _Pump(
                 proc.stderr, stderr_path, self.max_stream_bytes, on_activity=on_activity

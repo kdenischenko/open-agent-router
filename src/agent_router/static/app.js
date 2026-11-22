@@ -22,6 +22,9 @@ async function refresh(path, id) {
         if (!fresh.hasAttribute(attr.name)) current.removeAttribute(attr.name);
       });
       Array.from(fresh.attributes).forEach((attr) => current.setAttribute(attr.name, attr.value));
+      if (id === 'limits') {
+        setupLimitCards(current);
+      }
     }
   } catch (_error) {
     return;
@@ -32,6 +35,59 @@ setInterval(() => refresh('/fragments/limits', 'limits'), 30000);
 setInterval(() => refresh('/fragments/advice', 'advice'), 30000);
 setInterval(() => refresh('/fragments/jobs', 'jobs'), 5000);
 setInterval(() => refresh('/fragments/approvals', 'approvals'), 5000);
+
+// limits cards enhance the server markup progressively: pace markers appear and
+// relative reset countdowns update only with scripts on
+function setupLimitCards(root) {
+  if (!root) return;
+  root.querySelectorAll('.usage-pace[data-expected]').forEach((marker) => {
+    const value = Number.parseFloat(marker.dataset.expected);
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.min(100, Math.max(0, value));
+    marker.style.setProperty('--expected', `${clamped}%`);
+    marker.hidden = false;
+  });
+  updateLimitCountdowns(root);
+}
+
+function formatCountdown(ms) {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds <= 0) return 'now';
+  if (seconds < 60) return `in ${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `in ${hours} h ${rest} min` : `in ${hours} h`;
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `in ${days} d ${rest} h` : `in ${days} d`;
+}
+
+function updateLimitCountdowns(root) {
+  if (!root) return;
+  root.querySelectorAll('time[data-countdown][datetime]').forEach((time) => {
+    const target = Date.parse(time.getAttribute('datetime'));
+    const relative = time.querySelector('[data-countdown-relative]');
+    if (!Number.isFinite(target) || !relative) return;
+    relative.textContent = formatCountdown(target - Date.now());
+  });
+}
+
+function setupLimitCountdowns() {
+  const limits = document.getElementById('limits');
+  if (!limits) return;
+  setupLimitCards(limits);
+  const tick = () => {
+    updateLimitCountdowns(limits);
+    setTimeout(tick, 30000);
+  };
+  setTimeout(tick, 30000);
+}
+
+setupLimitCountdowns();
 
 // a job page polls its own fragment and stops once the job reaches a terminal status;
 // the next request starts only after the previous one is done, so answers never arrive

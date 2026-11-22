@@ -94,5 +94,9 @@ class OpenCodeAdapter:
     def is_final_line(self, line: str) -> bool:
         return False
 
+    def is_progress_line(self, line: str) -> bool:
+        events, _ = json_lines(line)
+        return not events or events[0].get("type") != "retry"
+
 
 HARNESS = HarnessSpec("opencode", OpenCodeAdapter(), ("opencode",), spend="counter")

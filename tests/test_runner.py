@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from agent_router import runner as runner_module
+from agent_router.adapters.opencode import OpenCodeAdapter
 from agent_router.runner import (
     Invocation,
     JobQueryError,
@@ -117,6 +118,34 @@ def test_ticking_harness_outlives_idle_limit(work: Path, logs: Path) -> None:
     assert read(result.stdout_path).splitlines()[-1] == "ok:done"
 
 
+def test_opencode_retries_do_not_reset_idle_limit(work: Path, logs: Path) -> None:
+    result = run(
+        harness("retry", "20", "0.3"),
+        work,
+        logs,
+        timeout_s=3,
+        idle_timeout_s=1,
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
+    assert result.timed_out and result.idle and not result.cancelled
+    lines = read(result.stdout_path).splitlines()
+    assert lines and all(json.loads(line)["type"] == "retry" for line in lines)
+
+
+def test_opencode_progress_lines_reset_idle_limit(work: Path, logs: Path) -> None:
+    result = run(
+        harness("tick", "8", "0.3"),
+        work,
+        logs,
+        timeout_s=60,
+        idle_timeout_s=1,
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
+    assert result.exit_code == 0
+    assert not result.timed_out and not result.idle
+    assert read(result.stdout_path).splitlines()[-1] == "ok:done"
+
+
 def test_stderr_ticks_count_as_progress(work: Path, logs: Path) -> None:
     result = run(harness("tick", "8", "0.3", "stderr"), work, logs, timeout_s=60, idle_timeout_s=1)
     assert result.exit_code == 0
@@ -155,6 +184,50 @@ def test_truncated_output_still_counts_as_progress(tmp_path: Path) -> None:
     assert not pump.is_alive()
     assert len(touches) == 4  # every chunk, also the one read after the output was truncated
     assert pump.truncated is True
+
+
+def _pump_activity(tmp_path: Path, chunks: list[bytes], monkeypatch: pytest.MonkeyPatch) -> int:
+    """Run a pump with the OpenCode progress predicate and count activity calls."""
+    monkeypatch.setattr(runner_module, "_LINE_BUFFER_MAX", 64)
+    touches: list[int] = []
+    pump = runner_module._Pump(
+        _ChunkStream(chunks),
+        tmp_path / "stdout.log",
+        1 << 20,
+        on_activity=lambda: touches.append(1),
+        is_progress_line=OpenCodeAdapter().is_progress_line,
+    )
+    pump.start()
+    pump.join(5)
+    assert not pump.is_alive()
+    return len(touches)
+
+
+def test_unterminated_plain_output_counts_as_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _pump_activity(tmp_path, [b"working", b"..."], monkeypatch) >= 2
+
+
+def test_split_retry_event_is_not_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    chunks = [b'{"type":"ret', b'ry","attempt":1}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 0
+
+
+def test_suffix_of_overlong_retry_line_is_not_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    head = b'{"type":"retry","message":"' + b"x" * 100
+    chunks = [head, b"y" * 10, b'"}\n', b'{"type":"retry"}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 0
+
+
+def test_line_after_overlong_line_is_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    head = b'{"type":"retry","message":"' + b"x" * 100
+    chunks = [head, b'"}\n{"type":"text"}\n']
+    assert _pump_activity(tmp_path, chunks, monkeypatch) == 1
 
 
 def test_final_line_hang_is_forced_not_idle(work: Path, logs: Path) -> None:
