@@ -1280,6 +1280,7 @@ def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
             log_dir,
             cancel,
             is_final_line=None,
+            is_progress_line=None,
             exit_grace_s=60,
             on_start=None,
             idle_timeout_s=None,

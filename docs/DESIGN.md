@@ -214,10 +214,13 @@ Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeo
 (600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`
 replaces the hard cap, but the idle limit still applies. Each adapter declares
 `reports_progress`: Claude Code prints its JSON only at the end (`False`), so its jobs get only
-the hard cap; kimi, opencode and cline stream their output (`True`). After an adapter-recognized
-final line a lingering process is killed within `tasks.exit_grace_s` (60 s). Long prompts or shim
-(`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with a "read the task
-from the file" instruction; shim arguments are validated against a safe character set.
+the hard cap; kimi, opencode and cline stream their output (`True`). An adapter may also declare
+which stdout lines count as progress; without that declaration, all output counts. OpenCode JSON
+events with type `retry` do not count as progress, while its other output does. After an
+adapter-recognized final line a lingering process is killed within `tasks.exit_grace_s` (60 s).
+Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with
+a "read the task from the file" instruction; shim arguments are validated against a safe
+character set.
 OpenCode runs with `--standalone` so its session uses a private server in the child process tree;
 without it, stopping the `opencode run` client would leave the session running in the background
 service.
@@ -286,14 +289,21 @@ page refreshes itself, shows the error and lets you rate a finished job.
 |---|---|
 | `api.py` | FastAPI app: routes, token checks, host guard, lifespan wiring |
 | `auth.py` | Token files, dashboard session cookies, CSRF tokens |
-| `classifier.py` | systemone/ollama/openai clients, vote queue, tier resolution, offline eval, report |
+| `classifier.py` | facade re-exporting the classifier modules; tier resolution and dashboard snapshot |
+| `classifier_backends.py` | systemone/ollama/openai backend clients, prompts and answer parsing |
+| `classifier_eval.py` | offline evaluation and live-model unloading |
+| `classifier_report.py` | classifier accuracy/latency report |
+| `classifier_votes.py` | vote queue and flag coordination |
 | `cli.py` | `agent-router` root app and the `advice`, `calibrate`, `purge`, `export`, `classifier`, `doctor` and `mcp` commands |
 | `cli_common.py` | Helpers shared by the CLI command modules (config loading, gateway client, quoting) |
 | `cli_gateway.py` | CLI commands `init`, `serve` and `status` with their helpers |
 | `cli_jobs.py` | CLI job commands: `run`, `wait`, `result`, `rate`, `cancel`, `jobs`, `approve`, `deny`, `unblock` |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
-| `config.py` | TOML schema, validation, defaults, levers, tiers |
+| `config.py` | TOML parsing and validation: `load_config`, config template, re-exports of the config model |
+| `config_classifier.py` | Parsing of the `[classifier]` section: single-model form, `[[classifier.models]]`, endpoint address checks |
+| `config_model.py` | Immutable configuration data model: tier/mode/spend literals, settings dataclasses, `Config`, `ConfigError` |
+| `config_values.py` | Generic TOML value checks (keys, tables, scalars) used by the config parsers |
 | `dispatcher.py` | Job state machine: scheduling, attempts, fallback, blocks, recovery |
 | `events.py` | In-process event bus with per-subscriber threads |
 | `export.py` | Redacted JSONL/CSV export of jobs, spend, observations |
