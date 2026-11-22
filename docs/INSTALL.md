@@ -244,9 +244,9 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     interval = "1h"  # how often sources are read; a span like 1h or 30m, at least 1m
     ```
 
-    Each pool says which source feeds it, how source fields map onto its window ids, and which
-    environment variable holds the API key (`api_key_env`, a variable name — never the key
-    itself). The sub-table goes after the pool's `[[pools.windows]]`:
+    Each pool says which source feeds it, how source fields map onto its window ids, and, for
+    sources that need a key, which environment variable holds it (`api_key_env`, a variable
+    name — never the key itself). The sub-table goes after the pool's `[[pools.windows]]`:
 
     ```toml
     [pools.usage]
@@ -259,7 +259,7 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     Every key of `windows` is a field the source reports; its value is a window id of that pool.
     An unmapped field is ignored, two fields cannot map to the same window, and a `source` needs
     at least one mapped window. An unknown `source` still fails with `unknown usage source`. The
-    package ships one usage source, `opencode-go`.
+    package ships two usage sources: `opencode-go` and `claude-code`.
 
     To enable it for the OpenCode Go pool:
 
@@ -272,6 +272,28 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
     The gateway reads the key from the environment on every request; it never stores the key and
     never writes it to a log, a reason code or an error message.
+
+    The `claude-code` source reads the Claude plan's session and weekly figures from the
+    `/usage` command of the Claude Code CLI, so the Claude pool gets fresh `5h` and `week`
+    figures even when no interactive session feeds the status line. It needs no API key:
+
+    1. Install the Claude Code CLI and sign in once, as the user that runs the gateway:
+       `claude auth login`. `claude auth status` should show `"loggedIn": true`.
+    2. Add the sub-table to the Claude pool:
+
+       ```toml
+       [pools.usage]
+       source = "claude-code"
+       windows = { session = "5h", weekly_all = "week" }
+       # executable = "C:/path/to/claude.exe"  # optional; default: claude from PATH
+       ```
+
+    Each read starts the CLI in print mode without your settings, hooks or MCP servers; the
+    command runs locally and does not call the model, so a read costs no tokens. The gateway
+    never reads the CLI's credentials and never passes a token. The usage endpoint behind
+    `/usage` is rate limited, so keep `[usage].interval` at its default of one hour or longer.
+    A failed read reports `not_found` (no CLI), `timeout`, `unauthorized` (the CLI is not signed
+    in), `rate_limited` or `malformed_response`.
 
     **When sources are read.** With `mode = "auto"` the gateway reads every pool's source on its
     own schedule: about once per `interval`, and never more than once a minute per pool. You can
@@ -301,7 +323,8 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
     `doctor` adds its own warnings for usage sources: a pool whose `api_key_env` (or the source's
     default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
-    the terminal that runs `doctor`; a pool whose last read failed; stale data; and `auto` mode
+    the terminal that runs `doctor`; for `claude-code`, a CLI that cannot be found or is not
+    signed in; a pool whose last read failed; stale data; and `auto` mode
     without a `source` on a pool that has one. See
     [TROUBLESHOOTING.md](TROUBLESHOOTING.md#usage-sources-do-not-refresh) for the fixes.
 

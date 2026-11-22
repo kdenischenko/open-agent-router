@@ -57,6 +57,7 @@ class PoolUsage:
     source: str | None = None
     mode: str | None = None  # None inherits [usage].mode
     api_key_env: str | None = None
+    executable: str | None = None  # CLI a source runs; None uses the source's default
     windows: Mapping[str, str] = field(default_factory=dict)  # source field -> window id
 
     def __post_init__(self) -> None:

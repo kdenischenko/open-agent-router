@@ -115,6 +115,13 @@ A route with `confirm = true` pauses the job in `awaiting_approval` until a huma
   `[Environment]::SetEnvironmentVariable("OPENCODE_GO_API_KEY", "<key>", "User")`, then sign out
   and back in, and restart `agent-router serve`.
 
+**`Warning: pool <id>: usage source claude-code: the Claude Code CLI is not signed in; run claude
+auth login`** (or `cannot find the Claude Code CLI …`)
+
+- Sign in once as the user that runs `agent-router serve`: `claude auth login`, then check with
+  `claude auth status`. If `claude` is not on `PATH` for that user, set
+  `[pools.usage] executable` to the full path of the CLI.
+
 **`Warning: pool <id>: last usage read failed: <reason>`**
 
 - The source itself explains why: `missing_api_key` — the key variable was not set for the
@@ -122,7 +129,10 @@ A route with `confirm = true` pauses the job in `awaiting_approval` until a huma
   to the plan's usage endpoint, create a new key in the vendor console; `timeout` /
   `unavailable` / `http_error` — the vendor endpoint did not answer, the next scheduled read
   retries on its own; `malformed_response` — the endpoint answered in a shape the source does
-  not understand.
+  not understand. For `claude-code`: `not_found` — no CLI at `executable` or on `PATH`;
+  `unauthorized` — the CLI is not signed in (see above); `rate_limited` — the Claude usage
+  endpoint refused the read, the next scheduled read retries; `malformed_response` — the CLI
+  printed no plan usage, for example an API-key sign-in that has no plan limits.
 - Force a retry once the cause is fixed: `agent-router usage refresh <pool>` or the pool card's
   **Refresh limits** button. A failed read writes nothing; the last successful observation stays
   in place.

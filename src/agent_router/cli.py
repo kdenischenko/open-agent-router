@@ -567,7 +567,7 @@ def _doctor_spend(config: Config) -> None:
 
 
 def _doctor_usage(config: Config) -> None:
-    """Usage sources: the variable each key comes from, and auto mode without a source."""
+    """Usage sources: key variables, the source's own check, and auto mode without a source."""
     for pool in config.pools:
         if pool.usage.source is None:
             # a pool that never mentions usage stays quiet unless [usage] opted into reads
@@ -587,6 +587,9 @@ def _doctor_usage(config: Config) -> None:
                 f"Warning: pool {pool.id}: usage source {pool.usage.source} "
                 f"needs environment variable {variable}, which is not set"
             )
+        warning = spec.check(pool.usage, os.environ) if spec.check is not None else None
+        if warning is not None:
+            typer.echo(f"Warning: pool {pool.id}: usage source {pool.usage.source}: {warning}")
 
 
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:

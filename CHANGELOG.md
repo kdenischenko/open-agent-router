@@ -23,6 +23,10 @@ All notable changes are documented here. The format follows
 - `opencode-go` usage source: reads the OpenCode Go plan's rolling, weekly and monthly meters
   from the vendor usage endpoint; the API key comes from the environment variable named by
   `api_key_env` and is never stored or logged.
+- `claude-code` usage source: reads the Claude plan's session and weekly figures from the
+  `/usage` command of the signed-in Claude Code CLI, without calling the model or touching its
+  credentials; `[pools.usage] executable` sets the CLI path, and `doctor` warns when the CLI is
+  missing or not signed in.
 - Usage sources are read every `[usage].interval` in `auto` mode and on demand with
   `agent-router usage refresh`, `POST /api/v1/usage/refresh` or the "Refresh limits" button;
   each read publishes `usage.read` or `usage.read_failed`.

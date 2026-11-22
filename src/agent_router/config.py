@@ -206,7 +206,7 @@ _POOL_KEYS = frozenset(
 )
 
 
-_POOL_USAGE_KEYS = frozenset({"source", "mode", "api_key_env", "windows"})
+_POOL_USAGE_KEYS = frozenset({"source", "mode", "api_key_env", "executable", "windows"})
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -227,6 +227,10 @@ def _parse_pool_usage(value: Any, label: str, window_ids: set[str], errors: list
     if api_key_env is not None and _ENV_NAME.fullmatch(api_key_env) is None:
         errors.append(f"{label}.usage.api_key_env: must look like an environment variable name")
         api_key_env = None
+    executable = _optional_text(raw.get("executable"), f"{label}.usage.executable", errors)
+    if executable is not None and not executable.strip():
+        errors.append(f"{label}.usage.executable: must not be empty")
+        executable = None
     windows: dict[str, str] = {}
     mapped: dict[str, str] = {}  # window id -> first field mapped to it
     for key, item in _table(raw.get("windows"), f"{label}.usage.windows", errors).items():
@@ -244,9 +248,17 @@ def _parse_pool_usage(value: Any, label: str, window_ids: set[str], errors: list
         windows[key] = item
     if source is None and (windows or api_key_env is not None):
         errors.append(f"{label}.usage: windows and api_key_env require source")
+    if source is None and executable is not None:
+        errors.append(f"{label}.usage: executable requires source")
     if source is not None and not windows:
         errors.append(f"{label}.usage.windows: map at least one source field to a window")
-    return PoolUsage(source=source, mode=mode, api_key_env=api_key_env, windows=windows)
+    return PoolUsage(
+        source=source,
+        mode=mode,
+        api_key_env=api_key_env,
+        executable=executable,
+        windows=windows,
+    )
 
 
 def _parse_pools(value: Any, directory: Path, errors: list[str]) -> tuple[Pool, ...]:

@@ -761,6 +761,33 @@ def test_pool_usage_without_source_is_rejected(tmp_path: Path, config_module, po
     assert "pools[0].usage: windows and api_key_env require source" in messages
 
 
+def test_pool_usage_executable_is_read(tmp_path: Path, config_module, fake_usage_source) -> None:
+    text = _usage_text(
+        pool='source = "fake-usage"\nexecutable = "C:/tools/claude.exe"\n'
+        'windows = { monthly = "week" }\n'
+    )
+    path = tmp_path / "config.toml"
+    path.write_text(text, encoding="utf-8")
+    config = config_module.load_config(path)
+    assert config.pools[0].usage.executable == "C:/tools/claude.exe"
+
+
+def test_pool_usage_executable_without_source_is_rejected(tmp_path: Path, config_module) -> None:
+    text = _usage_text(pool='executable = "claude"\n')
+    messages = error_messages(tmp_path, config_module, text)
+    assert "pools[0].usage: executable requires source" in messages
+
+
+def test_pool_usage_empty_executable_is_rejected(
+    tmp_path: Path, config_module, fake_usage_source
+) -> None:
+    text = _usage_text(
+        pool='source = "fake-usage"\nexecutable = " "\nwindows = { monthly = "week" }\n'
+    )
+    messages = error_messages(tmp_path, config_module, text)
+    assert "pools[0].usage.executable: must not be empty" in messages
+
+
 def test_pool_usage_bad_api_key_env_is_rejected(
     tmp_path: Path, config_module, fake_usage_source
 ) -> None:

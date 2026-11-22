@@ -175,6 +175,20 @@ The shipped `opencode-go` source reads the OpenCode Go plan meters (`rolling`, `
 `monthly`) from the vendor usage endpoint; a failed read yields a reason code (`missing_api_key`,
 `unauthorized`, `forbidden`, `http_error`, `timeout`, `unavailable`, `malformed_response`) instead
 of an exception, and the key from `api_key_env` never reaches a reason or a log.
+The shipped `claude-code` source reads the Claude plan meters (`session`, `weekly_all`) by
+running `claude -p /usage --setting-sources "" --strict-mcp-config --output-format stream-json
+--verbose --no-session-persistence` (an argument list, no shell, a timeout, the process tree
+killed on Windows and POSIX) and taking `usage_report.rate_limits.limits[]` from the synthetic
+message whose `local_command_run.command` is `usage`: `kind` is the field, `percent / 100` the
+fraction, `resets_at` the reset. Rows with another `kind`, a percent outside 0..100 or a
+malformed reset are skipped. Its reason codes are `not_found` (no CLI), `timeout`,
+`unauthorized` (the CLI is not signed in, checked with `claude auth status --json` when the
+message has no `usage_report`, or `rate_limits_available` is false), `rate_limited` (the CLI
+says the usage endpoint is rate limited) and `malformed_response` (no `usage_report` or no usable
+row). A non-synthetic assistant message means the prompt reached the model: the source stops the
+process and reports `malformed_response`. The source never reads the Claude Code credentials
+and never passes a token; the CLI uses the user's own `claude auth login`. The CLI path is
+`claude` from `PATH` unless the pool sets `[pools.usage] executable`.
 
 **The usage reader** builds one source instance per pool with `usage.source` and reads it on a
 schedule and on demand. In auto mode a background thread (`usage-reader`) calls
@@ -202,7 +216,9 @@ and pools without a source have `usage: null`. `stale` is true when the pool's e
 `auto` and no successful read is fresher than `2 * [usage].interval_s`, including never; the
 threshold lives in one helper (`agent_router.usage.is_stale`) so the dashboard, `status` and
 `doctor` agree. `doctor` additionally warns when the variable named by `api_key_env` (or the
-source spec's `default_api_key_env`) is missing from the environment, and when a pool is in
+source spec's `default_api_key_env`) is missing from the environment, prints the warning of the
+spec's own `check` (for `claude-code`: a missing CLI or a CLI that is not signed in), and when a
+pool is in
 auto mode without a `source` — but only when the pool's own `[pools.usage]` sets
 `mode = "auto"` or the config has a `[usage]` table, so configs that never mention usage stay
 quiet.
@@ -402,6 +418,8 @@ scripting is available.
 | `adapters/base.py` | Adapter protocol, preamble, outcome settling, limit hints |
 | `adapters/{kimi,claude,opencode,cline}.py` | Per-harness argv and output parsing |
 | `collectors/claude_statusline.py` | Status-line JSON to observations |
+| `collectors/claude_code_usage.py` | `claude-code` usage source: `/usage` of the Claude Code CLI |
+| `collectors/opencode_go_usage.py` | `opencode-go` usage source: OpenCode Go usage endpoint |
 | `collectors/opencode_stats.py` | `opencode stats` counter sampler |
 
 ## Planned
