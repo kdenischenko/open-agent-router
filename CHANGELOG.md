@@ -18,6 +18,9 @@ All notable changes are documented here. The format follows
 - Usage sources are read every `[usage].interval` in `auto` mode and on demand with
   `agent-router usage refresh`, `POST /api/v1/usage/refresh` or the "Refresh limits" button;
   each read publishes `usage.read` or `usage.read_failed`.
+- The snapshot reports where each window's figure comes from (`figure_source`) and the read
+  health of a pool's usage source (`usage`); the dashboard, `agent-router status` and
+  `agent-router doctor` show the source and warn when reads are stale or failing.
 
 ## [0.2.0] - 2026-11-21
 

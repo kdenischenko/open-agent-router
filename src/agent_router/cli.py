@@ -581,7 +581,7 @@ def _doctor_usage(config: Config) -> None:
         except ConfigError:
             continue  # an unknown source is rejected when the config loads
         variable = pool.usage.api_key_env or spec.default_api_key_env
-        # presence only: the value is never read, printed or logged
+        # presence only: an empty value counts as unset, and the value is never printed or logged
         if variable is not None and not os.environ.get(variable):
             typer.echo(
                 f"Warning: pool {pool.id}: usage source {pool.usage.source} "

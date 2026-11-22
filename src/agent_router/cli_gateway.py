@@ -470,7 +470,7 @@ def _status_window_line(window: dict) -> str:
         parts.append(f"expected {_percent(window.get('expected'))}")
     parts.append(f"reset: {format_local(resets_at) if resets_at else 'unknown'}")
     parts.append(f"source: {window.get('source') or 'no data'}")
-    parts.append(f"figure: {window.get('figure_source')}")
+    parts.append(f"figure: {window.get('figure_source') or 'unknown'}")
     if window.get("blocked"):
         parts.append("exhausted")
     return f"  {window['id']}: " + "; ".join(parts)

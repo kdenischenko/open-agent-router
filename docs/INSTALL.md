@@ -294,7 +294,7 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     <reason>`), and a `stale` badge. Each window shows its `figure` next to its data age:
     `auto` (the pool's usage source), `manual` (a calibration) or `journal` (no observation in
     the current window — the figure comes from spend tracking or a scheduled reset). A pool in
-    `auto` mode is **stale** when no successful read is older than twice `[usage].interval`
+    `auto` mode is **stale** when no successful read is fresher than twice `[usage].interval`
     (never read counts as stale); manual mode never goes stale. `agent-router status` prints the
     same facts: one `usage: <source> (<mode>), read <age> ago, last error: <reason>, stale` line
     per pool with a source, and the figure of every window.
