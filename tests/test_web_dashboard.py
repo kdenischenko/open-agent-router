@@ -41,7 +41,7 @@ def authenticated_client(client: TestClient, tokens) -> TestClient:
     return client
 
 
-@pytest.mark.parametrize("path", ["/", "/fragments/limits", "/calibrate"])
+@pytest.mark.parametrize("path", ["/", "/fragments/limits", "/fragments/approvals", "/calibrate"])
 def test_protected_get_without_session_redirects_to_login(client, path):
     response = client.get(path, follow_redirects=False)
     assert response.status_code == 303
@@ -469,12 +469,14 @@ def test_assets_have_no_external_urls(directory):
             "index.html",
             "_limits.html",
             "_advice.html",
+            "_approvals.html",
             "calibrate.html",
             "jobs.html",
             "job.html",
             "_job.html",
             "_jobs.html",
             "message.html",
+            "confirm_action.html",
         }
         if directory == "templates"
         else {"app.css", "app.js"}
@@ -498,9 +500,11 @@ def test_limits_script_refreshes_only_successful_fragment(client):
         ("/fragments/limits", "limits", 30000),
         ("/fragments/advice", "advice", 30000),
         ("/fragments/jobs", "jobs", 5000),
+        ("/fragments/approvals", "approvals", 5000),
     ):
         assert f"setInterval(() => refresh('{path}', '{element_id}'), {period})" in script
-    assert script.count("setInterval(") == 3
+    # the four fragment pollers above plus one interval that ticks the approval countdowns
+    assert script.count("setInterval(") == 5
     assert script.count("fetch(") == 1
     assert "response.status !== 200" in script
     assert script.index("response.status !== 200") < script.index("innerHTML")

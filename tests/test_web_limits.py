@@ -179,8 +179,10 @@ def test_app_js_enhances_limit_cards(client):
     assert "data-countdown" in script
     assert "data-countdown-relative" in script
     assert "Date.parse" in script
-    assert script.count("setInterval(") == 3
-    assert "30000" in script
+    assert "setInterval(() => refresh('/fragments/limits', 'limits'), 30000)" in script
+    # reset countdowns tick on a timeout chain, not on an interval of their own
+    assert "setTimeout(tick, 30000)" in script
+    assert not re.search(r"setInterval\([^;]*updateLimitCountdowns", script, re.DOTALL)
 
 
 def test_limit_status_keeps_badge_colours(client):

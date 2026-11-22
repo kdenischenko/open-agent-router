@@ -280,10 +280,12 @@ Tokens are files `client.token` / `admin.token` in the gateway home, created by 
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
 frontend build) logs in with the admin token and sets a signed `ar_session` cookie (HMAC keyed from
 the admin token, revocable via a settings epoch); every POST form carries a per-session CSRF token.
-Pages: limits cards with usage bars, pacing, reset countdowns, data age, stale and blocked
-states, pool unblock forms and a collapsible table; advice; jobs with approve/deny/cancel;
-calibration form. The job page refreshes itself, shows the error and lets you rate a finished
-job.
+Pages: an approvals inbox on the home page; limits cards with usage bars, pacing, reset
+countdowns, data age, stale and blocked states, pool unblock forms and a collapsible table;
+advice; jobs with approve/deny/cancel; calibration form. Deny and Cancel ask for confirmation:
+a dialog with JavaScript, a `GET /jobs/{id}/deny` or `/cancel` confirmation page without it;
+both post to the same routes. The job page refreshes itself, shows the error and lets you rate
+a finished job.
 
 ## Module map
 

@@ -23,16 +23,10 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <button type="submit">Approve</button>
 </form>
-<form method="post" action="/jobs/{{ job.id }}/deny" class="inline">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <button type="submit">Deny</button>
-</form>
+<a href="/jobs/{{ job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ job.id }}">Deny</a>
 {% endif %}
 {% if job.status in ['queued', 'awaiting_approval', 'running'] %}
-<form method="post" action="/jobs/{{ job.id }}/cancel" class="inline">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <button type="submit">Cancel</button>
-</form>
+<a href="/jobs/{{ job.id }}/cancel" data-confirm-action="cancel" aria-label="Cancel {{ job.id }}">Cancel</a>
 {% endif %}
 <section>
   <h2>Prompt</h2>

@@ -1,0 +1,21 @@
+{% if approvals %}
+<section id="approvals" aria-live="polite" aria-labelledby="approvals-title">
+  <h2 id="approvals-title">Awaiting approval</h2>
+  {% for item in approvals %}
+  <article class="panel job" data-status="{{ item.job.status }}">
+    <h3><a href="/jobs/{{ item.job.id }}"><code>{{ item.job.id }}</code></a></h3>
+    <p>Route <code>{{ item.job.approval_route }}</code>{% if item.pool_title %} of {{ item.pool_title }}{% endif %} requires confirmation</p>
+    {% if item.job.reason %}<p>Route choice: {{ item.job.reason }}</p>{% endif %}
+    <p>{{ item.prompt }}{% if item.prompt_truncated %}…{% endif %}</p>
+    <p>Deadline: <time datetime="{{ item.job.approval_deadline.isoformat() }}" data-approval-countdown aria-live="off"{% if item.expired %} class="approval-badge approval-badge--warn"{% endif %}>{{ item.countdown }}</time></p>
+    <form method="post" action="/jobs/{{ item.job.id }}/approve" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit">Approve</button>
+    </form>
+    <a href="/jobs/{{ item.job.id }}/deny" data-confirm-action="deny" aria-label="Deny {{ item.job.id }}">Deny</a>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section id="approvals" aria-live="polite"></section>
+{% endif %}

@@ -204,6 +204,39 @@ def web_router(deps: Gateway) -> APIRouter:
         found = deps.dispatcher.jobs.list(None, api.JOBS_LIST_MAX)
         return sorted(found, key=lambda job: job.status != "awaiting_approval")
 
+    def approval_items() -> list[dict]:
+        if deps.dispatcher is None:
+            return []
+        found = deps.dispatcher.jobs.list("awaiting_approval", 100)
+        now = deps.clock.now()
+        items = []
+        for job in found:
+            route = next(
+                (item for item in deps.config.routes if item.id == job.approval_route), None
+            )
+            pool = (
+                next((item for item in deps.config.pools if item.id == route.pool), None)
+                if route is not None
+                else None
+            )
+            remaining = (
+                (job.approval_deadline - now).total_seconds()
+                if job.approval_deadline is not None
+                else 0.0
+            )
+            prompt = job.request.prompt
+            items.append(
+                {
+                    "job": job,
+                    "pool_title": pool.title if pool is not None else None,
+                    "prompt": prompt[:200],
+                    "prompt_truncated": len(prompt) > 200,
+                    "expired": remaining <= 0,
+                    "countdown": "expired" if remaining <= 0 else f"in {format_age(remaining)}",
+                }
+            )
+        return items
+
     def limits_context(snapshot: dict) -> dict:
         return {
             "pools": snapshot["pools"],
@@ -260,11 +293,19 @@ def web_router(deps: Gateway) -> APIRouter:
             {
                 "title": "Limits",
                 "recorded": recorded_line(request, snapshot),
+                "approvals": approval_items(),
             }
             | limits_context(snapshot)
             | advice_context(snapshot)
         )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
+
+    @router.get("/fragments/approvals")
+    def get_approvals_fragment(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return render_page(request, "_approvals.html", {"approvals": approval_items()}, sid=sid)
 
     @router.get("/fragments/limits")
     def get_limits(request: Request) -> Response:
@@ -335,6 +376,43 @@ def web_router(deps: Gateway) -> APIRouter:
             return PlainTextResponse("job not found", status_code=404)
         context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
         return render_page(request, "_job.html", context, sid=sid)
+
+    CONFIRM_ACTIONS = {
+        "deny": {
+            "title": "Deny the route",
+            "heading": "Deny this route?",
+            "text": "the route is excluded and the job goes back to the queue",
+            "button": "Deny",
+        },
+        "cancel": {
+            "title": "Cancel the job",
+            "heading": "Cancel this job?",
+            "text": "the job stops and is marked as cancelled",
+            "button": "Cancel",
+        },
+    }
+
+    def get_job_confirmation(request: Request, job_id: str, action: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return PlainTextResponse(
+                "jobs are disabled: the job dispatcher is not running", status_code=503
+            )
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        context = {"action": action, "job": job} | CONFIRM_ACTIONS[action]
+        return render_page(request, "confirm_action.html", context, sid=sid, nav="jobs")
+
+    @router.get("/jobs/{job_id}/deny")
+    def get_job_deny(request: Request, job_id: str) -> Response:
+        return get_job_confirmation(request, job_id, "deny")
+
+    @router.get("/jobs/{job_id}/cancel")
+    def get_job_cancel(request: Request, job_id: str) -> Response:
+        return get_job_confirmation(request, job_id, "cancel")
 
     async def post_job_action(request: Request, job_id: str, action: str) -> Response:
         sid = session_id(request)

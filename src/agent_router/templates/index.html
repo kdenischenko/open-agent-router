@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% if recorded %}<p class="flash flash--ok" role="status"><span class="flash__prefix">Success:</span> {{ recorded }}</p>{% endif %}
+{% include "_approvals.html" %}
 {% include "_limits.html" %}
 <section>
   <h2>Jobs</h2>
