@@ -145,7 +145,7 @@ tiers = ["standard", "strong"]
 quality = 5
 modes = ["read", "write"]
 confirm = true
-enabled = false
+enabled = true
 
 [[routes]]
 id = "kimi-cli/k3.1-pro"

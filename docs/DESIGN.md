@@ -281,8 +281,8 @@ Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeo
 (14400 s, a hard cap). A harness that produces no stdout or stderr for `tasks.idle_timeout_s`
 (600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`
 replaces the hard cap, but the idle limit still applies. Each adapter declares
-`reports_progress`: Claude Code prints its JSON only at the end (`False`), so its jobs get only
-the hard cap; kimi, opencode and cline stream their output (`True`). An adapter may also declare
+`reports_progress`: Claude Code, kimi, opencode and cline stream their output (`True`). An adapter
+may also declare
 which stdout lines count as progress; without that declaration, all output counts. OpenCode JSON
 events with type `retry` do not count as progress, while its other output does. After an
 adapter-recognized final line a lingering process is killed within `tasks.exit_grace_s` (60 s).
@@ -298,9 +298,11 @@ Adapters (`adapters/`) build argv/stdin and parse output:
 - **kimi** — `kimi -p <text> -m <model> --output-format stream-json`; prompt in argv (or a prompt
   file); read mode is enforced by the preamble only; NDJSON events, last assistant message is
   the answer; spend source `journal`.
-- **claude** — `claude -p --output-format json --model <m> --permission-mode <mode>`, prompt via
-  stdin; read maps to `plan`, write to `acceptEdits`; one JSON object with `result`, `usage`,
-  `total_cost_usd`; spend source `journal`.
+- **claude** — `claude -p --output-format stream-json --verbose --model <m> --permission-mode
+  <mode> --setting-sources project --strict-mcp-config`, prompt via stdin; read maps to
+  `plan`, write to `bypassPermissions`. The isolation flags keep the user's settings, hooks,
+  plugins and MCP servers out of the job. The NDJSON event with type `result` carries `result`,
+  `usage` (including cache tokens) and `total_cost_usd`; spend source `journal`.
 - **opencode** — `opencode run --format json --archived --standalone --model <m>`, prompt via
   stdin; read maps to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens
   and cost; spend source `counter`.

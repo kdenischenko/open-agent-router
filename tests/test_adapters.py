@@ -66,6 +66,7 @@ def test_preamble_read_adds_read_only_rule() -> None:
         "usage limit reached",
         "Quota exhausted for this month",
         "limit reached, come back later",
+        "You've hit your limit · resets 3am (Europe/Berlin)",
         "Too Many Requests",
         "HTTP 429",
     ],
@@ -153,11 +154,20 @@ def test_opencode_argv_uses_standalone_in_read_and_write() -> None:
 
 
 def test_claude_argv_read_and_write() -> None:
-    base = (str(EXE.path), "-p", "--output-format", "json", "--model", "sonnet")
+    base = (
+        str(EXE.path),
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+    )
     read = claude.build("TEXT", "read", "sonnet", EXE, PROMPT_FILE)
     write = claude.build("TEXT", "write", "sonnet", EXE, PROMPT_FILE)
-    assert read.argv == (*base, "--permission-mode", "plan")
-    assert write.argv == (*base, "--permission-mode", "acceptEdits")
+    isolation = ("--setting-sources", "project", "--strict-mcp-config")
+    assert read.argv == (*base, "--permission-mode", "plan", *isolation)
+    assert write.argv == (*base, "--permission-mode", "bypassPermissions", *isolation)
     assert read.stdin_text == "TEXT" and write.stdin_text == "TEXT"
 
 
@@ -197,7 +207,7 @@ def test_build_without_executable_fails(name: str) -> None:
 
 @pytest.mark.parametrize(
     ("name", "expected"),
-    [("claude", False), ("kimi", True), ("opencode", True), ("cline", True)],
+    [("claude", True), ("kimi", True), ("opencode", True), ("cline", True)],
 )
 def test_adapters_declare_progress_reporting(name: str, expected: bool) -> None:
     assert load_harness(name).adapter.reports_progress is expected
@@ -319,7 +329,7 @@ def test_claude_ok() -> None:
     assert outcome == RunOutcome(
         "ok",
         text="pineapple",
-        tokens_in=1200,
+        tokens_in=1200 + 8000,
         tokens_out=45,
         cost_usd=0.0123,
         session_id="<session id>",
@@ -339,6 +349,79 @@ def test_claude_is_error_wins_over_zero_exit_code() -> None:
 def test_claude_limit_sample() -> None:
     outcome = claude.parse(sample("limit_claude.txt"), "", 1)
     assert outcome.status == "limit" and outcome.limit_reset_at == RESET
+
+
+def test_claude_stream_read_includes_cache_tokens_and_allows_rate_event() -> None:
+    outcome = claude.parse(sample("claude_stream_read.jsonl"), "", 0)
+    assert outcome == RunOutcome(
+        "ok",
+        text="ok",
+        tokens_in=2 + 23429 + 26344,
+        tokens_out=4,
+        cost_usd=0.09639439999999999,
+        session_id="<session_id>",
+    )
+
+
+def test_claude_stream_write_takes_result_before_trailing_system_event() -> None:
+    outcome = claude.parse(sample("claude_stream_write.jsonl"), "", 0)
+    assert outcome.status == "ok" and outcome.text == "The command printed `42`."
+    assert outcome.tokens_in == 4 + 10204 + 62487
+    assert outcome.tokens_out == 385
+    assert outcome.cost_usd == 0.0028585700000000004
+
+
+def test_claude_stream_ignores_result_fields_on_other_event_types() -> None:
+    events = [
+        {"type": "result", "is_error": False, "result": "right"},
+        {"type": "system", "is_error": True, "result": "wrong"},
+    ]
+    stdout = "\n".join(json.dumps(event) for event in events)
+    outcome = claude.parse(stdout, "", 0)
+    assert outcome.status == "ok" and outcome.text == "right"
+
+
+def test_claude_final_line_is_result_event() -> None:
+    lines = sample("claude_stream_write.jsonl").splitlines()
+    assert [claude.is_final_line(line) for line in lines] == [
+        *([False] * (len(lines) - 2)),
+        True,
+        False,
+    ]
+    assert not claude.is_final_line("not json")
+    assert not claude.is_final_line('{"result":"old format without an event type"}')
+
+
+@pytest.mark.parametrize(
+    ("result_fields", "rate_limit_status", "expected_reset"),
+    [
+        ({"api_error_status": 429}, "allowed", None),
+        ({"api_error_type": "rate_limit_error"}, "allowed", None),
+        ({}, "rejected", datetime.fromtimestamp(1795389000, UTC)),
+    ],
+)
+def test_claude_stream_limit_detection(
+    result_fields: dict, rate_limit_status: str, expected_reset: datetime | None
+) -> None:
+    # Synthetic input from the observed event schemas; no live exhausted-plan capture exists
+    events = [
+        {
+            "type": "rate_limit_event",
+            "rate_limit_info": {"status": rate_limit_status, "resetsAt": 1795389000},
+        },
+        {
+            "type": "result",
+            "subtype": "error_during_execution",
+            "is_error": True,
+            "result": "You've hit your limit · resets 3am (Europe/Berlin)",
+            **result_fields,
+        },
+    ]
+    stdout = "\n".join(json.dumps(event) for event in events)
+    outcome = claude.parse(stdout, "", 1)
+    assert outcome.status == "limit"
+    assert outcome.error == "You've hit your limit · resets 3am (Europe/Berlin)"
+    assert outcome.limit_reset_at == expected_reset
 
 
 # --- shared cases ---------------------------------------------------------------------

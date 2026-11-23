@@ -25,7 +25,8 @@ _RULES = (
 _READ_RULE = "- This is a read-only task: do not create, modify, or delete any files."
 
 _LIMIT_SIGNS = re.compile(
-    r"rate[ _-]?limit|usage[ _-]?limit|quota|limit reached|too many requests|(?<!\d)429(?!\d)",
+    r"rate[ _-]?limit|usage[ _-]?limit|quota|limit reached|hit your limit|"
+    r"too many requests|(?<!\d)429(?!\d)",
     re.IGNORECASE,
 )
 _RESET_AT = re.compile(
@@ -147,6 +148,7 @@ def settle(
     tokens_out: int | None = None,
     cost_usd: float | None = None,
     session_id: str | None = None,
+    limit_reset_at: datetime | None = None,
 ) -> RunOutcome:
     """Shared outcome resolution order.
 
@@ -174,6 +176,10 @@ def settle(
             message = "process did not exit" if exit_code is None else f"exit code {exit_code}"
     if limit_hint or looks_like_limit(notes):
         return RunOutcome(
-            "limit", text=text, limit_reset_at=reset_time(notes), error=_short(message), **common
+            "limit",
+            text=text,
+            limit_reset_at=limit_reset_at or reset_time(notes),
+            error=_short(message),
+            **common,
         )
     return RunOutcome("error", text=text, error=_short(message), **common)

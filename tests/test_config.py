@@ -62,9 +62,9 @@ def test_default_template_loads_three_pools(default_config) -> None:
     }
 
 
-def test_claude_route_is_disabled_and_requires_confirmation(default_config) -> None:
+def test_claude_route_is_enabled_and_requires_confirmation(default_config) -> None:
     route = next(route for route in default_config.routes if route.backend == "claude")
-    assert route.enabled is False
+    assert route.enabled is True
     assert route.confirm is True
 
 

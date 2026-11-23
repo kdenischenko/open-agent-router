@@ -934,7 +934,7 @@ def test_runner_gets_idle_limit(make_rig) -> None:
     assert rig.runner.calls[0].idle_timeout_s == 600
 
 
-def test_claude_route_has_no_idle_limit(make_rig) -> None:
+def test_claude_route_has_idle_limit(make_rig) -> None:
     from agent_router.adapters.claude import ClaudeAdapter
 
     rig = make_rig(routes=(route("claude/main", "pool-a", 5, backend="claude"),))
@@ -943,7 +943,7 @@ def test_claude_route_has_no_idle_limit(make_rig) -> None:
     )
     rig.submit(rig.plain())
     rig.tick()
-    assert rig.runner.calls[0].idle_timeout_s is None
+    assert rig.runner.calls[0].idle_timeout_s == 600
 
 
 def test_idle_zero_disables(make_rig) -> None:

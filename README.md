@@ -75,9 +75,9 @@ The `open-agent-router` package installs the `agent-router` command. `init` crea
 gateway home directory with `config.toml` and two tokens, adds `<directory>` to
 `tasks.allowed_roots` (repeat `init --allowed-root` to allow more directories, also on an
 existing config, then restart a running `serve`) and prints the next steps. Routes are enabled
-for the harnesses `init` finds, except Claude Code and Cline: set `enabled = true` on the
-`claude-cli/sonnet` or `cline/glm-5.3` route in `config.toml` to let jobs use them. Jobs run before you calibrate the pools; record
-your real usage later with `agent-router calibrate`. Ready-made configs for typical setups are
+for the harnesses `init` finds, including `claude-cli/sonnet`, except Cline: set
+`enabled = true` on the `cline/glm-5.3` route in `config.toml` to let jobs use it. Jobs run before
+you calibrate the pools; record your real usage later with `agent-router calibrate`. Ready-made configs for typical setups are
 in [`docs/examples/`](https://github.com/kdenischenko/open-agent-router/tree/main/docs/examples). Then submit a job from another terminal:
 
 ```bash
@@ -101,8 +101,8 @@ to another route.
 A job is stopped when it exceeds `tasks.default_timeout_s` (default 14400 s, a hard cap), or
 when the harness prints nothing to stdout or stderr for `tasks.idle_timeout_s` (default 600 s;
 `0` disables the check). `--timeout` on `run`, or `route.timeout_s`, replaces the hard cap, but
-the idle limit still applies. Claude Code prints its JSON only at the end, so its jobs are
-limited by the hard cap alone.
+the idle limit still applies. Claude Code emits JSON events while it runs, so the idle limit
+applies to its jobs too.
 
 The full guide — harness sign-in, limit calibration, Windows autostart, the web dashboard
 and the delegation skills for orchestrators — is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
@@ -214,7 +214,7 @@ sign-in you already made in it; it never sees provider keys.
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
-| Claude Code | `claude` | journal | not tested live: covered by tests with recorded output only |
+| Claude Code | `claude` | journal | tested live on Windows |
 
 ## Platforms
 
