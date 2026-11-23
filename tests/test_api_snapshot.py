@@ -203,20 +203,23 @@ def test_advise_and_decision_json(config, store, clock):
     assert [item["route"] for item in body["chosen"]] == [
         "kimi-cli/k3.1-pro",
         "kimi-cli/kimi-for-coding",
+        "claude-cli/sonnet",
         "opencode-cli/glm-5.3",
     ]
     assert set(body["chosen"][0]) == {"route", "pool", "reason"}
     excluded = {item["route"]: item["reason"] for item in body["excluded"]}
     assert excluded == {
-        "claude-cli/sonnet": "route disabled",
         "cline/glm-5.3": "route disabled",
         "opencode-cli/glm-5.3-flash": "does not serve tier standard",
     }
     from_kimi = advise(config, snapshot, "standard", "kimi-code")
-    assert [item.route.id for item in from_kimi.chosen] == ["opencode-cli/glm-5.3"]
+    assert [item.route.id for item in from_kimi.chosen] == [
+        "claude-cli/sonnet",
+        "opencode-cli/glm-5.3",
+    ]
     assert {item.reason for item in from_kimi.excluded} >= {"caller pool"}
     unknown_caller = advise(config, snapshot, "standard", "no-such-caller")
-    assert len(unknown_caller.chosen) == 3
+    assert len(unknown_caller.chosen) == 4
     assert body["mode"] is None
 
 

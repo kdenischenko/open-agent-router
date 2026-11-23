@@ -108,9 +108,9 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
    others are commented out. Uncomment a route after you install its harness, and set
-   `enabled = true` on the routes you want to use (`cline/glm-5.3` and `claude-cli/sonnet` start
-   disabled). Write the route model as the harness understands it: `kimi-code/k3.1-pro` for Kimi,
-   `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
+   `enabled = true` on the routes you want to use (`cline/glm-5.3` starts disabled, while
+   `claude-cli/sonnet` starts enabled). Write the route model as the harness understands it:
+   `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
    `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
    the setup; see [SECURITY](../SECURITY.md).
 
@@ -210,8 +210,8 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 8. **Job timeouts.** A job is stopped at `tasks.default_timeout_s` (default 14400 s, a hard cap),
    or when its harness prints nothing to stdout or stderr for `tasks.idle_timeout_s`
    (default 600 s; `0` disables the check). `--timeout` on `run`, or a route's `timeout_s`,
-   replaces the hard cap, but the idle limit still applies. Claude Code prints its JSON only at
-   the end, so its jobs get only the hard cap.
+   replaces the hard cap, but the idle limit still applies. Claude Code emits JSON events while
+   it runs, so the idle limit applies to its jobs too.
 
    ```toml
    [tasks]

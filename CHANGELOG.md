@@ -6,6 +6,18 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
+- Claude Code jobs use `stream-json`, so their output resets the idle timeout while the job runs.
+  Write jobs use `bypassPermissions` instead of silently denying commands, and both modes load
+  only project settings with strict MCP configuration instead of the user's Claude setup.
+
+### Fixed
+
+- Claude Code plan limits are detected from result errors and rejected rate-limit events, including
+  the reset time. Input token usage now includes cache creation and cache reads.
+
 ## [0.3.0] - 2026-11-22
 
 ### Changed

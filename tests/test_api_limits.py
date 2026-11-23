@@ -316,7 +316,7 @@ def test_advice_returns_chosen_and_excluded(client, tokens):
     assert [item["route"] for item in body["chosen"]][0] == "kimi-cli/k3.1-pro"
     assert all(item["reason"] and item["pool"] for item in body["chosen"] + body["excluded"])
     excluded = {item["route"]: item["reason"] for item in body["excluded"]}
-    assert excluded["claude-cli/sonnet"] == "route disabled"
+    assert "claude-cli/sonnet" not in excluded
     assert excluded["opencode-cli/glm-5.3-flash"] == "does not serve tier standard"
 
 

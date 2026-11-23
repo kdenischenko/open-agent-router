@@ -315,11 +315,11 @@ def test_init_without_harnesses_says_what_to_install(
 def test_init_names_disabled_routes_of_found_harness(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    output = _init_with(runner, monkeypatch, ["claude"])
+    output = _init_with(runner, monkeypatch, ["cline"])
 
-    line = next(line for line in output.splitlines() if "harness claude" in line)
+    line = next(line for line in output.splitlines() if "harness cline" in line)
     assert "routes are disabled" in line
-    assert "claude-cli/sonnet" in line
+    assert "cline/glm-5.3" in line
     assert "no enabled route: jobs are rejected" in output
 
 
@@ -362,13 +362,13 @@ def test_init_next_steps_include_advice_and_wait(
 def test_init_hints_also_check_an_existing_config(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _init_with(runner, monkeypatch, ["claude"])
+    _init_with(runner, monkeypatch, ["cline"])
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    output = _init_with(runner, monkeypatch, ["claude"], "--allowed-root", str(repo))
+    output = _init_with(runner, monkeypatch, ["cline"], "--allowed-root", str(repo))
 
-    assert "harness claude: routes are disabled" in output
+    assert "harness cline: routes are disabled" in output
 
 
 def test_init_without_harnesses_says_how_to_add_a_route_later(
@@ -398,7 +398,7 @@ def test_init_after_installing_a_harness_names_its_commented_routes(
 def test_init_hides_job_steps_without_an_enabled_route(
     runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    output = _init_with(runner, monkeypatch, ["claude"])
+    output = _init_with(runner, monkeypatch, ["cline"])
 
     steps = output[output.index("Next steps:") :]
     assert "serve:" in steps
@@ -456,7 +456,6 @@ def test_init_suggests_the_tier_that_enabled_routes_serve(
     home: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _init_with(runner, monkeypatch, ["claude"], "--allowed-root", str(tmp_path))
-    _edit_route(home, "claude-cli/sonnet", "enabled = false", "enabled = true")
     _edit_route(home, "claude-cli/sonnet", 'tiers = ["standard", "strong"]', 'tiers = ["strong"]')
 
     output = _init_with(runner, monkeypatch, ["claude"])
