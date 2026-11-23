@@ -17,7 +17,7 @@ delegated to a harness.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
-  <img src="assets/architecture-light.svg" alt="Architecture: an orchestrator agent reaches the gateway through the CLI or the MCP server and you through the dashboard; inside the gateway the HTTP API checks tokens, the dispatcher keeps the queue and asks the tier classifier and the route policy, the ledger feeds pace and blocks to the policy, and the runner starts a coding agent CLI; usage figures reach the ledger from calibration, the Claude Code status line, the OpenCode Go usage API, the opencode stats counter and the harness journal">
+  <img src="assets/architecture-light.svg" alt="Architecture: an orchestrator agent reaches the gateway through the CLI or the MCP server and you through the dashboard; inside the gateway the HTTP API checks tokens, the dispatcher keeps the queue and asks the tier classifier and the route policy, the ledger feeds pace and blocks to the policy, and the runner starts a coding agent CLI; usage figures reach the ledger from calibration, the Claude Code status line, scheduled Claude Code /usage reads, the OpenCode Go usage API, the opencode stats counter and the harness journal">
 </picture>
 
 ## Concepts
