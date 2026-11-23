@@ -188,6 +188,9 @@ def test_silent_harness_with_file_changes_is_idle_when_not_quiet(
     assert result.duration_s < 10  # the hard cap of 30 s was never reached
 
 
+@pytest.mark.skipif(
+    sys.platform not in ("win32", "linux"), reason="the CPU signal is read on Windows and Linux"
+)
 def test_quiet_harness_reports_the_last_activity_signal(
     work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
