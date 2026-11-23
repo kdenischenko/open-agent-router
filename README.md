@@ -37,7 +37,7 @@ gateway that keeps your subscriptions busy without surprises:
 It is for you if you have two or more subscriptions to agentic coding CLIs (such as Claude Code,
 Kimi Code, OpenCode or Cline) and an orchestrator agent that delegates jobs to others.
 
-![Terminal: agent-router advice ranks routes by how far each pool is behind its pace, agent-router status shows usage of every pool window](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/demo.svg)
+![Terminal: agent-router advice ranks enabled OpenCode, Kimi Code and Claude Code routes by pace; agent-router status shows Claude Code and OpenCode Go windows filled automatically by scheduled usage sources and Kimi Code windows filled manually](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/demo.svg)
 
 ## How is this different from LiteLLM, OpenRouter or switching by hand?
 
@@ -90,7 +90,7 @@ agent-router wait <job-id>
 A job that needs approval returns at once with
 `job awaits approval: agent-router approve <id> before <time>, then agent-router wait <id>`.
 
-![Terminal: a job is submitted with run --no-wait, a human approves it, wait prints the result, rate records the rating and status shows the pool usage](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/cycle.svg)
+![Terminal: a job on the opencode-cli/glm-5.3 route is submitted with run --no-wait, approved, awaited and rated; status then shows automatic Claude Code and OpenCode Go usage figures and manual Kimi Code figures](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/cycle.svg)
 
 Every route in the `init` template has `confirm = true`, so a job waits until you approve it
 with `approve` or in the dashboard. Set `confirm = false` on a route to let its jobs start
@@ -124,7 +124,7 @@ repository and copy the `agent-router-delegate` folder of your harness into its 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-dark.svg">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator agent submits jobs through the agent-router CLI or the MCP server and you use the web dashboard; the gateway HTTP API checks tokens, the dispatcher gets a tier from the optional classifier (local or cloud models) and a route from the route policy, which ranks pools by pace urgency from the ledger; the runner starts a coding agent CLI in the job directory. Usage figures reach the ledger from manual calibration, the Claude Code status line, the OpenCode Go usage API, the opencode stats counter and the harness journal">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator agent submits jobs through the agent-router CLI or the MCP server and you use the web dashboard; the gateway HTTP API checks tokens, the dispatcher gets a tier from the optional classifier (local or cloud models) and a route from the route policy, which ranks pools by pace urgency from the ledger; the runner starts a coding agent CLI in the job directory. Usage figures reach the ledger from manual calibration, the Claude Code status line, scheduled Claude Code /usage reads, the OpenCode Go usage API, the opencode stats counter and the harness journal">
 </picture>
 
 You submit a job: a prompt, a directory, a mode and optional hints. The gateway estimates
@@ -165,7 +165,7 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-dark.png">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard home page: a job awaiting approval with Approve and Deny, then one card per pool with usage bars, pace badges, reset countdowns, data age and where each figure comes from">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard home page: a job awaiting approval, then pool cards showing automatic Claude Code /usage and OpenCode Go figures read two minutes ago, manual Kimi Code figures, usage bars, pace badges, reset countdowns and data age">
 </picture>
 
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
@@ -192,13 +192,13 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-dark.png">
-        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with status, route, caller and search filters and one row per job with its status badge, route, caller, creation time and duration">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with filters, one job awaiting approval and finished jobs on Claude Code, Kimi Code and OpenCode routes, with status badges, callers, creation times and durations">
       </picture>
     </td>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/job-dark.png">
-        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/job-light.png" alt="Job page with the route, caller, mode and tier, a rating form, attempt, token, cost and duration totals, the prompt and final text, and the attempt timeline">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/job-light.png" alt="Completed Claude Code job on claude-cli/sonnet with its caller, mode and tier, rating form, attempt, token and duration totals, prompt, final text, changed files and attempt timeline">
       </picture>
     </td>
   </tr>
