@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import ctypes
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -199,3 +202,53 @@ def test_resume_is_a_noop_away_from_windows(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(winjob.ctypes, "WinDLL", unexpected, raising=False)
     winjob.resume_process(42)
+
+
+def test_cpu_time_is_read_from_the_accounting_information(monkeypatch: pytest.MonkeyPatch) -> None:
+    job, dll = make_job(monkeypatch)
+
+    def accounting(_handle, kind, output, _size, _returned) -> int:
+        assert kind == winjob._BASIC_ACCOUNTING_INFORMATION
+        info = output._obj
+        info.TotalUserTime = 1_000_000  # 100 ns units
+        info.TotalKernelTime = 2_000_000
+        return 1
+
+    dll.QueryInformationJobObject = _Function(accounting)
+    assert job.cpu_time_s() == pytest.approx(0.3)
+
+
+def test_cpu_time_of_a_closed_job_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    job, _dll = make_job(monkeypatch)
+    job.close()
+    assert job.cpu_time_s() is None
+
+
+def test_cpu_time_query_failure_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    job, dll = make_job(monkeypatch)
+    dll.QueryInformationJobObject = _Function(0)
+    assert job.cpu_time_s() is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows-specific")
+def test_cpu_time_of_a_busy_child_is_positive() -> None:
+    job = winjob.WindowsJob()
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "end = sum(i * i for i in range(4_000_000))"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert job.assign(proc.pid)
+        deadline = time.monotonic() + 30
+        cpu = 0.0
+        while time.monotonic() < deadline:
+            cpu = job.cpu_time_s() or 0.0
+            if cpu > 0:
+                break
+            time.sleep(0.05)
+        assert cpu > 0
+    finally:
+        job.terminate()
+        proc.wait(timeout=30)
+        job.close()

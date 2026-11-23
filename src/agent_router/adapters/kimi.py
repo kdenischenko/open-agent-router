@@ -28,6 +28,10 @@ class KimiAdapter:
 
     name = "kimi"
     reports_progress = True
+    # Kimi prints one JSON line per finished message: while the model writes a long answer
+    # or a subagent works, nothing reaches the output, so CPU time and changed files count
+    # as activity too
+    quiet_while_working = True
 
     def build(
         self, text: str, mode: Mode, model: str, exe: ResolvedExecutable, prompt_file: Path

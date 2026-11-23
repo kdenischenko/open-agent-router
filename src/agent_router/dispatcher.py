@@ -64,6 +64,7 @@ from agent_router.runner import (
     QUERY_WAIT_S,
     STOP_BUDGET_S,
     ProcessQueryError,
+    ProcessResult,
     ResolvedExecutable,
     Runner,
     ShimUnsafeArgs,
@@ -888,6 +889,7 @@ class Dispatcher(RecoveryMixin):
             exit_grace_s=self.config.tasks.exit_grace_s,
             on_start=on_start,
             idle_timeout_s=self._idle_timeout_s(route),
+            quiet_while_working=getattr(adapter, "quiet_while_working", False),
         )
         stdout = _read(done.stdout_path)
         stderr = _read(done.stderr_path)
@@ -898,6 +900,9 @@ class Dispatcher(RecoveryMixin):
         elif done.timed_out:
             if done.idle:
                 error = f"executor showed no progress for {int(self.config.tasks.idle_timeout_s)} s"
+                detail = self._activity_detail(done)
+                if detail:
+                    error = f"{error}; {detail}"
             else:
                 error = "executor exceeded the allotted time"
             result = AttemptResult("timeout", error=error, survived=done.survived)
@@ -924,6 +929,13 @@ class Dispatcher(RecoveryMixin):
                 survived=done.survived,
             )
         return result, done.duration_s, tail, tokens
+
+    @staticmethod
+    def _activity_detail(done: ProcessResult) -> str:
+        """What was last seen of the harness; empty when there is nothing to add."""
+        if done.last_signal is None or done.last_signal_age_s is None:
+            return ""
+        return f"last activity: {done.last_signal} {int(done.last_signal_age_s)} s ago"
 
     @staticmethod
     def _changes(cwd: Path, attempt: Attempt) -> tuple[tuple[str, ...], bool]:

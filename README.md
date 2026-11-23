@@ -104,6 +104,11 @@ when the harness prints nothing to stdout or stderr for `tasks.idle_timeout_s` (
 the idle limit still applies. Claude Code emits JSON events while it runs, so the idle limit
 applies to its jobs too.
 
+Kimi Code prints one JSON line per finished message, so it is silent while the model writes a
+long answer or a subagent works. For kimi jobs the CPU time of the harness process tree and the
+files changed in the working directory count as activity too, and a job that is stopped as idle
+says which sign of life was seen last. The hard cap applies either way.
+
 The full guide — harness sign-in, limit calibration, Windows autostart, the web dashboard
 and the delegation skills for orchestrators — is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
 

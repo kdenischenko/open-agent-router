@@ -16,6 +16,7 @@ _THREAD_SUSPEND_RESUME = 0x0002
 _TH32CS_SNAPTHREAD = 0x00000004
 _EXTENDED_LIMIT_INFORMATION = 9
 _BASIC_PROCESS_ID_LIST = 3
+_BASIC_ACCOUNTING_INFORMATION = 1
 _PID_LIST_SIZE = 1024
 _TERMINATE_EXIT_CODE = 1
 _INVALID_HANDLE = ctypes.c_void_p(-1).value
@@ -63,6 +64,19 @@ class _ExtendedLimitInformation(ctypes.Structure):
         ("JobMemoryLimit", ctypes.c_size_t),
         ("PeakProcessMemoryUsed", ctypes.c_size_t),
         ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
+class _BasicAccountingInformation(ctypes.Structure):
+    _fields_ = [
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", ctypes.c_uint32),
+        ("TotalProcesses", ctypes.c_uint32),
+        ("ActiveProcesses", ctypes.c_uint32),
+        ("TotalTerminatedProcesses", ctypes.c_uint32),
     ]
 
 
@@ -229,6 +243,29 @@ class WindowsJob:
         count = min(int(listing.NumberOfProcessIdsInList), _PID_LIST_SIZE)
         listed = (listing.ProcessIdList[index] for index in range(count))
         return tuple(pid for pid in listed if pid)
+
+    def cpu_time_s(self) -> float | None:
+        """CPU seconds the whole job has used; None when the accounting cannot be read.
+
+        The accounting covers the processes that already exited too, so the time of a
+        finished subagent still counts as work.
+        """
+        if self._handle is None:
+            return None
+        info = _BasicAccountingInformation()
+        returned = ctypes.c_ulong(0)
+        ok = self._kernel32.QueryInformationJobObject(
+            self._handle,
+            _BASIC_ACCOUNTING_INFORMATION,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+            ctypes.byref(returned),
+        )
+        if not ok:
+            log.debug("job accounting not read: error %s", ctypes.get_last_error())
+            return None
+        # the times are in 100-nanosecond units
+        return (info.TotalUserTime + info.TotalKernelTime) / 1e7
 
     def close(self) -> None:
         """Release the handle: kill on job close then stops whatever is left in the job."""

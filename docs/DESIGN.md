@@ -289,6 +289,20 @@ adapter-recognized final line a lingering process is killed within `tasks.exit_g
 Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with
 a "read the task from the file" instruction; shim arguments are validated against a safe
 character set.
+
+A harness that stays silent while it works would otherwise be stopped as idle. An adapter may
+declare `quiet_while_working` (False when absent): the runner then samples two more signs of life
+every 30 s and treats a positive sample as activity. The CPU time of the attempt's process tree
+grew by at least 1% of one core over the time between samples (on Windows from the job object's accounting information,
+which includes the processes that already exited; on Linux from `/proc/<pid>/stat` of the process
+group), or a file under the working directory changed (the newest mtime of the tree, skipping
+`.git`, `.venv`, `node_modules`, `__pycache__` and the attempt's own log directory; the walk
+stops after 20000 files). A signal that cannot be read is absent, not an error. The idle error
+then names the last sign of life (`executor showed no progress for 600 s; last activity: files
+640 s ago`). Only kimi declares it: it prints one JSON line per finished message, so a long answer
+or a running subagent looks like silence. The streaming adapters keep the old behavior — output
+is their sign of life. The hard cap applies either way.
+
 OpenCode runs with `--standalone` so its session uses a private server in the child process tree;
 without it, stopping the `opencode run` client would leave the session running in the background
 service.
@@ -297,7 +311,7 @@ Adapters (`adapters/`) build argv/stdin and parse output:
 
 - **kimi** — `kimi -p <text> -m <model> --output-format stream-json`; prompt in argv (or a prompt
   file); read mode is enforced by the preamble only; NDJSON events, last assistant message is
-  the answer; spend source `journal`.
+  the answer; spend source `journal`; `quiet_while_working`, so a silent answer is not idle.
 - **claude** — `claude -p --output-format stream-json --verbose --model <m> --permission-mode
   <mode> --setting-sources project --strict-mcp-config`, prompt via stdin; read maps to
   `plan`, write to `bypassPermissions`. The isolation flags keep the user's settings, hooks,

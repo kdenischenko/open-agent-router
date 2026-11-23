@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Protocol
 
+from agent_router.activity import ACTIVITY_SAMPLE_S, ActivitySampler, cpu_reader_for, newest_mtime
 from agent_router.liveness import Liveness
 from agent_router.winjob import (
     CREATE_SUSPENDED,
@@ -73,6 +74,8 @@ class ProcessResult:
     truncated: bool = False
     forced_after_final: bool = False
     survived: bool = False  # process did not exit after the tree was stopped
+    last_signal: str | None = None  # the sign of life seen last: output, cpu, or files
+    last_signal_age_s: float | None = None  # how long ago that sign of life was
 
 
 @dataclass(frozen=True)
@@ -330,6 +333,7 @@ class Runner(Protocol):
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
+        quiet_while_working: bool = False,
     ) -> ProcessResult: ...
 
 
@@ -445,6 +449,7 @@ class LocalRunner:
         exit_grace_s: float = 60,
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
+        quiet_while_working: bool = False,
     ) -> ProcessResult:
         check_shim_args(inv.argv)
         log_dir = Path(log_dir)
@@ -541,8 +546,15 @@ class LocalRunner:
                 ).start()
 
             timed_out = cancelled = forced = idle = False
+            sampler = self._sampler(cwd, log_dir, job, proc.pid, quiet_while_working)
+            next_sample = time.monotonic() + ACTIVITY_SAMPLE_S
             while proc.poll() is None:
                 now = time.monotonic()
+                if sampler is not None and now >= next_sample:
+                    next_sample = now + ACTIVITY_SAMPLE_S
+                    signal = sampler.sample(now)
+                    if signal is not None:
+                        liveness.touch(now, signal)
                 verdict = liveness.verdict(now)
                 if cancel.is_set():
                     cancelled = True
@@ -568,6 +580,7 @@ class LocalRunner:
             exit_code = None if parent_alive else proc.returncode
             if forced and not parent_alive:
                 exit_code = 0
+            last_signal_at = liveness.last_signal_at
             return ProcessResult(
                 exit_code=exit_code,
                 stdout_path=stdout_path,
@@ -579,6 +592,10 @@ class LocalRunner:
                 truncated=out_pump.truncated or err_pump.truncated,
                 forced_after_final=forced,
                 survived=survived,
+                last_signal=liveness.last_signal,
+                last_signal_age_s=None
+                if last_signal_at is None
+                else max(0.0, time.monotonic() - last_signal_at),
             )
         except BaseException:  # after cleanup the exception propagates
             with contextlib.suppress(Exception):
@@ -601,6 +618,28 @@ class LocalRunner:
         finally:
             if job is not None:
                 job.close()
+
+    @staticmethod
+    def _sampler(
+        cwd: Path,
+        log_dir: Path,
+        job: WindowsJob | None,
+        pid: int,
+        quiet_while_working: bool,
+    ) -> ActivitySampler | None:
+        """The sampler of the extra signs of life; None when the adapter does not want them.
+
+        Only a harness that stays quiet while it works needs them: a streaming harness
+        already proves its life with every line of output.
+        """
+        if not quiet_while_working:
+            return None
+        cpu_reader = cpu_reader_for(job, pid)
+
+        def mtime_reader() -> float | None:
+            return newest_mtime(cwd, log_dir)
+
+        return ActivitySampler(cwd, cpu_reader=cpu_reader, mtime_reader=mtime_reader)
 
     @staticmethod
     def _kill(proc: subprocess.Popen[bytes], job: WindowsJob | None = None) -> None:

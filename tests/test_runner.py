@@ -153,6 +153,100 @@ def test_stderr_ticks_count_as_progress(work: Path, logs: Path) -> None:
     assert "tick 8" in read(result.stderr_path)
 
 
+def test_silent_harness_with_file_changes_is_not_idle_when_quiet(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A harness that works without printing keeps the attempt alive when the adapter says so."""
+    monkeypatch.setattr(runner_module, "ACTIVITY_SAMPLE_S", 0.1)
+    result = run(
+        harness("work-silently", str(work / "work.txt"), "1.2"),
+        work,
+        logs,
+        timeout_s=30,
+        idle_timeout_s=1,
+        quiet_while_working=True,
+    )
+    assert not result.idle
+    assert not result.timed_out
+    assert result.exit_code == 0
+    assert (work / "work.txt").exists()  # the harness kept working in its directory
+
+
+def test_silent_harness_with_file_changes_is_idle_when_not_quiet(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runner_module, "ACTIVITY_SAMPLE_S", 0.1)
+    result = run(
+        harness("work-silently", str(work / "work.txt"), "5"),
+        work,
+        logs,
+        timeout_s=30,
+        idle_timeout_s=1,
+        quiet_while_working=False,
+    )
+    assert result.idle and result.timed_out
+    assert result.duration_s < 10  # the hard cap of 30 s was never reached
+
+
+@pytest.mark.skipif(
+    sys.platform not in ("win32", "linux"), reason="the CPU signal is read on Windows and Linux"
+)
+def test_quiet_harness_reports_the_last_activity_signal(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A harness that burns CPU without printing is not stopped as idle."""
+    monkeypatch.setattr(runner_module, "ACTIVITY_SAMPLE_S", 0.1)
+    result = run(
+        harness("quiet-busy", "2"),
+        work,
+        logs,
+        timeout_s=30,
+        idle_timeout_s=1,
+        quiet_while_working=True,
+    )
+    assert not result.idle
+    assert result.exit_code == 0
+    assert result.last_signal == "cpu"
+    assert result.last_signal_age_s is not None
+
+
+def test_quiet_harness_without_signals_has_no_signal(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runner_module, "ACTIVITY_SAMPLE_S", 0.1)
+    result = run(
+        harness("quiet-sleep", "5"),
+        work,
+        logs,
+        timeout_s=30,
+        idle_timeout_s=1,
+    )
+    assert result.idle
+    assert result.last_signal is None
+    assert result.last_signal_age_s is None
+
+
+def test_job_cpu_time_counts_as_activity(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CPU time of the job object is a sign of life for a silent harness."""
+    monkeypatch.setattr(runner_module, "ACTIVITY_SAMPLE_S", 0.1)
+    job = with_job(monkeypatch)
+    readings = iter([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+    job.cpu_time_s_value = None
+    monkeypatch.setattr(job, "cpu_time_s", lambda: next(readings, 10.0))
+    result = run(
+        harness("quiet-sleep", "5"),
+        work,
+        logs,
+        timeout_s=30,
+        idle_timeout_s=1,
+        quiet_while_working=True,
+    )
+    assert result.idle
+    assert result.last_signal == "cpu"
+
+
 class _ChunkStream:
     """A readable stream that hands out the given chunks and then reports EOF."""
 
@@ -1050,6 +1144,7 @@ class FakeJob:
         self.assigned: list[int] = []
         self.terminated = 0
         self.closed = False
+        self.cpu_time_s_value: float | None = None
 
     def assign(self, pid: int) -> bool:
         self.assigned.append(pid)
@@ -1062,6 +1157,9 @@ class FakeJob:
         self.terminated += 1
         if self.pid is not None:
             kill_tree(self.pid)
+
+    def cpu_time_s(self) -> float | None:
+        return self.cpu_time_s_value
 
     def pids(self) -> list[int]:
         return list(self.leftovers)

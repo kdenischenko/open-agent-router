@@ -1,11 +1,12 @@
 """Fake harness for tests of the runner and dispatcher.
 
 Usage: python fake_harness.py --scenario <name> [scenario args]. Scenarios:
-echo-file <path>, exit <code>, sleep <s>, tick <count> <interval_s> [stdout|stderr],
+echo-file <path>, exit <code>, sleep <s>, quiet-sleep <s>, quiet-busy <s>,
+tick <count> <interval_s> [stdout|stderr],
 retry <count> <interval_s>, child-sleep <s> <pid-file>, detached-child <s> <pid-file>,
 orphan-sleep <s> <child-s> <pid-file>,
-write <file>, commit, big <MB>, final-then-hang <string>, stdin-echo, argv-echo, wait-stdin-eof,
-env <name>.
+write <file>, work-silently <file> <seconds> [interval_s], commit, big <MB>,
+final-then-hang <string>, stdin-echo, argv-echo, wait-stdin-eof, env <name>.
 """
 
 from __future__ import annotations
@@ -40,6 +41,17 @@ def main(argv: list[str]) -> int:
     if name == "sleep":
         out("sleeping\n")
         time.sleep(float(args[0]))
+        return 0
+    if name == "quiet-sleep":
+        # says nothing at all: only the extra activity signals can tell it is alive
+        time.sleep(float(args[0]))
+        return 0
+    if name == "quiet-busy":
+        # says nothing but burns CPU: the CPU signal is the only sign of life
+        end = time.monotonic() + float(args[0])
+        total = 0
+        while time.monotonic() < end:
+            total += sum(i * i for i in range(2000))
         return 0
     if name == "tick":
         count = int(args[0])
@@ -89,6 +101,16 @@ def main(argv: list[str]) -> int:
     if name == "write":
         Path(args[0]).write_text("written by fake harness\n", encoding="utf-8")
         out("written\n")
+        return 0
+    if name == "work-silently":
+        # works without saying anything: keeps writing a file in its working directory
+        target = Path(args[0])
+        deadline = time.monotonic() + float(args[1])
+        number = 0
+        while time.monotonic() < deadline:
+            number += 1
+            target.write_text(f"work {number}\n", encoding="utf-8")
+            time.sleep(float(args[2]) if len(args) > 2 else 0.05)
         return 0
     if name == "commit":
         Path("committed.txt").write_text("committed by fake harness\n", encoding="utf-8")
