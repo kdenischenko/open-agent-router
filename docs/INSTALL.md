@@ -213,6 +213,11 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    replaces the hard cap, but the idle limit still applies. Claude Code emits JSON events while
    it runs, so the idle limit applies to its jobs too.
 
+   Kimi Code is silent while it writes a long answer or waits for a subagent, so for kimi jobs
+   the CPU time of the harness process tree and the files changed in the working directory count
+   as activity as well; the job is then not stopped as idle while it is still doing something.
+   The hard cap applies either way.
+
    ```toml
    [tasks]
    default_timeout_s = 14400

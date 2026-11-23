@@ -1284,6 +1284,7 @@ def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
             exit_grace_s=60,
             on_start=None,
             idle_timeout_s=None,
+            quiet_while_working=False,
         ) -> ProcessResult:
             log_dir.mkdir(parents=True, exist_ok=True)
             stdout = log_dir / "stdout.log"

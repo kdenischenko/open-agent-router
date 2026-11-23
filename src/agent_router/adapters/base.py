@@ -61,6 +61,10 @@ class Adapter(Protocol):
     # optional: `is_progress_line(line) -> bool` tells the runner which stdout lines reset the
     # idle limit; an adapter without it counts all output as progress
 
+    # optional: `quiet_while_working: bool` (False when absent) marks a harness that stays
+    # silent while it works; the runner then counts CPU time and changed files as activity,
+    # so such a harness is not stopped as idle while it is still doing something
+
 
 def with_preamble(prompt: str, mode: Mode) -> str:
     """Prompt prefixed with executor rules; read mode adds a ban on changing files."""

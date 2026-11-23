@@ -54,6 +54,8 @@ class Step:
     release: threading.Event | None = None  # ignore cancel until the test releases it
     pid: int = 4242
     started: threading.Event = field(default_factory=threading.Event)
+    last_signal: str | None = None  # the signal that last touched the liveness
+    last_signal_age_s: float | None = None  # how long ago that was
 
 
 @dataclass
@@ -63,6 +65,7 @@ class Call:
     timeout_s: float
     cancel: threading.Event
     idle_timeout_s: float | None = None
+    quiet_while_working: bool = False
 
 
 class ScriptRunner:
@@ -87,9 +90,10 @@ class ScriptRunner:
         exit_grace_s=60,
         on_start=None,
         idle_timeout_s=None,
+        quiet_while_working=False,
     ) -> ProcessResult:
         step = self.steps.popleft() if self.steps else Step()
-        self.calls.append(Call(inv, cwd, timeout_s, cancel, idle_timeout_s))
+        self.calls.append(Call(inv, cwd, timeout_s, cancel, idle_timeout_s, quiet_while_working))
         log_dir.mkdir(parents=True, exist_ok=True)
         if cancel.is_set():
             (log_dir / "stdout.log").write_text("", encoding="utf-8")
@@ -127,6 +131,8 @@ class ScriptRunner:
             idle=step.idle,
             cancelled=cancel.is_set(),
             survived=step.survived,
+            last_signal=step.last_signal,
+            last_signal_age_s=step.last_signal_age_s,
         )
 
 
@@ -1398,6 +1404,65 @@ def test_timeout_keeps_tokens(make_rig) -> None:
     assert attempt.outcome == "timeout"
     assert (attempt.tokens_in, attempt.tokens_out) == (10, 5)
     assert attempt.log_tail == "ok:готово"  # non-ascii on purpose
+
+
+def test_idle_stop_names_the_last_activity_signal(make_rig) -> None:
+    step = Step(
+        "ok:done",
+        exit_code=None,
+        timed_out=True,
+        idle=True,
+        last_signal="files",
+        last_signal_age_s=640.0,
+    )
+    rig = make_rig()
+    rig.runner.add(step)
+    job = rig.submit(rig.plain())
+    rig.tick(2)
+    done = rig.job(job)
+    assert done.error_message == (
+        "executor showed no progress for 600 s; last activity: files 640 s ago"
+    )
+
+
+def test_idle_stop_without_a_signal_keeps_the_plain_message(make_rig) -> None:
+    step = Step("ok:done", exit_code=None, timed_out=True, idle=True)
+    rig = make_rig()
+    rig.runner.add(step)
+    job = rig.submit(rig.plain())
+    rig.tick(2)
+    done = rig.job(job)
+    assert done.error_message == "executor showed no progress for 600 s"
+
+
+def test_kimi_route_asks_for_the_quiet_signals(make_rig) -> None:
+    from agent_router.adapters.kimi import KimiAdapter
+
+    rig = make_rig(routes=(route("kimi/main", "pool-a", 5, backend="kimi"),))
+    rig.dispatcher.harnesses["kimi"] = HarnessSpec("kimi", KimiAdapter(), ("kimi",), "journal")
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].quiet_while_working is True
+
+
+@pytest.mark.parametrize("backend", ["opencode", "claude"])
+def test_streaming_routes_do_not_use_the_quiet_signals(make_rig, backend: str) -> None:
+    from agent_router.adapters.claude import ClaudeAdapter
+    from agent_router.adapters.opencode import OpenCodeAdapter
+
+    adapter = OpenCodeAdapter() if backend == "opencode" else ClaudeAdapter()
+    rig = make_rig(routes=(route(f"{backend}/main", "pool-a", 5, backend=backend),))
+    rig.dispatcher.harnesses[backend] = HarnessSpec(backend, adapter, (backend,), "journal")
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].quiet_while_working is False
+
+
+def test_a_route_without_the_flag_keeps_the_old_behavior(make_rig) -> None:
+    rig = make_rig()
+    rig.submit(rig.plain())
+    rig.tick()
+    assert rig.runner.calls[0].quiet_while_working is False
 
 
 def test_idle_stop_reports_no_progress(make_rig) -> None:
