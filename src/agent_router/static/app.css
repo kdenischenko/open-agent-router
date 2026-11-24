@@ -235,10 +235,22 @@ form.inline button {
 }
 
 .login-form,
-.calibration-form {
+.calibration-form,
+.submit-form {
   display: grid;
   gap: var(--space-3);
   max-width: 36rem;
+}
+
+.submit-form input,
+.submit-form select,
+.submit-form textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+.submit-form textarea {
+  resize: vertical;
 }
 
 .calibration-field {
@@ -645,6 +657,35 @@ dd {
   color: var(--color-accent);
   cursor: pointer;
   font-size: var(--text-sm);
+}
+
+/* Read-only settings */
+
+.table-scroll .settings-route-id {
+  white-space: normal;
+}
+
+.settings-findings {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+}
+
+.settings-finding[data-level="warning"] {
+  border-left: 0.25rem solid var(--color-warn);
+}
+
+.settings-finding__level {
+  text-transform: capitalize;
+}
+
+.settings-finding p {
+  margin-bottom: var(--space-2);
+}
+
+.settings-finding p:last-child {
+  margin-bottom: 0;
 }
 
 /* Global guard: long unbroken ids and paths must never cause horizontal page scroll */

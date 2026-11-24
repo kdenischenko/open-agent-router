@@ -54,6 +54,7 @@ class Snapshot:
 class Choice:
     route: Route
     reason: str
+    note: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,23 @@ def _pace_reason(status: PoolStatus) -> str:
     return f"{verb} by {_percent(abs(lag))} pp ({detail})"
 
 
+def _choice_note(status: PoolStatus | None, has_data: bool) -> str | None:
+    if status is None:
+        return None
+    if has_data:
+        paces = [pace for pace in status.windows if pace.urgency is not None]
+        return min(paces, key=lambda item: (item.urgency, item.window.id)).state.note
+    pace_note = next(
+        (
+            pace.state.note
+            for pace in status.windows
+            if pace.window.role == "pace" and pace.state.note
+        ),
+        None,
+    )
+    return pace_note or next((pace.state.note for pace in status.windows if pace.state.note), None)
+
+
 def _ordinal(rank: int) -> str:
     """Preference rank as a word or ordinal: 'first' for 0, then 2nd, 3rd, ..."""
     if rank == 0:
@@ -205,7 +223,8 @@ def decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteView
             prefer_rank=view.prefer_rank,
             urgency=None if status is None else status.urgency,
         )
-        groups.setdefault(route.model_group, []).append((key, view, Choice(route, reason)))
+        choice = Choice(route, reason, _choice_note(status, has_data))
+        groups.setdefault(route.model_group, []).append((key, view, choice))
 
     ordered_groups = []
     for model_group, members in groups.items():

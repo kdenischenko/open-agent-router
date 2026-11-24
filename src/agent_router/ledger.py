@@ -14,6 +14,7 @@ from agent_router.store import CounterSample, Store
 SCHEDULED_RESET = "scheduled_reset"
 NOTE_NO_DATA = "no data"
 NOTE_STALE = "no data: observation older than window"
+NOTE_STALE_FIXED = "no data: observation older than max age"
 NOTE_NO_RESET = "no data, set the reset time"
 NOTE_NO_BASE_SAMPLE = "counter: no baseline sample"
 NOTE_BASE_AFTER_START = "counter: baseline sample taken after the window start"
@@ -125,6 +126,19 @@ def window_state(
         if reset is None and window.anchor is not None:
             origin = window.anchor  # a calendar month is counted from the original anchor
             start, reset = window_bounds(origin, window.duration, observed_at)
+        if (
+            (reset is None or reset > now)
+            and window.max_age is not None
+            and observed_at + window.max_age < now
+        ):
+            return _unknown(
+                pool,
+                window,
+                NOTE_STALE_FIXED,
+                observed_at=observed_at,
+                window_start=start,
+                resets_at=reset,
+            )
         if reset is None or origin is None:
             state = replace(state, note=NOTE_NO_RESET)
         elif reset <= now:  # the moment equal to the reset belongs to the new window

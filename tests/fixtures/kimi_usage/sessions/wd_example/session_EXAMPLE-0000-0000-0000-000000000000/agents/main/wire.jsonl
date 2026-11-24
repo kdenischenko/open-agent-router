@@ -1,0 +1,4 @@
+{"type":"message","role":"assistant","content":"example"}
+{"type":"usage.record","agentId":"main","model":"example/model","usage":{"inputOther":100,"output":7,"inputCacheRead":20,"inputCacheCreation":3},"usageScope":"turn","time":1}
+{"type":"usage.record","agentId":"main","model":"example/model","usage":{"inputOther":200,"output":11,"inputCacheRead":40,"inputCacheCreation":6},"usageScope":"turn","time":2}
+{"type":"usage.record","usage":

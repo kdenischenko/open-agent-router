@@ -19,6 +19,7 @@ USAGE = {
     "last_attempt_at": "2026-11-13T09:12:00+00:00",
     "last_success_at": "2026-11-13T09:00:00+00:00",
     "last_error": "unauthorized",
+    "warning": "the Claude Code CLI timed out after returning a usage report",
     "age_s": 720.0,
     "stale": True,
 }
@@ -127,11 +128,12 @@ def test_pool_card_shows_the_usage_source_line(web, rig, monkeypatch, path):
     assert "Source: opencode-go (auto)" in source
     assert "read 12 min ago" in source
     assert "last read failed: unauthorized" in source
+    assert "warning: the Claude Code CLI timed out after returning a usage report" in source
     assert ">stale<" in class_block(card, "limit-stale")
 
 
 def test_pool_card_shows_never_read_usage_without_a_badge(web, rig, monkeypatch):
-    usage = USAGE | {"age_s": None, "last_error": None, "stale": False}
+    usage = USAGE | {"age_s": None, "last_error": None, "warning": None, "stale": False}
     text = show_limits(web, rig, monkeypatch, [pool_json(window_json()) | {"usage": usage}]).text
 
     card = class_block(text, "limit-card")
@@ -139,6 +141,7 @@ def test_pool_card_shows_never_read_usage_without_a_badge(web, rig, monkeypatch)
     assert "Source: opencode-go (auto)" in source
     assert "never read" in source
     assert "last read failed" not in source
+    assert "warning:" not in source
     assert "limit-stale" not in card
 
 

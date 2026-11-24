@@ -185,12 +185,19 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.
+- **New job** — a form linked from the Jobs page: working directory, `read`/`write` mode, an optional
+  tier (empty lets the gateway decide), the prompt and an optional timeout. It works without JavaScript,
+  shows validation errors beside the fields while keeping your values, and on success redirects to the
+  new job's page; a route with `confirm = true` still waits for approval before the job runs.
 - **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
   totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
   in expandable blocks with copy buttons; lets you rate a finished job.
 - **Calibrate** — record what your subscription page shows. Errors are shown per field and,
   with scripts on, the form previews the pace and the local reset time; after saving, the
   updated pool card is highlighted.
+- **Settings** — a read-only view of pools and their windows, routes (including disabled ones),
+  caller mappings, and configuration-related doctor findings with hints. Environment variable
+  names are shown, but never their values or any tokens.
 
 <table>
   <tr>
@@ -219,7 +226,7 @@ sign-in you already made in it; it never sees provider keys.
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
-| Claude Code | `claude` | journal | tested live on Windows |
+| Claude Code | `claude` | journal | covered by recorded tests; live check pending |
 
 ## Platforms
 
@@ -258,8 +265,9 @@ option.
 
 Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
 then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and
-awaiting-approval jobs are never purged, and `serve` does not purge automatically. Check the count
-first with `agent-router purge --dry-run`.
+awaiting-approval jobs are never purged, and `serve` does not purge automatically. Purge also
+removes leftover job directories from earlier failed removals or crashes. Check the count first
+with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).

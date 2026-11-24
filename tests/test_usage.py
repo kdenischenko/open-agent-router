@@ -39,6 +39,8 @@ role = "guard"
 [[routes]]
 id = "route"
 pool = "pool"
+backend = "kimi"
+model = "m"
 tiers = ["standard"]
 quality = 3
 """

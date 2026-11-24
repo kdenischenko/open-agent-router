@@ -480,6 +480,8 @@ def test_assets_have_no_external_urls(directory):
             "_jobs.html",
             "message.html",
             "confirm_action.html",
+            "settings.html",
+            "submit.html",
         }
         if directory == "templates"
         else {"app.css", "app.js"}

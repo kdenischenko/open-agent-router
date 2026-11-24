@@ -8,6 +8,13 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and
+  configuration-related doctor findings with hints, without exposing tokens or environment values.
+- The dashboard has a New job page at `/jobs/new`, linked from the Jobs page: it submits a job
+  with working directory, mode, optional tier (empty picks the gateway default), prompt and
+  optional timeout. The form works without JavaScript, keeps the entered values next to per-field
+  validation errors, redirects to the job page on success and leaves the normal approval flow
+  untouched.
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
@@ -15,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The installation guide documents the write-mode flags and outside-directory controls of each
+  supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
 - Claude Code jobs use `stream-json`, so their output resets the idle timeout while the job runs.
   Write jobs use `bypassPermissions` instead of silently denying commands, and both modes load
@@ -24,8 +33,22 @@ All notable changes are documented here. The format follows
 
 - SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
   requests.
+- The New job page shows the Jobs disabled notice and omits the submit form when the job
+  dispatcher is not running.
+- Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
+  shown by `agent-router status`, `doctor` and the dashboard pool card.
+- `agent-router purge` retries directory removals that failed during an earlier run and also
+  sweeps orphaned `jobs/<job-id>/` directories older than the retention cutoff.
+- `tasks.allowed_roots` and `tasks.denied_roots` entries must be non-empty absolute paths after
+  `~` expansion, so `~/...` stays valid and portable while relative or empty entries are config
+  errors. Harness routes without a non-empty `pool`, `backend` and `model` are also rejected.
+- Kimi Code jobs record input and output tokens from the session logs, including subagent usage.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
+- Fixed windows accept an optional `max_age` span (default: half the window duration, capped at
+  72 h); an observation older than `max_age` — a manual calibration as much as a usage read —
+  is reported as `no data: observation older than max age`, while a passed scheduled reset still
+  yields a fresh zero-usage window.
 
 ## [0.3.0] - 2026-11-22
 

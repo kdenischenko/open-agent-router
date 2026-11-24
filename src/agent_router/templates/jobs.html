@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% if not tasks_disabled %}
+<p><a href="/jobs/new">Submit a job</a></p>
 <form method="get" action="/jobs" class="panel job-filters" role="search" aria-label="Filter jobs">
   <label>Status
     <select name="status">
