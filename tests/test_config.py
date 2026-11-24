@@ -339,7 +339,7 @@ def test_unknown_nested_key_rejected(tmp_path: Path, config_module) -> None:
     assert any("classifier.confidense: unknown key" in m for m in messages)
 
 
-def test_upstreams_not_supported(tmp_path: Path, config_module) -> None:
+def test_upstreams_load(tmp_path: Path, config_module) -> None:
     text = (
         VALID_CONFIG
         + """
@@ -350,19 +350,38 @@ base_url = "https://example.invalid/v1"
 key_env = "X_KEY"
 """
     )
-    messages = error_messages(tmp_path, config_module, text)
-    assert any(
-        "upstreams: API proxy is not implemented yet, remove the section" in message
-        for message in messages
-    )
+    config = load_text(tmp_path, config_module, text)
+    upstream = config.upstreams["x"]
+    assert upstream.kind == "openai"
+    assert upstream.pool == "pool"
+    assert upstream.base_url == "https://example.invalid/v1"
+    assert upstream.key_env == "X_KEY"
 
 
-def test_route_kind_api_not_supported(tmp_path: Path, config_module) -> None:
-    text = VALID_CONFIG.replace("quality = 3", 'kind = "api"\nquality = 3')
-    messages = error_messages(tmp_path, config_module, text)
-    assert any(
-        "routes[0].kind: API proxy is not implemented yet" in message for message in messages
+def test_route_kind_api_loads(tmp_path: Path, config_module) -> None:
+    text = (
+        VALID_CONFIG
+        + """
+[upstreams.x]
+kind = "openai"
+pool = "pool"
+base_url = "http://127.0.0.1:1234/v1"
+
+[[routes]]
+id = "api/route"
+kind = "api"
+pool = "pool"
+upstream = "x"
+model = "m"
+tiers = ["standard"]
+quality = 3
+"""
     )
+    config = load_text(tmp_path, config_module, text)
+    route = next(route for route in config.routes if route.id == "api/route")
+    assert route.kind == "api"
+    assert route.upstream == "x"
+    assert config.route_spend(route) == "proxy"
 
 
 def test_default_template_loads(tmp_path: Path, config_module) -> None:

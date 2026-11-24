@@ -101,7 +101,8 @@ def _exclusion(request: RouteRequest, snapshot: Snapshot, view: RouteView) -> st
         return "route disabled"
     if not view.available:
         return f"harness unavailable: {view.unavailable_reason or 'reason unknown'}"
-    if not request.explicit and request.tier not in route.tiers:
+    # a model request has no tier: the tier and reserve filters apply to harness jobs only
+    if route.kind == "harness" and not request.explicit and request.tier not in route.tiers:
         return f"does not serve tier {request.tier}"
     if request.mode is not None and request.mode not in route.modes:
         return f"mode {request.mode} not supported"
@@ -122,7 +123,8 @@ def _exclusion(request: RouteRequest, snapshot: Snapshot, view: RouteView) -> st
         return f"window {status.blocked_by} exhausted until {until}"
     reserve_tier = status.pool.reserve_tier
     if (
-        not request.explicit
+        route.kind == "harness"
+        and not request.explicit
         and status.reserve_hit
         and reserve_tier is not None
         and TIERS.index(request.tier) < TIERS.index(reserve_tier)

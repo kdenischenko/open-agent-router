@@ -527,9 +527,54 @@ it will be replaced. After this, `doctor` shows the age of the last signal. The 
 limits only, so `[statusline] pool` must name the pool of your Claude Code routes (`claude-pro` in
 the template); the examples without Claude Code leave `[statusline]` out.
 
+## 11. Local models (optional)
+
+The gateway can front local model servers — LM Studio, Strata, or any OpenAI-compatible
+endpoint — with its own `/v1` API. Add a pool, an upstream, and an api route per server; a
+loopback server needs no key:
+
+```toml
+[[pools]]
+id = "lmstudio"
+title = "LM Studio (local)"
+unit = "usd"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 1000  # local inference costs nothing; the window only tracks the totals
+
+[upstreams.lmstudio]
+kind = "openai"
+pool = "lmstudio"
+base_url = "http://127.0.0.1:1234/v1"
+
+[[routes]]
+id = "lmstudio/qwen3-coder"
+kind = "api"
+pool = "lmstudio"
+upstream = "lmstudio"
+model = "qwen3-coder-30b"  # the model id as the server lists it in /v1/models
+tiers = ["cheap", "standard"]
+quality = 3
+```
+
+Then point any OpenAI-compatible tool at `http://127.0.0.1:8787/v1` with the client token as the
+API key. Two servers can share one logical model: give their routes the same `model_key`, request
+that name, and the gateway picks a server by priority and falls back to the other when the first
+is down. A remote (non-loopback) upstream must use `https` and exactly one of `key_env` or
+`key_file`. `agent-router doctor` lists every upstream with its key state and reachability.
+
+The full LM Studio plus Strata setup is in
+[docs/examples/local-models.toml](examples/local-models.toml). To give a local model full
+agentic abilities (tools, file edits), point a coding CLI at the gateway's `/v1` address — or at
+the server directly (`strata connect` does this for Strata) — and keep it on a normal harness
+route.
+
 ## Not available yet
 
-- Routing from within Cline and OpenCode (as a model provider) is planned.
 - Cline runs with the owner's data directory: every run through the gateway adds a job to Cline's
   history.
 

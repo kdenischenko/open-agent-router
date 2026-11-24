@@ -29,7 +29,9 @@ delegated to a harness.
   scheduling; `guard` — only blocks; rolling windows cannot be `pace`), and `block_at`, the used
   fraction at which the pool stops serving.
 - **Route** — a `pool` + `backend` + `model` triple with `tiers`, `quality` (1–5), `modes`,
-  `confirm`, `enabled`, and optional per-route levers. The route `kind` is `harness`.
+  `confirm`, `enabled`, and optional per-route levers. The route `kind` is `harness` (a coding
+  agent CLI runs the job) or `api` (an `[upstreams]` entry serves model requests through the
+  proxy; an api route has an `upstream` instead of a `backend` and no `modes`).
 - **Tier** — job difficulty: `cheap`, `standard`, or `strong` (in that order).
 - **Job** — a unit of work: prompt, working directory, mode, caller, and resulting lifecycle.
 - **Harness** (also **executor**) — the agent CLI that runs a job: `claude`, `opencode`,
@@ -116,7 +118,8 @@ unavailable; `tier` not in `route.tiers`; `mode` not in `route.modes`; route or 
 this job; caller's own pool; pool blocked until a known time; a window exhausted past its
 `block_at`; and the reserve rule — if the pool's remaining headroom is at or below `reserve`,
 jobs below `reserve_tier` are excluded. Explicitly requested routes skip the tier, caller, and
-reserve filters and ignore `priority`/`weight`.
+reserve filters and ignore `priority`/`weight`. A model request has no tier, so for api routes
+the tier and reserve filters do not apply; the other filters work the same.
 
 Survivors are ordered by a key built from: `prefer` rank (when several routes share a
 `model_key`, `[models."<key>"] prefer = [pools...]` orders their pools), `priority` (lower
@@ -156,9 +159,9 @@ The ledger computes each window's state from observations and spend records:
   scheduled reset, within the tolerance; after a reset with no such sample the first later sample
   is used and the window is marked as a lower bound. A change in model weights (the pool's `scale_hash`)
   invalidates the base and asks for recalibration.
-- **Spend records** are written per attempt: pool, route, tokens in/out, `cost_usd`, and an
-  `estimated` flag. For `usd` pools the spend since the window base is added on top of the
-  observed fraction.
+- **Spend records** are written per attempt (and per proxied model request, source `proxy`):
+  pool, route, tokens in/out, `cost_usd`, and an `estimated` flag. For `usd` pools the spend
+  since the window base is added on top of the observed fraction.
 
 **Usage sources** (entry point group `agent_router.usage_sources`) are the seam for vendors that
 report a window's used share with a reset time instead of cumulative spend. A source's `read()`
@@ -330,6 +333,32 @@ concise report; read mode adds "do not create, modify, or delete any files". Eac
 exposes `HARNESS = HarnessSpec(...)` and registers via the `agent_router.harnesses` entry-point
 group; counters use `agent_router.counters`.
 
+## Model proxy
+
+With `[upstreams]` configured, the gateway serves an OpenAI-compatible endpoint of its own:
+`POST /v1/chat/completions` and `GET /v1/models` (client token as the bearer key, the same
+`/api/` body limit). A tool points its base URL at the gateway; the requested model is matched
+against the api routes' `model` and `model_key`, the route policy picks one by the pools' quota
+state (a blocked or exhausted pool is excluded like for jobs), and the request is forwarded to
+the route's upstream with `model` rewritten to the id the upstream serves. When the upstream
+cannot be reached (connect error or connect timeout), the next chosen route is tried; an
+upstream that answers with an HTTP error speaks for itself and its status and body pass through
+unchanged. Streaming requests are proxied chunk by chunk; with the upstream's `stream_usage`
+(the default) the gateway adds `stream_options.include_usage` and reads the token counts from
+the terminal event. The upstream's key comes from `key_env` or `key_file`, read at request time
+and never logged; a loopback upstream (LM Studio, Strata) may take no key, a remote one must use
+https and exactly one key source. `pass_headers` forwards the listed request headers, minus
+hop-by-hop and credential headers.
+
+Each answered request writes a spend record with source `proxy` (pool, route, tokens, request id
+as the reference; a write failure does not fail the answered request). The cost is estimated
+from the pool's `price_file` and model weight, like a job without a reported cost; for local
+models without prices the record carries tokens only. `upstream.enabled = false` marks its
+routes unavailable (`upstream disabled` in the exclusion reason). The upstream timeout is
+`route.timeout_s`, else 600 s, with a 10 s connect budget so a dead server fails over fast.
+`agent-router doctor` reports each upstream's key state and the reachability of its `/models`
+endpoint.
+
 ## Storage and API
 
 One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema versioning via
@@ -349,7 +378,9 @@ routes; only `127.0.0.1`/`localhost` Host headers are accepted):
 
 - Client: `GET /snapshot`, `POST /signals/claude-statusline`, `GET /advice`, `GET /events/stats`,
   job operations — `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/wait`
-  (long-poll, capped), `POST /jobs/{id}/cancel`, `POST /jobs/{id}/rating`.
+  (long-poll, capped), `POST /jobs/{id}/cancel`, `POST /jobs/{id}/rating`. With `[upstreams]`
+  configured: the OpenAI-compatible `POST /v1/chat/completions` and `GET /v1/models` (see
+  Model proxy).
 - Admin: `POST /observations` (calibration), `POST /jobs/{id}/approve`, `POST /jobs/{id}/deny`,
   `POST /pools/{id}/unblock`.
 - `GET /healthz` is unauthenticated.
@@ -418,6 +449,7 @@ scripting is available.
 | `plugins.py` | Entry-point loading for harnesses, counters, storage, sinks |
 | `policy.py` | Deterministic route filters and ordering |
 | `prices.py` | Price-file parsing and token-based cost estimation |
+| `proxy.py` | OpenAI-compatible `/v1` endpoints: model-to-route matching, upstream forwarding, spend |
 | `registry.py` | Harness/counter specs, backend resolution, config validation |
 | `runner.py` | Child-process execution, log capture, timeouts, process-tree kill |
 | `service.py` | Gateway composition: snapshot cache, waiters, background loops |
@@ -440,9 +472,8 @@ scripting is available.
 
 ## Planned
 
-- **Model-request path**: an OpenAI-compatible proxy and direct API providers. The config keys
-  `[upstreams]` and route `kind = "api"` are reserved for it; until it exists the config is
-  rejected if they are used.
+- **More upstream kinds**: the proxy speaks the OpenAI chat completions API; other API shapes
+  (for example Anthropic's) may follow.
 - **Linux and macOS support**: the process, git, and CLI layers have POSIX branches and the test
   suite runs on Linux and macOS in CI (experimental, allowed to fail); the gateway has been run
   live only on Windows, and autostart exists only there.

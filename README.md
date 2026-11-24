@@ -166,6 +166,25 @@ Several models can vote side by side: in `shadow` mode they only record votes, a
 of them decide. Configuration examples, what the classifier receives and measured results are
 in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/CLASSIFIER.md).
 
+## Local models and the OpenAI-compatible proxy
+
+The gateway can also front local model servers — LM Studio, Strata, or any OpenAI-compatible
+endpoint — and route model requests across them. With `[upstreams]` and `kind = "api"` routes in
+`config.toml` it serves `POST /v1/chat/completions` and `GET /v1/models` on its own address:
+point any OpenAI-compatible tool at `http://127.0.0.1:<port>/v1` with the client token as the
+API key. The requested model is matched to routes by `model` or `model_key`, the route policy
+picks a server by priority and pool pace, and when a server is down the request falls back to
+the next route. Streaming works, token counts are recorded per request (spend source `proxy`),
+and `agent-router doctor` checks every upstream's key and reachability. A loopback server needs
+no API key; a remote one must use https with a key from `key_env` or `key_file`.
+
+A complete config for LM Studio plus Strata — one logical model `local-coder` served by both,
+with fallback — is in
+[docs/examples/local-models.toml](https://github.com/kdenischenko/open-agent-router/blob/main/docs/examples/local-models.toml).
+The same servers can also vote as tier classifiers, and a coding CLI pointed at the gateway's
+`/v1` address (or at the server directly, for example with `strata connect`) turns a local model
+into a full agentic harness on a harness route.
+
 ## Dashboard
 
 <picture>
@@ -310,7 +329,9 @@ Common failures and their fixes are in [docs/TROUBLESHOOTING.md](https://github.
    `modes`; start a new route with `enabled = false`.
 4. **Models.** To share one model across pools, give its routes a common `model_key` and
    order the pools in `[models."<model_key>"] prefer = [...]`.
-5. **Verify.** `agent-router doctor` shows the harness, its version and enabled routes;
+5. **Upstream.** For a model server instead of a CLI, add an `[upstreams]` entry and a
+   `kind = "api"` route that references it — see Local models above.
+6. **Verify.** `agent-router doctor` shows the harness, its version and enabled routes;
    `agent-router doctor --live` runs one short job per harness (needs a non-empty
    `allowed_roots`); `agent-router status` shows pool usage.
 

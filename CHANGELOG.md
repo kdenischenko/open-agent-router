@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Local model servers (LM Studio, Strata, any OpenAI-compatible endpoint) behind the gateway's
+  own `/v1` API: `[upstreams]` entries and `kind = "api"` routes serve
+  `POST /v1/chat/completions` and `GET /v1/models`, the route policy picks a server by priority
+  and pool pace and falls back when one is down, and each answered request records its tokens as
+  `proxy` spend. A loopback upstream needs no key; `doctor` reports every upstream's key state
+  and reachability. Setup: `docs/examples/local-models.toml`.
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw

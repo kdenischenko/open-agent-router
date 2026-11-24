@@ -407,6 +407,47 @@ def _doctor_classifier(config: Config) -> None:
         )
 
 
+def _doctor_upstreams(config: Config) -> None:
+    """API upstreams: key state, reachability of /models, and the routes that use them."""
+    if not config.upstreams:
+        return
+    from agent_router import classifier
+    from agent_router.proxy import _KeyMissing, upstream_key
+
+    typer.echo("Upstream | Address | Key | Reachable | Routes")
+    for name, upstream in sorted(config.upstreams.items()):
+        routes = [
+            route.id
+            for route in config.routes
+            if route.kind == "api" and route.enabled and route.upstream == name
+        ]
+        key = None
+        key_state = "not needed"
+        try:
+            key = upstream_key(upstream)
+            if key is not None:
+                key_state = "set"
+        except _KeyMissing as exc:
+            key_state = "missing"
+            typer.echo(f"Warning: upstream {name}: {exc}")
+        headers = {"authorization": f"Bearer {key}"} if key is not None else {}
+        try:
+            response = classifier.get(
+                f"{upstream.base_url}/models", headers=headers, timeout=_OLLAMA_TIMEOUT_S
+            )
+            reachable = "yes" if response.status_code < 400 else f"http {response.status_code}"
+        except Exception:
+            reachable = "no"
+        typer.echo(
+            f"{name} | {upstream.base_url} | {key_state} | {reachable} | {', '.join(routes) or '—'}"
+        )
+        if reachable != "yes":
+            for route in routes:
+                typer.echo(
+                    f"Warning: route {route} is enabled, but upstream {name} is not reachable"
+                )
+
+
 def _doctor_callers(config: Config) -> None:
     """Warn when a mapped caller has no enabled route outside its own pool."""
     enabled = [route for route in config.routes if route.enabled]
@@ -735,6 +776,7 @@ def doctor(
     _doctor_classifier(config)
     _doctor_callers(config)
     _doctor_usage(config)
+    _doctor_upstreams(config)
     if not config.tasks.allowed_roots:
         typer.echo("Warning: tasks.allowed_roots is empty, jobs not accepted")
     client = _gateway()

@@ -213,3 +213,12 @@ prefer = ["kimi-code", "opencode-go"]
 
 [models."glm-5.3"]
 prefer = ["opencode-go"]
+
+# Local model servers (LM Studio, Strata, any OpenAI-compatible endpoint) behind the
+# gateway's own /v1 API: a pool, an [upstreams.<name>] entry and a kind = "api" route per
+# server. A loopback server needs no key. A ready-made config is docs/examples/local-models.toml.
+#
+# [upstreams.lmstudio]
+# kind = "openai"
+# pool = "lmstudio"
+# base_url = "http://127.0.0.1:1234/v1"

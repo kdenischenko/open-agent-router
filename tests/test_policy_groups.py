@@ -75,14 +75,14 @@ def make_route(route_id: str, pool: str, quality: int = 3, **fields) -> Route:
         "confirm": False,
         "enabled": True,
         "timeout_s": None,
+        "tiers": frozenset({"cheap", "standard", "strong"}),
+        "modes": frozenset({"read", "write"}),
     }
     base.update(fields)
     return Route(
         id=route_id,
         pool=pool,
-        tiers=frozenset({"cheap", "standard", "strong"}),
         quality=quality,
-        modes=frozenset({"read", "write"}),
         **base,
     )
 
@@ -292,6 +292,24 @@ def test_kind_filter() -> None:
     decision = decide(RouteRequest("cheap", kind="api"), snap, views)
     assert ids(decision) == ["api/1"]
     assert [item.route.id for item in decision.excluded] == ["api/2"]
+
+
+def test_api_route_skips_tier_and_reserve() -> None:
+    """A model request has no tier: api routes are not filtered by tiers or the reserve."""
+    api = make_route(
+        "api/1",
+        "a",
+        backend=None,
+        kind="api",
+        upstream="x",
+        tiers=frozenset({"strong"}),
+        modes=frozenset(),
+    )
+    snap = snapshot(status("a", -0.4, reserve=0.5, reserve_tier="strong"))
+    assert snap.pools["a"].reserve_hit
+    decision = decide(RouteRequest("cheap", kind="api"), snap, [RouteView(api)])
+    assert ids(decision) == ["api/1"]
+    assert decision.excluded == ()
 
 
 def test_model_group_filter_without_explicit() -> None:

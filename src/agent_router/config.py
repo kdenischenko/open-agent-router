@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import platformdirs
 
@@ -399,8 +400,6 @@ def _parse_routes(
             errors.append(f"{label}.kind: expected harness or api")
             raw_kind = "harness"
         kind: RouteKind = raw_kind
-        if kind == "api":
-            errors.append(f"{label}.kind: API proxy is not implemented yet")
         raw_tiers = _strings(raw.get("tiers", ["standard"]), f"{label}.tiers", errors)
         if raw.get("tiers") == []:
             errors.append(f"{label}.tiers: must not be empty")
@@ -545,6 +544,10 @@ _UPSTREAM_KEYS = frozenset(
 )
 
 
+_UPSTREAM_KINDS = ("openai",)
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
 def _parse_upstreams(
     value: Any, pool_ids: set[str], errors: list[str]
 ) -> Mapping[str, UpstreamSettings]:
@@ -555,13 +558,26 @@ def _parse_upstreams(
         table = _table(settings, label, errors)
         _check_keys(table, _UPSTREAM_KEYS, label, errors)
         kind = _required_text(table.get("kind"), f"{label}.kind", errors)
+        if kind and kind not in _UPSTREAM_KINDS:
+            available = ", ".join(_UPSTREAM_KINDS)
+            errors.append(f"{label}.kind: unknown kind: {kind!r}; available: {available}")
         pool = _required_text(table.get("pool"), f"{label}.pool", errors)
         if pool and pool not in pool_ids:
             errors.append(f"{label}.pool: unknown pool: {pool!r}")
-        base_url = _required_text(table.get("base_url"), f"{label}.base_url", errors)
+        base_url = _required_text(table.get("base_url"), f"{label}.base_url", errors).rstrip("/")
+        loopback = False
+        if base_url:
+            parsed = urlparse(base_url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                errors.append(f"{label}.base_url: invalid url: {base_url!r}")
+            else:
+                loopback = parsed.hostname in _LOOPBACK_HOSTS
+                if not loopback and parsed.scheme != "https":
+                    errors.append(f"{label}.base_url: a non-loopback url must use https")
         key_file = _optional_text(table.get("key_file"), f"{label}.key_file", errors)
         key_env = _optional_text(table.get("key_env"), f"{label}.key_env", errors)
-        if (key_file is None) == (key_env is None):
+        # a loopback (local) server may take no key; a remote one must have exactly one
+        if (key_file is None) == (key_env is None) and (key_file is not None or not loopback):
             errors.append(f"{label}: exactly one of key_file and key_env is required")
         pass_headers = _strings(table.get("pass_headers", []), f"{label}.pass_headers", errors)
         for header in pass_headers:
@@ -583,8 +599,6 @@ def _parse_upstreams(
             priority=priority,
             weight=weight,
         )
-    if upstreams:
-        errors.append("upstreams: API proxy is not implemented yet, remove the section")
     return upstreams
 
 

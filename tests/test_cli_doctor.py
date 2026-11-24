@@ -440,6 +440,66 @@ def test_doctor_warns_about_model_without_limit(
     assert any("opencode-cli/glm-5.3-flash" in line and "model_limits" in line for line in warnings)
 
 
+def test_doctor_lists_upstreams_and_warns_about_unreachable(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    from helpers import closed_port_url, http_server
+
+    with http_server(body=b'{"data": []}') as (url, _seen):
+        write_config(
+            home,
+            f"""
+[tasks]
+allowed_roots = []
+
+[[pools]]
+id = "local"
+title = "Local"
+unit = "usd"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 1000
+
+[upstreams.live]
+kind = "openai"
+pool = "local"
+base_url = "{url}"
+
+[upstreams.dead]
+kind = "openai"
+pool = "local"
+base_url = "{closed_port_url()}"
+
+[[routes]]
+id = "live/m"
+kind = "api"
+pool = "local"
+upstream = "live"
+model = "m"
+tiers = ["cheap"]
+
+[[routes]]
+id = "dead/m"
+kind = "api"
+pool = "local"
+upstream = "dead"
+model = "m"
+tiers = ["cheap"]
+""",
+        )
+        result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Upstream | Address | Key | Reachable | Routes" in result.stdout
+    assert "live" in result.stdout
+    warnings = [line for line in result.stdout.splitlines() if "Warning:" in line]
+    assert any("dead/m" in line and "upstream dead is not reachable" in line for line in warnings)
+
+
 def test_doctor_silent_when_every_model_has_limit_and_price(
     runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
 ) -> None:

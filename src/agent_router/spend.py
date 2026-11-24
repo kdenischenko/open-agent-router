@@ -63,6 +63,27 @@ def estimate_attempt_cost(attempt: Attempt, route: Route, pool: Pool) -> tuple[f
     return cost * pool.scale(model), prices.version
 
 
+def estimate_proxy_cost(
+    pool: Pool, route: Route, tokens_in: int | None, tokens_out: int | None
+) -> tuple[float, str] | None:
+    """Estimate the cost of a proxy request from the pool's price_file and the model weight.
+
+    Returns None when the pool has no prices, no tokens were reported, or the model has
+    no price. Mirrors the token-based estimation of job attempts.
+    """
+    prices = pool.prices
+    if prices is None or (tokens_in is None and tokens_out is None):
+        return None
+    key = model_key(route.model) if route.model else None
+    cost = None if key is None else estimate(prices, key, tokens_in, tokens_out)
+    if cost is None:  # fall back to the model group (older price_file)
+        cost = estimate(prices, route.model_group, tokens_in, tokens_out)
+    if cost is None:
+        return None
+    model = route.model if route.model is not None else route.model_group
+    return cost * pool.scale(model), prices.version
+
+
 def entry_for_attempt(attempt: Attempt, prices_version: str | None = None) -> SpendEntry:
     assert attempt.finished_at is not None
     return SpendEntry(

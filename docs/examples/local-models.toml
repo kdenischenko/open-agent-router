@@ -1,0 +1,81 @@
+# local models: lm studio and strata behind the gateway's openai-compatible proxy
+# point your tools at http://127.0.0.1:8787/v1 with the client token as the api key;
+# the gateway picks a server by priority and pace and falls back when one is down
+
+[server]
+port = 8787
+
+[tasks]
+# leave empty and run: agent-router init --allowed-root <dir> for each project
+allowed_roots = []
+denied_roots = []
+
+[storage]
+backend = "sqlite"
+
+[callers]
+# no harness subscriptions here, so no caller maps to a pool
+claude-code = ""
+kimi-code = ""
+opencode = ""
+cline = ""
+
+# local servers have no plan limits: a generous usd window only tracks the totals
+[[pools]]
+id = "lmstudio"
+title = "LM Studio (local)"
+unit = "usd"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 1000  # local inference costs nothing; the window never fills
+
+[[pools]]
+id = "strata"
+title = "Strata (local)"
+unit = "usd"
+
+  [[pools.windows]]
+  id = "month"
+  duration = "1mo"
+  kind = "fixed"
+  role = "pace"
+  limit_usd = 1000
+
+# lm studio: developer tab -> start server; a loopback server needs no key
+[upstreams.lmstudio]
+kind = "openai"
+pool = "lmstudio"
+base_url = "http://127.0.0.1:1234/v1"
+
+# strata: `strata launch` serves the openai-compatible api on loopback
+[upstreams.strata]
+kind = "openai"
+pool = "strata"
+base_url = "http://127.0.0.1:8080/v1"
+
+# one logical model on both servers: request "local-coder", the upstream gets its
+# own model id; lm studio answers first, strata takes over when it is down
+[[routes]]
+id = "lmstudio/qwen3-coder"
+kind = "api"
+pool = "lmstudio"
+upstream = "lmstudio"
+model = "qwen3-coder-30b"  # the model id as lm studio serves it
+model_key = "local-coder"
+tiers = ["cheap", "standard"]
+quality = 3
+
+[[routes]]
+id = "strata/qwen3-coder"
+kind = "api"
+pool = "strata"
+upstream = "strata"
+model = "qwen3.8-flash-next"  # the model id as strata serves it
+model_key = "local-coder"
+tiers = ["cheap", "standard"]
+quality = 2
+priority = 1  # used while lm studio is unreachable

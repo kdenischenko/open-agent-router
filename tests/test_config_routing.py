@@ -183,10 +183,14 @@ def test_models_prefer_repeated_pool(home: Path) -> None:
     assert 'models."k".prefer: pool kimi-code is repeated' in message
 
 
-def test_api_route_is_rejected(home: Path) -> None:
-    message = config_error(home, BASE + api_route('upstream = "x"') + UPSTREAM)
-    assert "routes[0].kind: API proxy is not implemented yet" in message
-    assert "upstreams: API proxy is not implemented yet, remove the section" in message
+def test_api_route_loads(home: Path) -> None:
+    config = write_config(home, BASE + api_route('upstream = "x"') + UPSTREAM)
+    route = config.routes[-1]
+    assert route.kind == "api"
+    assert route.upstream == "x"
+    assert route.modes == frozenset()
+    assert config.upstreams["x"].base_url == "https://example.invalid/v1"
+    assert config.route_spend(route) == "proxy"
 
 
 @pytest.mark.parametrize(
@@ -220,9 +224,8 @@ def test_pass_headers_denied(home: Path) -> None:
 
 def test_pass_headers_allowed(home: Path) -> None:
     text = BASE + UPSTREAM + 'pass_headers = ["x-opencode-session"]\n'
-    message = config_error(home, text)
-    assert "must not be passed" not in message
-    assert "upstreams: API proxy is not implemented yet, remove the section" in message
+    config = write_config(home, text)
+    assert config.upstreams["x"].pass_headers == ("x-opencode-session",)
 
 
 @pytest.mark.parametrize(
@@ -232,6 +235,33 @@ def test_upstream_needs_exactly_one_key_source(home: Path, keys: str) -> None:
     upstream = UPSTREAM.replace('key_env = "X_KEY"\n', keys + "\n")
     message = config_error(home, BASE + upstream)
     assert "upstreams.x: exactly one of key_file and key_env is required" in message
+
+
+def test_loopback_upstream_needs_no_key(home: Path) -> None:
+    upstream = UPSTREAM.replace('key_env = "X_KEY"\n', "").replace(
+        "https://example.invalid/v1", "http://127.0.0.1:1234/v1"
+    )
+    config = write_config(home, BASE + upstream)
+    assert config.upstreams["x"].key_env is None
+    assert config.upstreams["x"].base_url == "http://127.0.0.1:1234/v1"
+
+
+def test_non_loopback_upstream_must_use_https(home: Path) -> None:
+    upstream = UPSTREAM.replace("https://example.invalid/v1", "http://192.168.1.10:1234/v1")
+    message = config_error(home, BASE + upstream)
+    assert "upstreams.x.base_url: a non-loopback url must use https" in message
+
+
+def test_upstream_base_url_must_be_a_url(home: Path) -> None:
+    upstream = UPSTREAM.replace("https://example.invalid/v1", "not a url")
+    message = config_error(home, BASE + upstream)
+    assert "upstreams.x.base_url: invalid url" in message
+
+
+def test_upstream_unknown_kind(home: Path) -> None:
+    upstream = UPSTREAM.replace('kind = "openai"', 'kind = "anthropic"')
+    message = config_error(home, BASE + upstream)
+    assert "upstreams.x.kind: unknown kind: 'anthropic'; available: openai" in message
 
 
 def test_upstream_unknown_pool(home: Path) -> None:

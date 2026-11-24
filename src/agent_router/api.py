@@ -50,6 +50,7 @@ from agent_router.jobs import (
 )
 from agent_router.ledger import window_state
 from agent_router.periods import parse_span, shift
+from agent_router.proxy import proxy_router
 from agent_router.registry import Counter, load_counter
 from agent_router.service import Gateway, decision_json, worker_loop
 from agent_router.sinks import EventSink, attach_sinks
@@ -132,7 +133,9 @@ class BodyLimit:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        limit = self.api_limit if scope["path"].startswith("/api/") else FORM_BODY_MAX_BYTES
+        limit = (
+            self.api_limit if scope["path"].startswith(("/api/", "/v1/")) else FORM_BODY_MAX_BYTES
+        )
         declared = next(
             (value for name, value in scope["headers"] if name == b"content-length"), None
         )
@@ -766,6 +769,13 @@ def create_app(
         return {"status": "ok", "version": __version__}
 
     app.include_router(api_router(gateway))
+    if config.upstreams:
+        if gateway.jobs is None:
+            # no dispatcher (tests, embedded use): proxy spend still needs a job store
+            from agent_router.jobstore import open_jobstore
+
+            gateway.jobs = open_jobstore(config.storage, home, store)
+        app.include_router(proxy_router(gateway, Depends(require(gateway, "client"))))
     # Local import breaks the cycle: web uses the model and calibration function from api.
     from agent_router.web import web_router
 

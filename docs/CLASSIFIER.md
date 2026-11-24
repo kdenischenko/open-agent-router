@@ -4,9 +4,9 @@ The classifier reads a job's prompt and votes for its tier: `cheap`, `standard` 
 It is optional. Without it, the tier comes from the caller (`--tier`) or defaults to `standard`.
 
 A classifier is a model behind an HTTP endpoint. It can run on your machine (Ollama, LM Studio,
-a llama.cpp server) or at a cloud provider. You can configure several models at once. All of them
-vote on every job, one of them (`primary`) decides, and `agent-router classifier report` compares
-them against the tiers you confirm.
+Strata, a llama.cpp server) or at a cloud provider. You can configure several models at once. All
+of them vote on every job, one of them (`primary`) decides, and `agent-router classifier report`
+compares them against the tiers you confirm.
 
 ## Modes
 
@@ -94,8 +94,8 @@ model = "lfm3:1.7b-q4_K_M"
 timeout_s = 5
 ```
 
-**Local OpenAI-compatible server** (LM Studio, llama.cpp `llama-server`). The model name is the
-one the server lists in `/v1/models`.
+**Local OpenAI-compatible server** (LM Studio, Strata, llama.cpp `llama-server`). The model name
+is the one the server lists in `/v1/models`.
 
 ```toml
 [[classifier.models]]
@@ -105,6 +105,9 @@ url = "http://127.0.0.1:1234/v1"
 model = "<model name>"
 timeout_s = 5
 ```
+
+Strata serves the same API on its own port (`strata launch`, default `http://127.0.0.1:8080/v1`),
+so a second classifier is a copy of the block above with the Strata address and model id.
 
 **Cloud decision model** (`jev` in OpenCode Zen, billed by the provider).
 
