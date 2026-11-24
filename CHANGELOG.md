@@ -22,6 +22,9 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `tasks.allowed_roots` and `tasks.denied_roots` entries must be non-empty absolute paths after
+  `~` expansion, so `~/...` stays valid and portable while relative or empty entries are config
+  errors. Harness routes without a non-empty `pool`, `backend` and `model` are also rejected.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
 

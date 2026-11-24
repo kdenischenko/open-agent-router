@@ -106,13 +106,18 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    denied_roots = ["C:/work/projects/secret-repo"]
    ```
 
+   Each entry must be a non-empty absolute path after `~` expansion: `~/work` is valid
+   and portable, while a relative or empty entry is a config error. The lists themselves
+   may stay empty.
+
 2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
    others are commented out. Uncomment a route after you install its harness, and set
    `enabled = true` on the routes you want to use (`cline/glm-5.3` starts disabled, while
    `claude-cli/sonnet` starts enabled). Write the route model as the harness understands it:
    `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
    `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
-   the setup; see [SECURITY](../SECURITY.md).
+   the setup; see [SECURITY](../SECURITY.md). Every harness route needs a non-empty `pool`,
+   `backend` and `model`; a route with any of them missing or empty is a config error.
 
 3. **Harness not in PATH.** Specify the path explicitly:
 
