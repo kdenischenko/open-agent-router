@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `agent-router purge` retries directory removals that failed during an earlier run and also
+  sweeps orphaned `jobs/<job-id>/` directories older than the retention cutoff.
 - `tasks.allowed_roots` and `tasks.denied_roots` entries must be non-empty absolute paths after
   `~` expansion, so `~/...` stays valid and portable while relative or empty entries are config
   errors. Harness routes without a non-empty `pool`, `backend` and `model` are also rejected.

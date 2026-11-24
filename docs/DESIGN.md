@@ -350,6 +350,9 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
 snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
+Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with no `jobs` row)
+older than the cutoff — preferred over a deletion-marker schema because it needs no schema change
+and also cleans directories left behind by crashes or older versions.
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
