@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
+  requests.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
 

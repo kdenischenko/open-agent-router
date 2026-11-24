@@ -197,8 +197,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    timeout_s = 5
    ```
 
-   A model can have its own `min_confidence` and `live = false` (only for `classifier eval`). The
-   third kind, `openai`, talks to any OpenAI-compatible chat completions server. A model outside
+   Both local kinds (`systemone` and `ollama`) ask Ollama to keep the model loaded for 30 minutes.
+   Set `timeout_s` high enough to cover a cold model load, which can happen after a longer idle
+   period. A model can have its own `min_confidence` and `live = false` (only for `classifier eval`).
+   The third kind, `openai`, talks to any OpenAI-compatible chat completions server. A model outside
    loopback needs `url = "https://..."` and `api_key_env = "<VARIABLE>"`. Examples for every kind,
    the privacy note and measured results are in [CLASSIFIER.md](CLASSIFIER.md). The old
    single-model form (`kind`, `url`, `model`, and `timeout_s` directly in `[classifier]`) still

@@ -66,6 +66,7 @@ def test_request_has_systemone_shape(url: str) -> None:
     assert address == "http://localhost:11434/v1/systemone"
     assert timeout == 1.25
     assert body["model"] == "tev1-test"
+    assert body["keep_alive"] == "30m"
     assert body["state"] == {"prompt": "handle the task"}
     question = body["questions"]["tier"]
     assert question["type"] == "score"
