@@ -206,22 +206,37 @@ no point maps onto a window becomes `no_data`. Each pass publishes one event per
 failure. Events, results and reasons carry ids only: never keys or response bodies. Per pool the
 reader keeps `last_attempt_at`, `last_success_at` and `last_reason` in memory for display.
 
+After each successful source call the reader also compares the pool's `[pools.usage] windows`
+mapping with the mapped fields that produced valid observations. Per pool, `UsageReadState` keeps
+`missing_fields` — a sorted tuple of the mapped fields without a valid observation, `()` when none
+are missing — and a `format_changed` flag; returned fields the mapping does not use are ignored.
+This state is updated even when nothing maps and the read becomes `no_data`. The pass publishes
+`usage.fields_missing` with `{pool, source, fields}` only when the missing set changes to a
+non-empty one; when the fields come back, the state clears without a recovery event. Three
+consecutive failures with reason `malformed_response` or `no_data` set `format_changed` (from the
+third), and a successful read resets the streak.
+
 The snapshot reports both where a figure comes from and whether the reads behind it are fresh.
 Each window carries `figure_source`: `"auto"` when its latest observation came from the pool's
 usage source (the observation `source` equals the source spec's `observation_source`),
 `"manual"` for `source == "manual"`, and `"journal"` otherwise — no observation in the current
 window, a scheduled reset, or a collector that is neither. Each pool with `usage.source` carries
-a `usage` object — `{source, mode, last_attempt_at, last_success_at, last_error, age_s, stale}` —
-and pools without a source have `usage: null`. `stale` is true when the pool's effective mode is
-`auto` and no successful read is fresher than `2 * [usage].interval_s`, including never; the
-threshold lives in one helper (`agent_router.usage.is_stale`) so the dashboard, `status` and
-`doctor` agree. `doctor` additionally warns when the variable named by `api_key_env` (or the
-source spec's `default_api_key_env`) is missing from the environment, prints the warning of the
-spec's own `check` (for `claude-code`: a missing CLI or a CLI that is not signed in), and when a
-pool is in
-auto mode without a `source` — but only when the pool's own `[pools.usage]` sets
-`mode = "auto"` or the config has a `[usage]` table, so configs that never mention usage stay
-quiet.
+a `usage` object — `{source, mode, last_attempt_at, last_success_at, last_error, age_s, stale,
+missing_fields, format_changed}` — and pools without a source have `usage: null`. `stale` is true
+when the pool's effective mode is `auto` and no successful read is fresher than
+`2 * [usage].interval_s`, including never; the threshold lives in one helper
+(`agent_router.usage.is_stale`) so the dashboard, `status` and `doctor` agree. `doctor` additionally
+warns when the variable named by `api_key_env` (or the source spec's `default_api_key_env`) is
+missing from the environment, prints the warning of the spec's own `check` (for `claude-code`: a
+missing CLI or a CLI that is not signed in), and when a pool is in auto mode without a `source` —
+but only when the pool's own `[pools.usage]` sets `mode = "auto"` or the config has a `[usage]`
+table, so configs that never mention usage stay quiet. The dashboard and `doctor` also warn on
+usage-source drift: one warning per missing mapped field — `usage source <source> no longer reports
+<field>; window <window> falls back to the journal; update agent-router or switch the pool to
+mode = "manual" and calibrate` — and, when `format_changed` is set, `usage source <source> response
+format may have changed; update agent-router or switch the pool to mode = "manual" and calibrate`.
+`doctor` prefixes both with `Warning: pool <id>: `; the dashboard pool card shows the same texts.
+Pools in manual mode do not show these drift warnings.
 
 Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise it is estimated
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —

@@ -41,6 +41,7 @@ from agent_router.registry import (
 from agent_router.runner import ResolvedExecutable, resolve_executable
 from agent_router.settings_store import SqliteSettings
 from agent_router.store import open_store
+from agent_router.usage_reader import usage_drift_warnings
 
 app = typer.Typer(no_args_is_help=True)
 _OLLAMA_TIMEOUT_S = 5.0
@@ -597,10 +598,20 @@ def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
     if not any(pool.usage.source is not None for pool in config.pools):
         return
     snapshot = _request(lambda: client.get("/api/v1/snapshot"))
+    configured = {pool.id: pool for pool in config.pools}
     for pool in snapshot.get("pools", []):
         info = pool.get("usage")
         if info is None:
             continue
+        settings = configured.get(pool["id"])
+        if settings is not None and info["mode"] != "manual":
+            for warning in usage_drift_warnings(
+                info["source"],
+                info.get("missing_fields", []),
+                info.get("format_changed", False),
+                settings.usage.windows,
+            ):
+                typer.echo(f"Warning: pool {pool['id']}: {warning}")
         if info.get("last_error"):
             typer.echo(f"Warning: pool {pool['id']}: last usage read failed: {info['last_error']}")
         if not info.get("stale"):

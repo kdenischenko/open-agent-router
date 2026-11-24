@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
+from html import unescape
 
 import pytest
 
+from agent_router.config_model import PoolUsage
 from test_web_dashboard import csrf_from, pool_json, window_json
 from test_web_layout import rig, web
 
@@ -52,6 +55,53 @@ def show_limits(web, rig, monkeypatch, pools, path="/"):
     response = web.get(path)
     assert response.status_code == 200
     return response
+
+
+@pytest.mark.parametrize("path", PATHS)
+def test_pool_card_shows_missing_field_and_format_change_warnings(web, rig, monkeypatch, path):
+    gateway = rig.app.state.gateway
+    pool = replace(
+        gateway.config.pools[0],
+        usage=PoolUsage(source="opencode-go", windows={"monthly": "week"}),
+    )
+    monkeypatch.setattr(
+        gateway, "config", replace(gateway.config, pools=(pool, *gateway.config.pools[1:]))
+    )
+    usage = USAGE | {
+        "last_error": None,
+        "stale": False,
+        "missing_fields": ["monthly"],
+        "format_changed": True,
+    }
+
+    text = show_limits(
+        web, rig, monkeypatch, [pool_json(window_json()) | {"usage": usage}], path
+    ).text
+
+    card = unescape(class_block(text, "limit-card"))
+    hint = 'update agent-router or switch the pool to mode = "manual" and calibrate'
+    assert (
+        "usage source opencode-go no longer reports monthly; window week falls back to the "
+        f"journal; {hint}" in card
+    )
+    assert f"usage source opencode-go response format may have changed; {hint}" in card
+    assert card.count('class="limit-note usage-drift"') == 2
+    assert "approval-badge approval-badge--warn" in class_block(card, "usage-drift")
+
+
+def test_manual_pool_card_hides_usage_drift_warnings(web, rig, monkeypatch):
+    usage = USAGE | {
+        "mode": "manual",
+        "last_error": None,
+        "stale": False,
+        "missing_fields": ["monthly"],
+        "format_changed": True,
+    }
+
+    text = show_limits(web, rig, monkeypatch, [pool_json(window_json()) | {"usage": usage}]).text
+
+    assert "usage-drift" not in text
+    assert "response format may have changed" not in text
 
 
 @pytest.mark.parametrize("path", PATHS)

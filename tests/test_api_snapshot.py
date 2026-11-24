@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from agent_router import __version__
 from agent_router.api import create_app
+from agent_router.config_model import PoolUsage
 from agent_router.events import EventBus
 from agent_router.policy import PoolBlock
 from agent_router.service import (
@@ -20,6 +21,7 @@ from agent_router.service import (
     snapshot_json,
 )
 from agent_router.store import CounterSample, Observation
+from agent_router.usage_reader import UsageReadState
 from helpers import BASE_URL, bearer, full_config_text, read_only_route, write_config
 
 POOL_FIELDS = {
@@ -37,6 +39,17 @@ POOL_FIELDS = {
     "counter_sampled_at",
     "usage",
     "windows",
+}
+USAGE_FIELDS = {
+    "source",
+    "mode",
+    "last_attempt_at",
+    "last_success_at",
+    "last_error",
+    "age_s",
+    "stale",
+    "missing_fields",
+    "format_changed",
 }
 WINDOW_FIELDS = {
     "id",
@@ -113,6 +126,24 @@ def test_snapshot_has_three_pools_and_fields(client, tokens, clock):
             assert set(window) == WINDOW_FIELDS
             assert window["known"] is False and window["note"]
     assert [window["id"] for window in body["pools"][2]["windows"]] == ["5h", "week", "month"]
+
+
+def test_snapshot_usage_has_exact_fields_and_drift_state(config, store, clock):
+    pool = replace(
+        config.pools[0],
+        usage=PoolUsage(source="fake-usage", windows={"monthly": "week"}),
+    )
+    configured = replace(config, pools=(pool, *config.pools[1:]))
+    snapshot = build_snapshot(configured, store, clock.now(), UTC)
+    state = UsageReadState(pool.id, missing_fields=("monthly",), format_changed=True)
+
+    usage = snapshot_json(snapshot, store, config=configured, usage_states={pool.id: state})[
+        "pools"
+    ][0]["usage"]
+
+    assert set(usage) == USAGE_FIELDS
+    assert usage["missing_fields"] == ["monthly"]
+    assert usage["format_changed"] is True
 
 
 def test_snapshot_window_has_anchored_flag(config, store, clock):

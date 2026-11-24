@@ -221,6 +221,8 @@ def _usage_json(
         "age_s": age,
         # auto mode promises reads on the interval; no success within two intervals is stale
         "stale": mode == "auto" and is_stale(state, now, settings.interval_s),
+        "missing_fields": list(() if state is None else state.missing_fields),
+        "format_changed": False if state is None else state.format_changed,
     }
 
 

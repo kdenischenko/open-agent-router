@@ -330,7 +330,15 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
     the terminal that runs `doctor`; for `claude-code`, a CLI that cannot be found or is not
     signed in; a pool whose last read failed; stale data; and `auto` mode
-    without a `source` on a pool that has one. See
+    without a `source` on a pool that has one. Two more warnings cover usage-source drift: one per
+    mapped field the source stopped returning (`usage source <source> no longer reports <field>;
+    window <window> falls back to the journal; update agent-router or switch the pool to mode =
+    "manual" and calibrate`), and one after three consecutive `malformed_response`/`no_data`
+    reads (`usage source <source> response format may have changed; update agent-router or switch
+    the pool to mode = "manual" and calibrate`); the dashboard pool card shows the same texts.
+    Both mean the vendor's answers no longer match what this agent-router version expects: update
+    agent-router to a version that understands the new shape, or switch the pool to
+    `mode = "manual"` in `[pools.usage]` and calibrate its windows by hand until then. See
     [TROUBLESHOOTING.md](TROUBLESHOOTING.md#usage-sources-do-not-refresh) for the fixes.
 
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or

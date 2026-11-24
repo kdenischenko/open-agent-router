@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A usage read that stops returning a mapped field, or fails with `malformed_response`/`no_data`
+  three times in a row, is surfaced as usage-source drift: the snapshot `usage` object gains
+  `missing_fields` and `format_changed`, the reader publishes `usage.fields_missing` when the
+  missing set changes, and the dashboard and `doctor` warn with the remediation
+  (`update agent-router or switch the pool to mode = "manual" and calibrate`).
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw

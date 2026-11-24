@@ -155,6 +155,29 @@ yet`)**
 - Give it a source (`source = "opencode-go"` with the `windows` mapping), or set
   `mode = "manual"` on the pool, or remove the `[usage]` table when no pool uses a source.
 
+**`Warning: pool <id>: usage source <source> no longer reports <field>; window <window> falls
+back to the journal; update agent-router or switch the pool to mode = "manual" and calibrate`**
+
+- The source answered, but the read no longer contains a field the pool's `[pools.usage] windows`
+  mapping expects. The mapped window keeps its last observation or journal figure until a
+  calibration or a read that reports the field again refreshes it. Fields the source returns that
+  the mapping does not use are ignored and never warn.
+- The vendor renamed or removed a meter (for example after a plan change). Update agent-router to
+  a version that understands the new fields.
+- Or switch the pool to `mode = "manual"` in `[pools.usage]` and record the usage yourself with
+  `agent-router calibrate <pool> <window> <percent>` until you update.
+
+**`Warning: pool <id>: usage source <source> response format may have changed; update
+agent-router or switch the pool to mode = "manual" and calibrate`**
+
+- Three reads in a row failed with `malformed_response` or `no_data`, the pattern the reader
+  interprets as a changed response format; a single failed read does not set it, and a successful
+  read resets the count.
+- Try `agent-router usage refresh <pool>` once: if the read succeeds, the flag was a transient
+  outage and clears on its own. If it keeps failing, the vendor's endpoint answered in a shape
+  this agent-router version does not understand — update agent-router, or switch the pool to
+  `mode = "manual"` and calibrate until then.
+
 ## Still stuck
 
 Open an issue with the output of `agent-router doctor` and the failing command. Remove paths,

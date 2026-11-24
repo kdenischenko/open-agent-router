@@ -25,6 +25,9 @@
         <span class="limit-stale approval-badge approval-badge--warn">stale</span>
         {%- endif %}
       </p>
+      {% for warning in usage_warnings.get(pool.id, []) %}
+      <p class="limit-note usage-drift"><span class="approval-badge approval-badge--warn">warning</span> {{ warning }}</p>
+      {% endfor %}
       {% endif %}
       {% if pool.block %}
       <div class="limit-block">
