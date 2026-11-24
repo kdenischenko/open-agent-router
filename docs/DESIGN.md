@@ -181,11 +181,12 @@ running `claude -p /usage --setting-sources "" --strict-mcp-config --output-form
 killed on Windows and POSIX) and taking `usage_report.rate_limits.limits[]` from the synthetic
 message whose `local_command_run.command` is `usage`: `kind` is the field, `percent / 100` the
 fraction, `resets_at` the reset. Rows with another `kind`, a percent outside 0..100 or a
-malformed reset are skipped. Its reason codes are `not_found` (no CLI), `timeout`,
-`unauthorized` (the CLI is not signed in, checked with `claude auth status --json` when the
-message has no `usage_report`, or `rate_limits_available` is false), `rate_limited` (the CLI
-says the usage endpoint is rate limited) and `malformed_response` (no `usage_report` or no usable
-row). A non-synthetic assistant message means the prompt reached the model: the source stops the
+malformed reset are skipped. Its reason codes are `not_found` (no CLI), `timeout` (no valid report
+was parsed before the process timed out), `unauthorized` (the CLI is not signed in, checked with
+`claude auth status --json` when the message has no `usage_report`, or `rate_limits_available` is
+false), `rate_limited` (the CLI says the usage endpoint is rate limited) and `malformed_response`
+(no `usage_report` or no usable row). A process failure after a valid report keeps the points and
+adds a warning instead of a failure reason. A non-synthetic assistant message means the prompt reached the model: the source stops the
 process and reports `malformed_response`. The source never reads the Claude Code credentials
 and never passes a token; the CLI uses the user's own `claude auth login`. The CLI path is
 `claude` from `PATH` unless the pool sets `[pools.usage] executable`.
@@ -201,18 +202,19 @@ in one step, so a refresh arriving while another one reads the same pool is skip
 `agent-router usage refresh [POOL]` command, and the **Refresh limits** buttons of the dashboard.
 Each read writes its observations through the same path as a calibration and runs the same
 out-of-schedule counter check; a source exception becomes the reason `error`, and a read in which
-no point maps onto a window becomes `no_data`. Each pass publishes one event per pool on the bus: `usage.read` with
-`{pool, source, windows}` on success, `usage.read_failed` with `{pool, source, reason}` on
-failure. Events, results and reasons carry ids only: never keys or response bodies. Per pool the
-reader keeps `last_attempt_at`, `last_success_at` and `last_reason` in memory for display.
+no point maps onto a window becomes `no_data`. Each pass publishes one event per pool on the bus:
+`usage.read` with `{pool, source, windows}` and an optional `warning` on success,
+`usage.read_failed` with `{pool, source, reason}` on failure. Events and results carry ids, reason
+codes and fixed warning messages: never keys or response bodies. Per pool the reader keeps
+`last_attempt_at`, `last_success_at`, `last_reason` and `last_warning` in memory for display.
 
 The snapshot reports both where a figure comes from and whether the reads behind it are fresh.
 Each window carries `figure_source`: `"auto"` when its latest observation came from the pool's
 usage source (the observation `source` equals the source spec's `observation_source`),
 `"manual"` for `source == "manual"`, and `"journal"` otherwise — no observation in the current
 window, a scheduled reset, or a collector that is neither. Each pool with `usage.source` carries
-a `usage` object — `{source, mode, last_attempt_at, last_success_at, last_error, age_s, stale}` —
-and pools without a source have `usage: null`. `stale` is true when the pool's effective mode is
+a `usage` object — `{source, mode, last_attempt_at, last_success_at, last_error, warning, age_s,
+stale}` — and pools without a source have `usage: null`. `warning` is a string or null. `stale` is true when the pool's effective mode is
 `auto` and no successful read is fresher than `2 * [usage].interval_s`, including never; the
 threshold lives in one helper (`agent_router.usage.is_stale`) so the dashboard, `status` and
 `doctor` agree. `doctor` additionally warns when the variable named by `api_key_env` (or the

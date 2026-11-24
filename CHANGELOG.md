@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
+  shown by `agent-router status`, `doctor` and the dashboard pool card.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
 

@@ -16,7 +16,7 @@ place to start.
 
 - **Live check of the Claude Code adapter.** It is covered by tests with recorded output only.
 - **More harnesses**, such as Codex CLI, and more pools, such as DeepSeek.
-- **Automatic usage collection** for Claude, Kimi Code and Cline, so that pools need less manual
+- **Automatic usage collection** for Kimi Code and Cline, so that pools need less manual
   calibration. The OpenCode Go plan is already read from its usage endpoint.
 
 ## Routing

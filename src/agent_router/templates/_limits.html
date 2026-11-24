@@ -21,6 +21,8 @@
         {%- endif %}
         {%- if pool.usage.last_error %} · last read failed: {{ pool.usage.last_error }}
         {%- endif %}
+        {%- if pool.usage.warning %} · warning: {{ pool.usage.warning }}
+        {%- endif %}
         {%- if pool.usage.stale %}
         <span class="limit-stale approval-badge approval-badge--warn">stale</span>
         {%- endif %}
