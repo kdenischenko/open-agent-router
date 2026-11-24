@@ -81,6 +81,8 @@ role = "pace"
 [[routes]]
 id = "route"
 pool = "auto-pool"
+backend = "kimi"
+model = "m"
 tiers = ["standard"]
 quality = 3
 """

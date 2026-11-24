@@ -258,8 +258,9 @@ option.
 
 Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
 then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and
-awaiting-approval jobs are never purged, and `serve` does not purge automatically. Check the count
-first with `agent-router purge --dry-run`.
+awaiting-approval jobs are never purged, and `serve` does not purge automatically. Purge also
+removes leftover job directories from earlier failed removals or crashes. Check the count first
+with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).

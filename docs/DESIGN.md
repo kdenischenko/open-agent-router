@@ -26,8 +26,10 @@ delegated to a harness.
   model weights, a reserve, and levers (`priority`, `weight`). Several routes may spend one pool.
 - **Window** — a quota window inside a pool: `duration` (for example `5h`, `7d`, `1mo`), a kind
   (`fixed` — resets at a known or anchored moment, or `rolling`), a role (`pace` — drives
-  scheduling; `guard` — only blocks; rolling windows cannot be `pace`), and `block_at`, the used
-  fraction at which the pool stops serving.
+  scheduling; `guard` — only blocks; rolling windows cannot be `pace`), `block_at`, the used
+  fraction at which the pool stops serving, and an optional `max_age` — a span like `75m`, `3h`
+  or `2d` — after which a fixed observation is treated as "no data" (default: half the window
+  duration, capped at 72 h).
 - **Route** — a `pool` + `backend` + `model` triple with `tiers`, `quality` (1–5), `modes`,
   `confirm`, `enabled`, and optional per-route levers. The route `kind` is `harness`.
 - **Tier** — job difficulty: `cheap`, `standard`, or `strong` (in that order).
@@ -229,7 +231,15 @@ Cost is exact when the harness reports it (`cost_estimated = false`). Otherwise 
 from the pool's `price_file` — a TOML table `"<model>" = [in, out]` in USD per 1M tokens —
 multiplied by the model weight `limit_base_usd / model_limits[model]`, and tagged with the price
 file's content version. Rolling-window observations older than the window are treated as "no
-data"; exhausted-at-`block_at` windows block the pool. A fixed-window observation without
+data"; exhausted-at-`block_at` windows block the pool. A fixed window also has a staleness rule:
+an observation older than the window's `max_age` is treated as "no data" with the note
+`no data: observation older than max age`, while `observed_at` and `resets_at` stay on the window
+when they are known. `max_age` is a span (`75m`, `3h`, `2d`); without one the gateway uses half
+the window duration, capped at 72 h (`5h` → `2h30m`, `7d` → `72h`, `1mo` → `72h`). The rule
+applies to manual calibrations as much as to source reads, and the note surfaces in the snapshot,
+in `advice` route choices and in the decision candidates stored with a job. A scheduled reset is
+different: when its reset time has passed the ledger derives a fresh zero-usage window from it
+and the observation is not discarded merely for being old. A fixed-window observation without
 `resets_at` keeps the latest reset time an earlier observation of that window reported, moved
 forward by whole windows; without one it falls back to the window `anchor`.
 
@@ -313,7 +323,9 @@ Adapters (`adapters/`) build argv/stdin and parse output:
 
 - **kimi** — `kimi -p <text> -m <model> --output-format stream-json`; prompt in argv (or a prompt
   file); read mode is enforced by the preamble only; NDJSON events, last assistant message is
-  the answer; spend source `journal`; `quiet_while_working`, so a silent answer is not idle.
+  the answer; input and output tokens are summed from `usage.record` events in every agent's
+  `wire.jsonl` under the session directory in `~/.kimi-code`, including subagents; spend source
+  `journal`; `quiet_while_working`, so a silent answer is not idle.
 - **claude** — `claude -p --output-format stream-json --verbose --model <m> --permission-mode
   <mode> --setting-sources project --strict-mcp-config`, prompt via stdin; read maps to
   `plan`, write to `bypassPermissions`. The isolation flags keep the user's settings, hooks,
@@ -340,6 +352,9 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
 snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
+Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with no `jobs` row)
+older than the cutoff — preferred over a deletion-marker schema because it needs no schema change
+and also cleans directories left behind by crashes or older versions.
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
