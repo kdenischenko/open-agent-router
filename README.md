@@ -180,11 +180,16 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 - **Home** — jobs waiting for your approval come first, with Approve and Deny. Below them
   is one card per pool: usage, expected pace, reset countdown, data age and figure source for
   each window, including stale and blocked states, with a **Refresh limits** button for pools
-  that have a usage source. The full limits table stays under a disclosure, followed by the
-  routes each tier would take right now.
+  that have a usage source. Each card also charts journal spend over the last 24 hours and
+  seven days, in USD or tokens, with the same numbers in accessible tables. The full limits
+  table stays under a disclosure, followed by the routes each tier would take right now.
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.
+- **New job** — a form linked from the Jobs page: working directory, `read`/`write` mode, an optional
+  tier (empty lets the gateway decide), the prompt and an optional timeout. It works without JavaScript,
+  shows validation errors beside the fields while keeping your values, and on success redirects to the
+  new job's page; a route with `confirm = true` still waits for approval before the job runs.
 - **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
   totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
   in expandable blocks with copy buttons; lets you rate a finished job.

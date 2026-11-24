@@ -16,6 +16,7 @@ from agent_router.config import TIERS, ClassifierModel, ClassifierSettings, Tier
 from agent_router.jobs import Vote
 
 _INSTRUCTIONS = "Which model tier is required to complete the task in `prompt`?"
+_KEEP_ALIVE = "30m"
 _CRITERIA = [
     "cheap: A simple, routine task for which a low-cost model is sufficient.",
     "standard: A task requiring ordinary reasoning, coding, or several steps.",
@@ -85,6 +86,7 @@ def classify(
         return None
     body = {
         "model": settings.model,
+        "keep_alive": _KEEP_ALIVE,
         "state": {"prompt": _prompt(prompt)},
         "questions": {
             "tier": {
@@ -144,6 +146,7 @@ def _systemone_answer(
 ) -> tuple[Tier | None, float | None, str | None]:
     body = {
         "model": m.model,
+        "keep_alive": _KEEP_ALIVE,
         "state": {"prompt": _prompt(prompt)},
         "questions": {
             "tier": {
@@ -217,7 +220,7 @@ def _ollama_answer(
         "model": m.model,
         "stream": False,
         "think": False,
-        "keep_alive": "30m",
+        "keep_alive": _KEEP_ALIVE,
         "options": {"temperature": 0, "num_ctx": 4096},
         "format": _OLLAMA_FORMAT,
         "messages": [

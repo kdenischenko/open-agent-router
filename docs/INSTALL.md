@@ -175,10 +175,23 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    session length (default 30, from 1 to 365). Signing out of the dashboard or changing `admin.token`
    immediately signs out all browsers.
 
+   Each pool card on the Limits page includes spend history from the journal: hourly buckets for
+   the last 24 hours and local-calendar-day buckets for the last seven days. USD pools show cost;
+   other pools show input plus output tokens. Estimated buckets are marked, and every inline SVG
+   chart has an adjacent table with the same values. A pool without journal entries shows
+   `no spend recorded`.
+
    The **Settings** page at `/settings` shows the loaded pools and windows, all routes including
    disabled ones, caller mappings, and configuration-related `doctor` findings with hints. It is
    read-only and works without JavaScript. Only environment variable names are displayed, never
    their values, gateway tokens or other secrets.
+
+   You can also submit a job from the dashboard: the **New job** page at `/jobs/new`, linked from
+   the Jobs page, takes a working directory, a `read` or `write` mode, an optional tier (leave it
+   empty to let the gateway choose), the prompt and an optional timeout in seconds. The form works
+   without JavaScript, shows validation errors beside the fields while keeping the entered values,
+   and redirects to the job page on success; with `confirm = true` on the chosen route, the job
+   still waits for your approval.
 
    ```toml
    [server]
@@ -211,8 +224,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    timeout_s = 5
    ```
 
-   A model can have its own `min_confidence` and `live = false` (only for `classifier eval`). The
-   third kind, `openai`, talks to any OpenAI-compatible chat completions server. A model outside
+   Both local kinds (`systemone` and `ollama`) ask Ollama to keep the model loaded for 30 minutes.
+   Set `timeout_s` high enough to cover a cold model load, which can happen after a longer idle
+   period. A model can have its own `min_confidence` and `live = false` (only for `classifier eval`).
+   The third kind, `openai`, talks to any OpenAI-compatible chat completions server. A model outside
    loopback needs `url = "https://..."` and `api_key_env = "<VARIABLE>"`. Examples for every kind,
    the privacy note and measured results are in [CLASSIFIER.md](CLASSIFIER.md). The old
    single-model form (`kind`, `url`, `model`, and `timeout_s` directly in `[classifier]`) still
@@ -365,6 +380,41 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
+
+### Keeping writes inside the job directory
+
+`allowed_roots` controls where a job starts, not where its harness can write. The gateway asks every
+harness in the prompt to work only inside that directory, but this is not a security boundary.
+
+**Kimi Code.** The gateway runs `kimi -p` non-interactively, with no separate write-mode approval
+flag. When the prompt is passed by file, it also passes `--add-dir` for the prompt file's directory
+(`jobs/<job id>/` under the gateway home); this adds a workspace directory rather than restricting
+access to it. Kimi Code has no documented setting the gateway knows of that restricts or asks before
+writes outside the working directory; see the harness's documentation.
+
+**OpenCode.** Write jobs pass `--auto`, which auto-approves permissions that are not explicitly
+denied. Add this rule to `opencode.json` to deny access outside its working directories:
+
+```json
+{
+  "permission": {
+    "external_directory": "deny"
+  }
+}
+```
+
+Use `deny`, not `ask`, for unattended gateway write jobs: `--auto` can approve a permission that is
+not explicitly denied.
+
+**Cline.** Write jobs pass `--auto-approve true`, which enables tool auto-approval for all tools.
+Cline has no documented setting the gateway knows of that restricts or asks before writes outside
+the working directory; see the harness's documentation.
+
+**Claude Code.** Write jobs pass `--permission-mode bypassPermissions` and load only project
+settings. Claude Code's `--restricted` option confines file tools to its working directories, but
+it refuses `bypassPermissions`, so it cannot be combined with the gateway's current write jobs.
+The gateway knows no documented setting that confines writes while `bypassPermissions` is in use;
+see the harness's documentation.
 
 ## 5. Start the gateway
 

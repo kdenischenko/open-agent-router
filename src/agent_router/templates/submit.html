@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+{% if error %}<p class="flash flash--danger" role="alert"><span class="flash__prefix">Error:</span> {{ error }}</p>{% endif %}
+<form method="post" action="/jobs/new" class="panel submit-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="cwd">Working directory</label>
+  <input id="cwd" name="cwd" type="text" required value="{{ values.get('cwd', '') }}" aria-describedby="cwd-hint{% if errors.get('cwd') %} cwd-error{% endif %}"{% if errors.get('cwd') %} aria-invalid="true"{% endif %}>
+  <p id="cwd-hint" class="hint">An absolute path inside tasks.allowed_roots.</p>
+  <p id="cwd-error" class="field-error"{% if not errors.get('cwd') %} hidden{% endif %}>{{ errors.get('cwd', '') }}</p>
+
+  <label for="mode">Mode</label>
+  <select id="mode" name="mode" aria-describedby="mode-hint{% if errors.get('mode') %} mode-error{% endif %}"{% if errors.get('mode') %} aria-invalid="true"{% endif %}>
+    {% if values.get('mode') and values.get('mode') not in modes %}
+    <option value="{{ values.get('mode') }}" selected>{{ values.get('mode') }}</option>
+    {% endif %}
+    {% for mode in modes %}
+    <option value="{{ mode }}"{% if values.get('mode', 'read') == mode %} selected{% endif %}>{{ mode }}</option>
+    {% endfor %}
+  </select>
+  <p id="mode-hint" class="hint">Write mode requires a directory inside a git working tree.</p>
+  <p id="mode-error" class="field-error"{% if not errors.get('mode') %} hidden{% endif %}>{{ errors.get('mode', '') }}</p>
+
+  <label for="tier">Tier</label>
+  <select id="tier" name="tier" aria-describedby="tier-hint{% if errors.get('tier') %} tier-error{% endif %}"{% if errors.get('tier') %} aria-invalid="true"{% endif %}>
+    {% if values.get('tier') and values.get('tier') not in tiers %}
+    <option value="{{ values.get('tier') }}" selected>{{ values.get('tier') }}</option>
+    {% endif %}
+    <option value=""{% if not values.get('tier') %} selected{% endif %}>Gateway default</option>
+    {% for tier in tiers %}
+    <option value="{{ tier }}"{% if values.get('tier') == tier %} selected{% endif %}>{{ tier }}</option>
+    {% endfor %}
+  </select>
+  <p id="tier-hint" class="hint">Leave empty to use the gateway default.</p>
+  <p id="tier-error" class="field-error"{% if not errors.get('tier') %} hidden{% endif %}>{{ errors.get('tier', '') }}</p>
+
+  <label for="prompt">Prompt</label>
+  <textarea id="prompt" name="prompt" rows="10" required aria-describedby="prompt-hint{% if errors.get('prompt') %} prompt-error{% endif %}"{% if errors.get('prompt') %} aria-invalid="true"{% endif %}>{{ values.get('prompt', '') }}</textarea>
+  <p id="prompt-hint" class="hint">The task for the coding agent.</p>
+  <p id="prompt-error" class="field-error"{% if not errors.get('prompt') %} hidden{% endif %}>{{ errors.get('prompt', '') }}</p>
+
+  <label for="timeout_s">Timeout, seconds (optional)</label>
+  <input id="timeout_s" name="timeout_s" type="number" min="30" max="7200" step="1" value="{{ values.get('timeout_s', '') }}" aria-describedby="timeout_s-hint{% if errors.get('timeout_s') %} timeout_s-error{% endif %}"{% if errors.get('timeout_s') %} aria-invalid="true"{% endif %}>
+  <p id="timeout_s-hint" class="hint">Leave empty to use the route or gateway default.</p>
+  <p id="timeout_s-error" class="field-error"{% if not errors.get('timeout_s') %} hidden{% endif %}>{{ errors.get('timeout_s', '') }}</p>
+
+  <button type="submit">Submit job</button>
+</form>
+{% endblock %}

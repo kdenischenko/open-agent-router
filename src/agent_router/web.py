@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hmac
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
@@ -19,7 +19,7 @@ from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
 from agent_router.diagnostics import doctor_findings
-from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
+from agent_router.jobs import MODES, STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 from agent_router.usage_reader import UnknownPoolError, usage_drift_warnings
@@ -385,15 +385,82 @@ def web_router(deps: Gateway) -> APIRouter:
                 warnings[pool["id"]] = messages
         return warnings
 
+    def spend_chart(pool, chart_id: str, title: str, starts: list[datetime], end: datetime) -> dict:
+        rows = deps.jobs.spend_buckets(pool.id, starts, end)
+        by_start = {row.start: row for row in rows}
+        buckets = []
+        values = []
+        for start in starts:
+            row = by_start.get(start)
+            value = 0.0 if row is None else row.cost_usd if pool.unit == "usd" else row.tokens
+            values.append(value)
+            displayed = f"{value:.2f} USD" if pool.unit == "usd" else f"{int(value)} tokens"
+            label = (
+                local(start) if chart_id == "day" else start.astimezone(deps.tz).strftime("%d.%m")
+            )
+            buckets.append(
+                {
+                    "label": label,
+                    "iso": start.isoformat(),
+                    "value": displayed,
+                    "estimated": row is not None and row.estimated,
+                }
+            )
+        slot = 600 / len(starts)
+        peak = max(values, default=0)
+        bars = []
+        for index, value in enumerate(values):
+            if value <= 0:
+                continue
+            height = 100 * value / peak
+            bars.append(
+                {
+                    "x": f"{index * slot + 1:.2f}",
+                    "y": f"{110 - height:.2f}",
+                    "width": f"{slot - 2:.2f}",
+                    "height": f"{height:.2f}",
+                }
+            )
+        total = f"{sum(values):.2f} USD" if pool.unit == "usd" else f"{int(sum(values))} tokens"
+        estimated = any(row.estimated for row in rows)
+        return {
+            "id": chart_id,
+            "title": title,
+            "aria_label": f"{pool.title}, {title}: {total}{', estimated' if estimated else ''}",
+            "total": total,
+            "estimated": estimated,
+            "buckets": buckets,
+            "bars": bars,
+            "has_data": bool(rows),
+        }
+
+    def spend_charts(now: datetime) -> dict[str, list[dict] | None]:
+        if deps.jobs is None:
+            return {}
+        result = {}
+        day_starts = [now - timedelta(hours=24 - index) for index in range(24)]
+        local_now = now.astimezone(deps.tz)
+        today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_starts = [today - timedelta(days=6 - index) for index in range(7)]
+        for pool in deps.config.pools:
+            charts = [
+                spend_chart(pool, "day", "Last 24 hours", day_starts, now),
+                spend_chart(pool, "week", "Last 7 days", week_starts, now),
+            ]
+            result[pool.id] = charts if any(chart["has_data"] for chart in charts) else None
+        return result
+
     def limits_context(request: Request, snapshot: dict) -> dict:
+        now = deps.clock.now()
         return {
             "pools": snapshot["pools"],
             "local": local,
-            "now": deps.clock.now(),
+            "now": now,
             "stale_after_s": LIMIT_STALE_AFTER_S,
             "recorded_pool": recorded_pool(request),
             "usage_refresh": usage_refresh_pools(),
             "usage_warnings": usage_warnings(snapshot),
+            "spend_charts": spend_charts(now),
         }
 
     def advice_context(snapshot: dict) -> dict:
@@ -495,6 +562,89 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         return jobs_page(request, sid, job_list(request))
+
+    submit_error_fields = {
+        "bad_prompt": "prompt",
+        "bad_mode": "mode",
+        "bad_tier": "tier",
+        "bad_timeout": "timeout_s",
+        "cwd_not_allowed": "cwd",
+        "not_a_git_repo": "cwd",
+        "git_unavailable": "cwd",
+    }
+
+    def submit_page(
+        request: Request,
+        sid: str,
+        *,
+        error: str | None = None,
+        errors: dict[str, str] | None = None,
+        values: dict[str, str] | None = None,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        return render_page(
+            request,
+            "submit.html",
+            {
+                "title": "New job",
+                "error": error,
+                "errors": errors or {},
+                "values": values or {"mode": "read"},
+                "modes": MODES,
+                "tiers": TIERS,
+            },
+            sid=sid,
+            nav="jobs",
+            status_code=status_code,
+        )
+
+    @router.get("/jobs/new")
+    def get_job_submit(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        return submit_page(request, sid)
+
+    @router.post("/jobs/new")
+    async def post_job_submit(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        values = {
+            name: _field(form, name) for name in ("cwd", "mode", "tier", "prompt", "timeout_s")
+        }
+        raw_timeout = values["timeout_s"]
+        try:
+            timeout_s = int(raw_timeout) if raw_timeout else None
+        except ValueError:
+            timeout_s = raw_timeout
+        try:
+            job = api.submit_job(
+                deps,
+                api.JobBody(
+                    prompt=values["prompt"],
+                    cwd=values["cwd"],
+                    mode=values["mode"],
+                    tier=values["tier"] or None,
+                    timeout_s=timeout_s,
+                ),
+            )
+        except api.ApiError as exc:
+            field = submit_error_fields.get(exc.code)
+            return submit_page(
+                request,
+                sid,
+                error="check the job field values" if field else exc.message,
+                errors={field: exc.message} if field else {},
+                values=values,
+                status_code=exc.status,
+            )
+        return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
     @router.get("/fragments/jobs")
     def get_jobs_fragment(request: Request) -> Response:
