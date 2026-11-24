@@ -21,8 +21,9 @@ been checked live there.
 | Cline CLI | `cline` or `cline-cli` | `cline auth <provider>` sets the provider (OpenCode Go here), key and model; see the [official Cline CLI documentation](https://docs.cline.bot/usage/cli-overview) | `opencode-go` |
 | Claude Code | `claude` | Sign in with a subscription | `claude-pro` |
 
-Check that each command responds to `--version`. The gateway does not store or pass keys. It starts
-harnesses, and they access models using their own authentication.
+Check that each command responds to `--version`. Harness jobs need no provider keys in the
+gateway: it starts harnesses, and they access models using their own authentication. Optional
+usage sources and remote classifiers read their own keys from configured environment variables.
 
 ## 1. Download and build
 
