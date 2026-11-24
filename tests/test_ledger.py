@@ -57,6 +57,35 @@ def test_fixed_reset_ahead_uses_observation(store):
     assert (state.pool, state.window) == ("p", "week")
 
 
+def test_fixed_observation_older_than_max_age_is_unknown(store):
+    w = win()
+    observed_at = NOW - timedelta(days=4)
+    reset = NOW + hours(1)
+    observe(store, w, 0.1, observed_at, resets=reset)
+    state = window_state(make_pool(w), w, store, NOW)
+    assert state.known is False
+    assert state.used is None and state.source is None
+    assert state.note == "no data: observation older than max age"
+    assert state.observed_at == observed_at
+    assert state.resets_at == reset
+    assert state.window_start == reset - timedelta(days=7)
+
+
+def test_fixed_observation_within_default_max_age_is_used(store):
+    w = win()
+    observed_at = NOW - timedelta(days=2)
+    reset = NOW + hours(1)
+    observe(store, w, 0.38, observed_at, resets=reset, source="claude_statusline")
+    state = window_state(make_pool(w), w, store, NOW)
+    assert state.known is True
+    assert state.used == 0.38
+    assert state.source == "claude_statusline"
+    assert state.observed_at == observed_at
+    assert state.resets_at == reset
+    assert state.window_start == reset - timedelta(days=7)
+    assert state.estimated is False and state.note is None
+
+
 def test_fixed_reset_passed_gives_zero_and_next_reset(store):
     w = win()
     reset = NOW - timedelta(days=10)

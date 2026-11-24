@@ -24,6 +24,10 @@ All notable changes are documented here. The format follows
 
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
+- Fixed windows accept an optional `max_age` span (default: half the window duration, capped at
+  72 h); an observation older than `max_age` — a manual calibration as much as a usage read —
+  is reported as `no data: observation older than max age`, while a passed scheduled reset still
+  yields a fresh zero-usage window.
 
 ## [0.3.0] - 2026-11-22
 

@@ -109,7 +109,9 @@ _DENIED_HEADERS = frozenset(
 )
 
 
-_WINDOW_KEYS = frozenset({"id", "duration", "kind", "role", "anchor", "limit_usd", "block_at"})
+_WINDOW_KEYS = frozenset(
+    {"id", "duration", "kind", "role", "anchor", "limit_usd", "block_at", "max_age"}
+)
 
 
 def _parse_windows(value: Any, unit: str, pool_label: str, errors: list[str]) -> tuple[Window, ...]:
@@ -158,6 +160,15 @@ def _parse_windows(value: Any, unit: str, pool_label: str, errors: list[str]) ->
         )
         if not 0 <= block_at <= 1:
             errors.append(f"{label}.block_at: must be in the range 0..1")
+        max_age = None
+        if raw.get("max_age") is not None:
+            if not isinstance(raw["max_age"], str):
+                errors.append(f"{label}.max_age: a span string like 75m or 3h is required")
+            else:
+                try:
+                    max_age = parse_span(raw["max_age"])
+                except ValueError as exc:
+                    errors.append(f"{label}.max_age: {exc}")
         windows.append(
             Window(
                 id=window_id,
@@ -167,6 +178,7 @@ def _parse_windows(value: Any, unit: str, pool_label: str, errors: list[str]) ->
                 anchor=anchor,
                 limit_usd=limit_usd,
                 block_at=block_at,
+                max_age=max_age,
             )
         )
     return tuple(windows)
