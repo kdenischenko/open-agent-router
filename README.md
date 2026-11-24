@@ -226,7 +226,7 @@ sign-in you already made in it; it never sees provider keys.
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
-| Claude Code | `claude` | journal | tested live on Windows |
+| Claude Code | `claude` | journal | covered by recorded tests; live check pending |
 
 ## Platforms
 
@@ -265,8 +265,9 @@ option.
 
 Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
 then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and
-awaiting-approval jobs are never purged, and `serve` does not purge automatically. Check the count
-first with `agent-router purge --dry-run`.
+awaiting-approval jobs are never purged, and `serve` does not purge automatically. Purge also
+removes leftover job directories from earlier failed removals or crashes. Check the count first
+with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).

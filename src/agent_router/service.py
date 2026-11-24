@@ -218,6 +218,7 @@ def _usage_json(
         "last_attempt_at": _iso(None if state is None else state.last_attempt_at),
         "last_success_at": _iso(last_success),
         "last_error": None if state is None else state.last_reason,
+        "warning": None if state is None else state.last_warning,
         "age_s": age,
         # auto mode promises reads on the interval; no success within two intervals is stale
         "stale": mode == "auto" and is_stale(state, now, settings.interval_s),
@@ -284,7 +285,12 @@ def snapshot_json(
 
 def decision_json(tier: Tier, decision: Decision, mode: Mode | None = None) -> dict[str, Any]:
     def item(entry: Any) -> dict[str, Any]:
-        return {"route": entry.route.id, "pool": entry.route.pool, "reason": entry.reason}
+        return {
+            "route": entry.route.id,
+            "pool": entry.route.pool,
+            "reason": entry.reason,
+            "note": getattr(entry, "note", None),
+        }
 
     return {
         "tier": tier,

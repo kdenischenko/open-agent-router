@@ -116,6 +116,23 @@ def test_signed_in_read_reports_session_and_week() -> None:
         UsagePoint("weekly_all", 0.37, datetime(2026, 11, 28, 6, 0, 0, 258566, tzinfo=UTC)),
     )
     assert stream.calls == [[str(CLI), *USAGE_ARGS]]
+    assert read.warning is None
+
+
+@pytest.mark.parametrize(
+    ("failure", "warning"),
+    [
+        ("timeout", "the Claude Code CLI timed out after returning a usage report"),
+        ("not_found", "the Claude Code CLI was not found while reading usage"),
+        ("exit_1", "the Claude Code CLI failed after returning a usage report"),
+    ],
+)
+def test_valid_report_survives_process_failure(failure: str, warning: str) -> None:
+    read = build(FakeStream(fixture_lines("signed_in.jsonl"), failure=failure)).read()
+
+    assert read.ok
+    assert [point.field for point in read.points] == ["session", "weekly_all"]
+    assert read.warning == warning
 
 
 def test_command_runs_print_mode_without_user_settings() -> None:

@@ -82,6 +82,7 @@ def decision_snapshot(job: Job, decision: Decision, at: datetime) -> dict:
         return {
             "route": choice.route.id,
             "model": choice.route.model,
+            "note": choice.note,
             **metrics(decision.metrics.get(choice.route.id)),
         }
 

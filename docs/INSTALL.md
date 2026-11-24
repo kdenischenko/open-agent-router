@@ -106,13 +106,18 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    denied_roots = ["C:/work/projects/secret-repo"]
    ```
 
+   Each entry must be a non-empty absolute path after `~` expansion: `~/work` is valid
+   and portable, while a relative or empty entry is a config error. The lists themselves
+   may stay empty.
+
 2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
    others are commented out. Uncomment a route after you install its harness, and set
    `enabled = true` on the routes you want to use (`cline/glm-5.3` starts disabled, while
    `claude-cli/sonnet` starts enabled). Write the route model as the harness understands it:
    `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
    `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
-   the setup; see [SECURITY](../SECURITY.md).
+   the setup; see [SECURITY](../SECURITY.md). Every harness route needs a non-empty `pool`,
+   `backend` and `model`; a route with any of them missing or empty is a config error.
 
 3. **Harness not in PATH.** Specify the path explicitly:
 
@@ -123,7 +128,11 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 4. **Limits.** The `[[pools.windows]]` windows in the template are examples. Every
    `limit_usd = 10  # set your plan limit` is a placeholder: replace it with the limit of your
-   `opencode-go` plan. Leave any extra pools in place: they are not used without routes.
+   `opencode-go` plan. Leave any extra pools in place: they are not used without routes. A fixed
+   window may set `max_age = "2h30m"` — a span like `75m`, `3h` or `2d`. A calibration or usage
+   read older than `max_age` is shown as `no data: observation older than max age` until a newer
+   one replaces it; when `max_age` is absent, half the window duration applies, capped at 72 h
+   (`5h` → `2h30m`, `7d` → `72h`, `1mo` → `72h`).
 
 5. **Prices for Cline.** Cline does not report job costs, so without a price table its spending is
    not counted toward the `opencode-go` limit share. Create `prices-opencode-go.toml` next to
@@ -245,10 +254,14 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    retention_days = 30
    ```
 
-   Run `agent-router purge --dry-run` to see how many jobs would be removed, then
-   `agent-router purge` to delete their database records and `jobs/<job-id>/` directories. Only
-   terminal jobs whose finish time is older than the limit are removed; queued, running and
-   awaiting-approval jobs are always kept. Usage and spend records are kept for pool window
+   Run `agent-router purge --dry-run` to see how many job rows and leftover directories would be
+   removed, then `agent-router purge` to delete their database records and `jobs/<job-id>/`
+   directories. Only terminal jobs whose finish time is older than the limit are removed; queued,
+   running and awaiting-approval jobs are always kept. Purge also removes orphaned
+   `jobs/<job-id>/` directories left by crashes or older versions once none of their files has
+   been modified for longer than the retention period, and it retries directory removals that
+   failed during an earlier purge. `--dry-run` reports these orphans and retries separately from
+   job rows in its counts but deletes nothing. Usage and spend records are kept for pool window
    accounting. Purge never runs automatically when the gateway starts.
 
 10. **Usage sources (optional).** A usage source reads the used share of a plan's windows from
@@ -309,8 +322,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     command runs locally and does not call the model, so a read costs no tokens. The gateway
     never reads the CLI's credentials and never passes a token. The usage endpoint behind
     `/usage` is rate limited, so keep `[usage].interval` at its default of one hour or longer.
-    A failed read reports `not_found` (no CLI), `timeout`, `unauthorized` (the CLI is not signed
-    in), `rate_limited` or `malformed_response`.
+    A failed read reports `not_found` (no CLI), `timeout` (no valid report was parsed),
+    `unauthorized` (the CLI is not signed in), `rate_limited` or `malformed_response`. A process
+    failure after a valid report keeps the points and is shown as a warning by `agent-router
+    status`, `doctor` and the dashboard pool card instead.
 
     **When sources are read.** With `mode = "auto"` the gateway reads every pool's source on its
     own schedule: about once per `interval`, and never more than once a minute per pool. You can
@@ -325,23 +340,25 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     reason `too_soon`; a pool in manual mode is never read and shows no button. A successful read
     is recorded the way a manual calibration is: the newest observation of a window wins.
     A failed read reports a reason (`unauthorized`, `timeout`, `error`, `no_data` when no point
-    maps onto a window, …) and writes nothing.
+    maps onto a window, …) and writes nothing. A Claude Code process failure after a valid report
+    is instead a successful read with a warning, so its points are kept; `timeout` is a reason only
+    when no valid report was parsed.
 
     **Where a figure comes from, and whether it is fresh.** Every pool card on the limits page
     shows a line like `Source: opencode-go (auto) · read 12 min ago` under its title when it has a
     usage source: the source, its mode, the age of the last successful read (or `last read failed:
-    <reason>`), and a `stale` badge. Each window shows its `figure` next to its data age:
-    `auto` (the pool's usage source), `manual` (a calibration) or `journal` (no observation in
-    the current window — the figure comes from spend tracking or a scheduled reset). A pool in
-    `auto` mode is **stale** when no successful read is fresher than twice `[usage].interval`
-    (never read counts as stale); manual mode never goes stale. `agent-router status` prints the
-    same facts: one `usage: <source> (<mode>), read <age> ago, last error: <reason>, stale` line
-    per pool with a source, and the figure of every window.
+    <reason>`), any `warning: <warning>` from a read that kept usable points, and a `stale` badge.
+    Each window shows its `figure` next to its data age: `auto` (the pool's usage source), `manual`
+    (a calibration) or `journal` (no observation in the current window — the figure comes from
+    spend tracking or a scheduled reset). A pool in `auto` mode is **stale** when no successful
+    read is fresher than twice `[usage].interval` (never read counts as stale); manual mode never
+    goes stale. `agent-router status` prints the same facts on one usage line per pool with a
+    source, and the figure of every window.
 
     `doctor` adds its own warnings for usage sources: a pool whose `api_key_env` (or the source's
     default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
     the terminal that runs `doctor`; for `claude-code`, a CLI that cannot be found or is not
-    signed in; a pool whose last read failed; stale data; and `auto` mode
+    signed in; a pool whose last read failed or returned a non-fatal warning; stale data; and `auto` mode
     without a `source` on a pool that has one. See
     [TROUBLESHOOTING.md](TROUBLESHOOTING.md#usage-sources-do-not-refresh) for the fixes.
 

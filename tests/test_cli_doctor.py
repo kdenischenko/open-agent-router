@@ -805,6 +805,7 @@ def _snapshot_pool_usage(**changes) -> dict[str, Any]:
         "last_attempt_at": "2026-11-13T09:12:00+00:00",
         "last_success_at": "2026-11-13T09:00:00+00:00",
         "last_error": None,
+        "warning": None,
         "age_s": 7200.0,
         "stale": False,
     }
@@ -827,12 +828,14 @@ def test_doctor_warns_when_the_last_usage_read_failed(
     home: Path,
 ) -> None:
     _write_source_config(monkeypatch, home, gateway)
-    gateway.snapshot = _snapshot_pool_usage(last_error="unauthorized", age_s=120.0)
+    warning = "the Claude Code CLI timed out after returning a usage report"
+    gateway.snapshot = _snapshot_pool_usage(last_error="unauthorized", warning=warning, age_s=120.0)
 
     result = runner.invoke(cli.app, ["doctor"])
 
     assert result.exit_code == 0, result.output
     assert "Warning: pool opencode-go: last usage read failed: unauthorized" in _warnings(result)
+    assert f"Warning: pool opencode-go: last usage read: {warning}" in _warnings(result)
     assert not any("usage data is stale" in line for line in _warnings(result))
 
 

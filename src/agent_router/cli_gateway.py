@@ -477,7 +477,7 @@ def _status_window_line(window: dict) -> str:
 
 
 def _status_usage_line(pool: dict) -> str | None:
-    """The pool's usage source on one line: mode, freshness, last failure, staleness."""
+    """The pool's usage source on one line: mode, freshness, read health, staleness."""
     usage = pool.get("usage")
     if not usage:
         return None
@@ -488,6 +488,8 @@ def _status_usage_line(pool: dict) -> str | None:
         parts.append(f"read {format_age(usage['age_s'])} ago")
     if usage.get("last_error"):
         parts.append(f"last error: {usage['last_error']}")
+    if usage.get("warning"):
+        parts.append(f"warning: {usage['warning']}")
     if usage.get("stale"):
         parts.append("stale")
     return ", ".join(parts)

@@ -175,7 +175,7 @@ def usage_refresh(
 @app.command()
 def purge(
     dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show how many jobs would be deleted without deleting them"
+        False, "--dry-run", help="Show what would be deleted without deleting it"
     ),
 ) -> None:
     """Delete terminal jobs older than storage.retention_days and their local files."""
@@ -190,16 +190,26 @@ def purge(
         store = open_store(config.storage, home)
         jobs = open_jobstore(config.storage, home, store)
         before = SystemClock().now() - timedelta(days=retention_days)
-        purged, failed_dirs = jobs.purge(before, home / "jobs", dry_run=dry_run)
+        purged, failed_dirs = jobs.purge(before, home / "jobs", dry_run=True)
+        row_ids = {job_id for job_id in purged if jobs.get(job_id) is not None}
+        if not dry_run:
+            purged, failed_dirs = jobs.purge(before, home / "jobs")
     except (ConfigError, OSError, sqlite3.Error) as exc:
         typer.echo(f"purge failed: {exc}", err=True)
         raise typer.Exit(1) from exc
     finally:
         if store is not None:
             store.close()
-    count = len(purged)
-    noun = "job" if count == 1 else "jobs"
-    typer.echo(f"{'would purge' if dry_run else 'purged'} {count} {noun}")
+    row_count = sum(job_id in row_ids for job_id in purged)
+    entry_count = len(purged) - row_count
+    messages = []
+    if row_count or not entry_count:
+        noun = "job" if row_count == 1 else "jobs"
+        messages.append(f"{'would purge' if dry_run else 'purged'} {row_count} {noun}")
+    if entry_count:
+        noun = "entry" if entry_count == 1 else "entries"
+        messages.append(f"{'would remove' if dry_run else 'removed'} {entry_count} job {noun}")
+    typer.echo(" and ".join(messages))
     for directory in failed_dirs:
         typer.echo(f"warning: could not remove {directory}", err=True)
     if failed_dirs:
@@ -510,7 +520,7 @@ def _doctor_usage(config: Config) -> None:
 
 
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
-    """Read health from the running gateway: failed reads and stale usage data per pool."""
+    """Read health from the running gateway: read problems and stale usage data per pool."""
     if not any(pool.usage.source is not None for pool in config.pools):
         return
     snapshot = _request(lambda: client.get("/api/v1/snapshot"))
@@ -520,6 +530,8 @@ def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
             continue
         if info.get("last_error"):
             typer.echo(f"Warning: pool {pool['id']}: last usage read failed: {info['last_error']}")
+        if info.get("warning"):
+            typer.echo(f"Warning: pool {pool['id']}: last usage read: {info['warning']}")
         if not info.get("stale"):
             continue
         age = info.get("age_s")

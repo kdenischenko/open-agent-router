@@ -245,6 +245,16 @@ def _signed_in(status: str | None) -> bool | None:
     return body["loggedIn"]
 
 
+def _process_warning(failure: str | None) -> str | None:
+    if failure is None:
+        return None
+    messages = {
+        "timeout": "the Claude Code CLI timed out after returning a usage report",
+        "not_found": "the Claude Code CLI was not found while reading usage",
+    }
+    return messages.get(failure, "the Claude Code CLI failed after returning a usage report")
+
+
 class ClaudeCodeUsage:
     """Reads the session and weekly meters of a Claude plan from `claude -p /usage`."""
 
@@ -273,15 +283,15 @@ class ClaudeCodeUsage:
         failure = self._run([cli, *USAGE_ARGS], self._env, self._timeout_s, stream.feed)
         if stream.model_called:
             return UsageRead(reason="malformed_response")
-        if failure is not None:
-            return UsageRead(reason=failure)
         report = stream.report if isinstance(stream.report, Mapping) else None
         if report is not None:
             if report.get("rate_limits_available") is False:
                 return UsageRead(reason="unauthorized")
             points = _points(report)
             if points:
-                return UsageRead(points=points)
+                return UsageRead(points=points, warning=_process_warning(failure))
+        if failure is not None:
+            return UsageRead(reason=failure)
         lowered = stream.text.lower()
         if "rate limit" in lowered or "rate-limit" in lowered:
             return UsageRead(reason="rate_limited")
