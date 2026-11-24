@@ -5,8 +5,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
+README_RU = ROOT / "README_RU.md"
+READMES = (README, README_RU)
 ASSETS = ROOT / "docs" / "assets"
 MAX_ASSET_BYTES = 500 * 1024
 
@@ -18,8 +22,8 @@ HTML_SOURCE_SRCSET = re.compile(r"<source\b[^>]*?\bsrcset=[\"']([^\"']+)[\"']", 
 HTML_ALT = re.compile(r"\balt=[\"']([^\"']*)[\"']", re.IGNORECASE)
 
 
-def _readme() -> str:
-    return README.read_text(encoding="utf-8")
+def _readme(path: Path = README) -> str:
+    return path.read_text(encoding="utf-8")
 
 
 def _local_target(target: str) -> Path | None:
@@ -35,8 +39,9 @@ def _local_target(target: str) -> Path | None:
     return ROOT / target
 
 
-def test_readme_local_links() -> None:
-    text = _readme()
+@pytest.mark.parametrize("readme", READMES, ids=("README.md", "README_RU.md"))
+def test_readme_local_links(readme: Path) -> None:
+    text = _readme(readme)
     targets = [match.group(1) for match in MARKDOWN_LINK.finditer(text)]
     targets += [match.group(2) for match in MARKDOWN_IMAGE.finditer(text)]
     targets += HTML_IMAGE_SRC.findall(text) + HTML_SOURCE_SRCSET.findall(text)
@@ -49,8 +54,9 @@ def test_readme_local_links() -> None:
     assert missing == []
 
 
-def test_readme_images_have_alt() -> None:
-    text = _readme()
+@pytest.mark.parametrize("readme", READMES, ids=("README.md", "README_RU.md"))
+def test_readme_images_have_alt(readme: Path) -> None:
+    text = _readme(readme)
     markdown_missing = [target for alt, target in MARKDOWN_IMAGE.findall(text) if not alt.strip()]
     html_missing = [
         image
@@ -193,23 +199,30 @@ def _all_targets(text: str) -> list[str]:
     return targets + HTML_IMAGE_SRC.findall(text) + HTML_SOURCE_SRCSET.findall(text)
 
 
-def test_readme_urls_are_absolute_for_pypi() -> None:
+@pytest.mark.parametrize("readme", READMES, ids=("README.md", "README_RU.md"))
+def test_readme_urls_are_absolute_for_pypi(readme: Path) -> None:
     relative = [
         target
-        for target in _all_targets(_readme())
+        for target in _all_targets(_readme(readme))
         if not target.strip("<>").startswith(("http://", "https://", "#"))
     ]
     assert relative == []
 
 
-def test_readme_images_come_from_raw_github() -> None:
-    text = _readme()
+@pytest.mark.parametrize("readme", READMES, ids=("README.md", "README_RU.md"))
+def test_readme_images_come_from_raw_github(readme: Path) -> None:
+    text = _readme(readme)
     images = [match.group(2) for match in MARKDOWN_IMAGE.finditer(text)]
     images += HTML_IMAGE_SRC.findall(text) + HTML_SOURCE_SRCSET.findall(text)
     local = [image for image in images if "docs/assets/" in image]
 
     assert local
     assert all(image.startswith(RAW_URL + "docs/assets/") for image in local)
+
+
+def test_readmes_link_to_each_other() -> None:
+    assert f"[Русский]({REPO_URL}/blob/main/README_RU.md)" in _readme(README)
+    assert f"[English]({REPO_URL}/blob/main/README.md)" in _readme(README_RU)
 
 
 def test_local_target_maps_repository_urls() -> None:
@@ -265,5 +278,6 @@ def test_readme_links_repository_folders() -> None:
     assert "clone" in _section(text, "Use from your agent")
 
 
-def test_readme_has_no_page_anchors() -> None:
-    assert [target for target in _all_targets(_readme()) if target.startswith("#")] == []
+@pytest.mark.parametrize("readme", READMES, ids=("README.md", "README_RU.md"))
+def test_readme_has_no_page_anchors(readme: Path) -> None:
+    assert [target for target in _all_targets(_readme(readme)) if target.startswith("#")] == []

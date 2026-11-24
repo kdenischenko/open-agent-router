@@ -3,6 +3,8 @@
   <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/banner-light.svg" alt="open-agent-router: route coding jobs across your AI subscriptions">
 </picture>
 
+**English** | [Русский](https://github.com/kdenischenko/open-agent-router/blob/main/README_RU.md)
+
 # open-agent-router
 
 **Hand coding-agent jobs to the AI subscriptions you already pay for — Claude Code, Kimi Code,
