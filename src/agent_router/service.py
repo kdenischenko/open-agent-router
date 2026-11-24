@@ -284,7 +284,12 @@ def snapshot_json(
 
 def decision_json(tier: Tier, decision: Decision, mode: Mode | None = None) -> dict[str, Any]:
     def item(entry: Any) -> dict[str, Any]:
-        return {"route": entry.route.id, "pool": entry.route.pool, "reason": entry.reason}
+        return {
+            "route": entry.route.id,
+            "pool": entry.route.pool,
+            "reason": entry.reason,
+            "note": getattr(entry, "note", None),
+        }
 
     return {
         "tier": tier,

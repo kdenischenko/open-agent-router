@@ -1019,6 +1019,28 @@ def test_each_attempt_has_own_decision(make_rig) -> None:
 # --- route choice ------------------------------------------------------------------------
 
 
+def test_stale_fixed_observation_is_noted_in_stored_decision(make_rig) -> None:
+    rig = make_rig()
+    now = rig.clock.now()
+    rig.store.add_observation(
+        Observation(
+            "pool-a", "week", 0.0, now - timedelta(days=4), now + timedelta(hours=1), "manual"
+        )
+    )
+    rig.store.add_observation(
+        Observation("pool-b", "week", 0.8, now, now + timedelta(days=1), "manual")
+    )
+    job = rig.submit(rig.plain())
+    rig.tick()
+
+    attempt = rig.attempts(job)[0]
+    assert attempt.decision is not None
+    assert attempt.decision["chosen"]["route"] == "b/main"
+    candidates = {item["route"]: item for item in attempt.decision["candidates"]}
+    assert candidates["a/main"]["note"] == "no data: observation older than max age"
+    assert candidates["b/main"]["note"] is None
+
+
 def test_explicit_route_skips_tier_reserve_and_caller_pool(make_rig) -> None:
     rig = make_rig()
     now = rig.clock.now()
