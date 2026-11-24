@@ -221,7 +221,8 @@ def test_readme_images_come_from_raw_github(readme: Path) -> None:
 
 
 def test_readmes_link_to_each_other() -> None:
-    assert f"[Русский]({REPO_URL}/blob/main/README_RU.md)" in _readme(README)
+    russian = "Русский"  # non-ascii on purpose
+    assert f"[{russian}]({REPO_URL}/blob/main/README_RU.md)" in _readme(README)
     assert f"[English]({REPO_URL}/blob/main/README.md)" in _readme(README_RU)
 
 
