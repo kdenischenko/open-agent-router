@@ -8,6 +8,8 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and
+  configuration-related doctor findings with hints, without exposing tokens or environment values.
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw

@@ -15,6 +15,7 @@
       <a href="/" class="nav-link"{% if nav == 'limits' %} aria-current="page"{% endif %}>Limits</a>
       <a href="/jobs" class="nav-link"{% if nav == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
       <a href="/calibrate" class="nav-link"{% if nav == 'calibrate' %} aria-current="page"{% endif %}>Calibrate</a>
+      <a href="/settings" class="nav-link"{% if nav == 'settings' %} aria-current="page"{% endif %}>Settings</a>
       {% if awaiting_count|default(none) is not none and awaiting_count > 0 %}
       <a href="/jobs" class="approval-badge">{{ awaiting_display }} awaiting approval</a>
       {% endif %}

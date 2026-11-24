@@ -175,6 +175,11 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    session length (default 30, from 1 to 365). Signing out of the dashboard or changing `admin.token`
    immediately signs out all browsers.
 
+   The **Settings** page at `/settings` shows the loaded pools and windows, all routes including
+   disabled ones, caller mappings, and configuration-related `doctor` findings with hints. It is
+   read-only and works without JavaScript. Only environment variable names are displayed, never
+   their values, gateway tokens or other secrets.
+
    ```toml
    [server]
    panel_session_days = 30
