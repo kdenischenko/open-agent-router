@@ -336,6 +336,41 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 
+### Keeping writes inside the job directory
+
+`allowed_roots` controls where a job starts, not where its harness can write. The gateway asks every
+harness in the prompt to work only inside that directory, but this is not a security boundary.
+
+**Kimi Code.** The gateway runs `kimi -p` non-interactively, with no separate write-mode approval
+flag. When the prompt is passed by file, it also passes `--add-dir` for the prompt file's directory
+(`jobs/<job id>/` under the gateway home); this adds a workspace directory rather than restricting
+access to it. Kimi Code has no documented setting the gateway knows of that restricts or asks before
+writes outside the working directory; see the harness's documentation.
+
+**OpenCode.** Write jobs pass `--auto`, which auto-approves permissions that are not explicitly
+denied. Add this rule to `opencode.json` to deny access outside its working directories:
+
+```json
+{
+  "permission": {
+    "external_directory": "deny"
+  }
+}
+```
+
+Use `deny`, not `ask`, for unattended gateway write jobs: `--auto` can approve a permission that is
+not explicitly denied.
+
+**Cline.** Write jobs pass `--auto-approve true`, which enables tool auto-approval for all tools.
+Cline has no documented setting the gateway knows of that restricts or asks before writes outside
+the working directory; see the harness's documentation.
+
+**Claude Code.** Write jobs pass `--permission-mode bypassPermissions` and load only project
+settings. Claude Code's `--restricted` option confines file tools to its working directories, but
+it refuses `bypassPermissions`, so it cannot be combined with the gateway's current write jobs.
+The gateway knows no documented setting that confines writes while `bypassPermissions` is in use;
+see the harness's documentation.
+
 ## 5. Start the gateway
 
 In a separate terminal that remains open:
