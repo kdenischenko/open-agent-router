@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+import sys
 from dataclasses import replace
 
 import pytest
@@ -13,10 +14,18 @@ from test_web_jobs import WebRig
 
 
 @pytest.fixture
-def rig(tmp_path, home, config, store, jobstore, clock, tokens):
+def rig(tmp_path, home, config, store, jobstore, clock, tokens, monkeypatch):
+    monkeypatch.setattr("agent_router.jobs.repo_root", lambda cwd: None)
     root = tmp_path / "allowed work"
     root.mkdir()
-    config = replace(config, tasks=replace(config.tasks, allowed_roots=(root,)))
+    config = replace(
+        config,
+        tasks=replace(config.tasks, allowed_roots=(root,)),
+        backends={
+            name: replace(backend, executable=sys.executable)
+            for name, backend in config.backends.items()
+        },
+    )
     return WebRig(home, config, store, jobstore, clock, tokens)
 
 
@@ -176,5 +185,5 @@ def test_job_submit_route_needing_approval_waits_for_human(web, rig):
     job_id = response.headers["location"].removeprefix("/jobs/")
     rig.dispatcher.tick()
     job = rig.jobs.get(job_id)
-    assert job.status == "awaiting_approval"
+    assert job.status == "awaiting_approval", (job.error_message, rig.jobs.attempts(job_id))
     assert job.approval_route is not None
