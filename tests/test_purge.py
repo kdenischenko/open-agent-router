@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -47,6 +48,12 @@ def job_directory(home: Path, job_id: str) -> Path:
     (attempt / "stdout.log").write_text(f"result for {job_id}", encoding="utf-8")
     (attempt / "stderr.log").write_text("", encoding="utf-8")
     return directory
+
+
+def set_tree_mtime(directory: Path, moment: datetime) -> None:
+    timestamp = moment.timestamp()
+    for path in (directory, *directory.rglob("*")):
+        os.utime(path, (timestamp, timestamp))
 
 
 def set_retention(home: Path, value: str) -> None:
@@ -149,7 +156,7 @@ def test_purge_dry_run_then_deletes_old_terminal_jobs_and_related_data(
     assert spend_before.requests == 1
 
 
-def test_cli_purge_reports_locked_directory_and_continues(
+def test_cli_purge_reports_locked_directory_and_retries_after_unlock(
     config, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     set_retention(home, "30")
@@ -160,7 +167,7 @@ def test_cli_purge_reports_locked_directory_and_continues(
     try:
         jobs = open_jobstore(loaded.storage, home, store)
         blocked = make_job(
-            "j_blocked", "completed", NOW - timedelta(days=41), NOW - timedelta(days=32)
+            "j_0123456789ab", "completed", NOW - timedelta(days=41), NOW - timedelta(days=32)
         )
         removed = make_job(
             "j_removed", "completed", NOW - timedelta(days=40), NOW - timedelta(days=31)
@@ -170,19 +177,24 @@ def test_cli_purge_reports_locked_directory_and_continues(
     finally:
         store.close()
     blocked_dir = job_directory(home, blocked.id)
+    set_tree_mtime(blocked_dir, NOW - timedelta(days=32))
     removed_dir = job_directory(home, removed.id)
     from agent_router import jobstore as jobstore_module
 
     remove = jobstore_module.shutil.rmtree
+    locked = True
 
     def fail_locked(path: Path) -> None:
-        if Path(path) == blocked_dir:
+        nonlocal locked
+        if Path(path) == blocked_dir and locked:
+            locked = False
             raise OSError("locked")
         remove(path)
 
     monkeypatch.setattr(jobstore_module.shutil, "rmtree", fail_locked)
+    runner = CliRunner()
 
-    result = CliRunner().invoke(cli.app, ["purge"])
+    result = runner.invoke(cli.app, ["purge"])
 
     assert result.exit_code == 1, result.output
     assert "purged 2 jobs\n" in result.output
@@ -196,6 +208,122 @@ def test_cli_purge_reports_locked_directory_and_continues(
         assert jobs.get(removed.id) is None
     finally:
         store.close()
+
+    retried = runner.invoke(cli.app, ["purge"])
+
+    assert retried.exit_code == 0, retried.output
+    assert retried.output == "removed 1 job entry\n"
+    assert not blocked_dir.exists()
+
+
+def test_purge_retries_after_partial_removal(
+    jobstore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = make_job(
+        "j_0123456789ab", "completed", NOW - timedelta(days=41), NOW - timedelta(days=32)
+    )
+    jobstore.create(old)
+    directory = job_directory(tmp_path, old.id)
+    set_tree_mtime(directory, NOW - timedelta(days=32))
+    from agent_router import jobstore as jobstore_module
+
+    remove = jobstore_module.shutil.rmtree
+
+    def remove_one_file_then_fail(path: Path) -> None:
+        (directory / "prompt.md").unlink()
+        raise OSError("locked")
+
+    monkeypatch.setattr(jobstore_module.shutil, "rmtree", remove_one_file_then_fail)
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs") == ([old.id], [directory])
+    assert not (directory / "prompt.md").exists()
+    assert (directory / "attempt-1" / "stdout.log").exists()
+
+    monkeypatch.setattr(jobstore_module.shutil, "rmtree", remove)
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs") == ([old.id], [])
+    assert not directory.exists()
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "awaiting_approval"])
+def test_purge_keeps_old_directory_with_nonterminal_job_row(
+    jobstore, tmp_path: Path, status: Status
+) -> None:
+    job = make_job("j_0123456789ab", status, NOW - timedelta(days=40))
+    jobstore.create(job)
+    directory = job_directory(tmp_path, job.id)
+    set_tree_mtime(directory, NOW - timedelta(days=40))
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs") == ([], [])
+
+    assert directory.exists()
+    assert jobstore.get(job.id) is not None
+
+
+def test_purge_keeps_recent_orphan_and_unrelated_entries(jobstore, tmp_path: Path) -> None:
+    recent = job_directory(tmp_path, "j_abcdef012345")
+    set_tree_mtime(recent, NOW - timedelta(days=40))
+    newest_log = recent / "attempt-1" / "stdout.log"
+    recent_timestamp = (NOW - timedelta(days=1)).timestamp()
+    os.utime(newest_log, (recent_timestamp, recent_timestamp))
+    old = job_directory(tmp_path, "j_fedcba654321")
+    set_tree_mtime(old, NOW - timedelta(days=40))
+    unrelated_dir = tmp_path / "jobs" / "j_not-a-job"
+    unrelated_dir.mkdir()
+    (unrelated_dir / "keep.txt").write_text("keep", encoding="utf-8")
+    set_tree_mtime(unrelated_dir, NOW - timedelta(days=40))
+    unrelated_file = tmp_path / "jobs" / "j_000000000000"
+    unrelated_file.write_text("keep", encoding="utf-8")
+    old_timestamp = (NOW - timedelta(days=40)).timestamp()
+    os.utime(unrelated_file, (old_timestamp, old_timestamp))
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs") == ([old.name], [])
+
+    assert recent.exists() and newest_log.exists()
+    assert not old.exists()
+    assert unrelated_dir.exists() and (unrelated_dir / "keep.txt").exists()
+    assert unrelated_file.read_text(encoding="utf-8") == "keep"
+
+
+def test_purge_does_not_count_failed_orphan_removal(
+    jobstore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    orphan = job_directory(tmp_path, "j_fedcba654321")
+    set_tree_mtime(orphan, NOW - timedelta(days=40))
+    from agent_router import jobstore as jobstore_module
+
+    def fail_removal(path: Path) -> None:
+        raise OSError("locked")
+
+    monkeypatch.setattr(jobstore_module.shutil, "rmtree", fail_removal)
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs") == ([], [orphan])
+
+
+def test_purge_dry_run_reports_old_orphan_without_deleting(jobstore, tmp_path: Path) -> None:
+    orphan = job_directory(tmp_path, "j_fedcba654321")
+    set_tree_mtime(orphan, NOW - timedelta(days=40))
+
+    assert jobstore.purge(CUTOFF, tmp_path / "jobs", dry_run=True) == ([orphan.name], [])
+
+    assert (orphan / "prompt.md").exists()
+    assert (orphan / "attempt-1" / "stdout.log").exists()
+
+
+def test_cli_purge_reports_leftover_directory_as_job_entry(
+    config, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_retention(home, "30")
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setattr(cli, "SystemClock", lambda: FakeClock(NOW))
+    orphan = job_directory(home, "j_0123456789ab")
+    set_tree_mtime(orphan, NOW - timedelta(days=40))
+
+    result = CliRunner().invoke(cli.app, ["purge"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "removed 1 job entry\n"
+    assert not orphan.exists()
 
 
 def test_cli_purge_uses_injected_clock_and_dry_run_preserves_data(

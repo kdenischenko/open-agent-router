@@ -15,7 +15,7 @@ from agent_router.api import create_app
 from agent_router.ledger import window_state
 from agent_router.service import Gateway
 from agent_router.store import Observation
-from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec
+from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec, is_stale
 from agent_router.usage_reader import MIN_REFRESH_S, UnknownPoolError, UsageReader
 from helpers import BASE_URL, bearer, write_config
 from test_web_dashboard import csrf_from, login
@@ -81,6 +81,8 @@ role = "pace"
 [[routes]]
 id = "route"
 pool = "auto-pool"
+backend = "kimi"
+model = "m"
 tiers = ["standard"]
 quality = 3
 """
@@ -299,6 +301,43 @@ def test_successful_read_writes_observations_and_newest_wins(
     assert read_state is not None
     assert read_state.last_success_at == clock.now()
     assert read_state.last_reason is None
+
+
+def test_warning_is_published_and_cleared_by_the_next_clean_read(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    warning = "the Claude Code CLI timed out after returning a usage report"
+    fake = FakeSource(UsageRead(points=FakeSource().result.points, warning=warning))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    result = reader.refresh("auto-pool")
+
+    assert result.failed == ()
+    assert [item.pool for item in result.read] == ["auto-pool"]
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.last_warning == warning
+    assert is_stale(state, clock.now(), usage_config.usage.interval_s) is False
+
+    fake.result = UsageRead(points=fake.result.points)
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    reader.refresh("auto-pool")
+
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.last_warning is None
+    assert events() == [
+        (
+            "usage.read",
+            {
+                "pool": "auto-pool",
+                "source": "fake-usage",
+                "windows": ["week", "5h"],
+                "warning": warning,
+            },
+        ),
+        ("usage.read", {"pool": "auto-pool", "source": "fake-usage", "windows": ["week", "5h"]}),
+    ]
 
 
 def test_missing_field_is_reported_once_and_cleared_when_it_returns(
@@ -604,7 +643,7 @@ def test_cli_usage_refresh_sends_the_pool(
 
 
 def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clock) -> None:
-    client, _, _ = api_client
+    client, _, fake = api_client
     headers = bearer(tokens.client)
 
     body = client.get("/api/v1/snapshot", headers=headers).json()
@@ -618,6 +657,7 @@ def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clo
         "last_attempt_at": None,
         "last_success_at": None,
         "last_error": None,
+        "warning": None,
         "age_s": None,
         "stale": True,
         "missing_fields": [],
@@ -627,6 +667,8 @@ def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clo
     assert pools["manual-pool"]["usage"]["stale"] is False
     assert all(window["figure_source"] == "journal" for window in pools["auto-pool"]["windows"])
 
+    warning = "the Claude Code CLI timed out after returning a usage report"
+    fake.result = UsageRead(points=fake.result.points, warning=warning)
     refreshed = client.post(
         "/api/v1/usage/refresh", json={"pool": "auto-pool"}, headers=bearer(tokens.admin)
     ).json()
@@ -639,6 +681,7 @@ def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clo
     read_at = (clock.now() - timedelta(minutes=2)).isoformat()
     assert usage["last_attempt_at"] == read_at and usage["last_success_at"] == read_at
     assert usage["last_error"] is None
+    assert usage["warning"] == warning
     assert usage["age_s"] == 120.0
     assert usage["stale"] is False  # the interval is 5m: two intervals have not passed
     windows = {window["id"]: window for window in pools["auto-pool"]["windows"]}
@@ -724,6 +767,7 @@ def _usage_json(**changes) -> dict:
         "last_attempt_at": "2026-11-13T09:12:00+00:00",
         "last_success_at": "2026-11-13T09:00:00+00:00",
         "last_error": "unauthorized",
+        "warning": None,
         "age_s": 720.0,
         "stale": True,
     }
@@ -745,11 +789,12 @@ class SnapshotGateway:
 def test_status_prints_usage_line_and_window_figures(
     runner, cli_home, tokens, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    warning = "the Claude Code CLI timed out after returning a usage report"
     pools = [
         _status_pool(
             "auto-pool",
             [_status_window("week"), _status_window("5h", role="guard", expected=None)],
-            _usage_json(),
+            _usage_json(warning=warning),
         ),
         _status_pool("plain", [_status_window("week", source=None, figure_source="journal")], None),
     ]
@@ -761,7 +806,10 @@ def test_status_prints_usage_line_and_window_figures(
 
     assert result.exit_code == 0, result.output
     lines = result.output.splitlines()
-    expected_usage = "  usage: fake-usage (auto), read 12 min ago, last error: unauthorized, stale"
+    expected_usage = (
+        "  usage: fake-usage (auto), read 12 min ago, last error: unauthorized, "
+        f"warning: {warning}, stale"
+    )
     assert expected_usage in lines
     assert (
         "  week: used 40.0%; expected 50.0%; reset: unknown; source: fake_usage; figure: auto"
@@ -916,7 +964,8 @@ def test_refresh_during_a_read_of_the_same_pool_is_too_soon(
 def test_ok_read_without_usable_points_is_a_failure(
     usage_config, store, clock, tokens, home, bus, events
 ) -> None:
-    fake = FakeSource(UsageRead(points=(UsagePoint("unmapped", 0.4),)))
+    warning = "the Claude Code CLI timed out after returning a usage report"
+    fake = FakeSource(UsageRead(points=(UsagePoint("unmapped", 0.4),), warning=warning))
     reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
 
     result = reader.refresh("auto-pool")
@@ -937,6 +986,7 @@ def test_ok_read_without_usable_points_is_a_failure(
     assert state is not None
     assert state.last_success_at is None
     assert state.last_reason == "no_data"
+    assert state.last_warning == warning
     assert state.missing_fields == ("monthly", "rolling")
 
 

@@ -2,8 +2,8 @@
 
 The reader turns each source read into observations through the same write path manual
 calibration uses, publishes one event per pool on the bus, and keeps a small in-memory
-state per pool for display. Events and results carry ids and reason codes only: never
-keys or response bodies.
+state per pool for display. Events and results carry ids, reason codes and fixed warning messages:
+never keys or response bodies.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ class UsageReadState:
     last_attempt_at: datetime | None = None
     last_success_at: datetime | None = None
     last_reason: str | None = None  # None after a success
+    last_warning: str | None = None
     missing_fields: tuple[str, ...] = ()
     format_changed: bool = False
 
@@ -210,6 +211,7 @@ class UsageReader:
             result = source.read()
         except Exception:
             result = UsageRead(reason="error")  # a crashing source is a failed read
+        warning = result.warning
         source_succeeded = result.ok
         found = []
         usable_fields = set()
@@ -225,7 +227,9 @@ class UsageReader:
             result = UsageRead(reason="no_data")
         if not result.ok:
             reason = result.reason or "error"
-            missing_event = self._mark(pool_id, now, reason, missing if source_succeeded else None)
+            missing_event = self._mark(
+                pool_id, now, reason, warning, missing if source_succeeded else None
+            )
             failed.append(PoolOutcome(pool_id, reason))
             self._bus.publish(
                 "usage.read_failed",
@@ -240,14 +244,17 @@ class UsageReader:
         for obs in found:
             with self._gateway.write_lock:
                 self._gateway.record_observation(obs)
-        missing_event = self._mark(pool_id, now, None, missing)
+        missing_event = self._mark(pool_id, now, None, warning, missing)
         for hook in list(self._gateway.after_calibration):
             # the same out-of-schedule counter check a manual calibration triggers
             with contextlib.suppress(Exception):
                 hook(pool_id)
         windows = [obs.window for obs in found]
         read.append(PoolRead(pool_id, tuple(windows)))
-        self._bus.publish("usage.read", {"pool": pool_id, "source": spec.name, "windows": windows})
+        payload = {"pool": pool_id, "source": spec.name, "windows": windows}
+        if warning is not None:
+            payload["warning"] = warning
+        self._bus.publish("usage.read", payload)
         if missing_event:
             self._bus.publish(
                 "usage.fields_missing",
@@ -259,6 +266,7 @@ class UsageReader:
         pool_id: str,
         now: datetime,
         reason: str | None,
+        warning: str | None,
         missing_fields: tuple[str, ...] | None = None,
     ) -> tuple[str, ...] | None:
         with self._lock:
@@ -277,6 +285,7 @@ class UsageReader:
                 last_attempt_at=now,
                 last_success_at=now if reason is None else previous.last_success_at,
                 last_reason=reason,
+                last_warning=warning,
                 missing_fields=fields,
                 format_changed=failures >= 3,
             )

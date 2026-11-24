@@ -18,6 +18,7 @@ from starlette.templating import Jinja2Templates
 from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
+from agent_router.diagnostics import doctor_findings
 from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
@@ -701,6 +702,64 @@ def web_router(deps: Gateway) -> APIRouter:
         anchor = f"#limit-{pool}" if pool is not None else "#limits"
         query = urlencode({"usage_message": "; ".join(parts)}) if parts else ""
         return RedirectResponse(f"/{'?' + query if query else ''}{anchor}", status_code=303)
+
+    def settings_context() -> dict:
+        pools = []
+        for pool in deps.config.pools:
+            usage = None
+            if pool.usage.source is not None or pool.usage.mode is not None:
+                usage = {
+                    "source": pool.usage.source,
+                    "mode": deps.config.usage_mode(pool.id),
+                    "api_key_env": pool.usage.api_key_env,
+                }
+            pools.append(
+                {
+                    "id": pool.id,
+                    "title": pool.title,
+                    "unit": pool.unit,
+                    "usage": usage,
+                    "windows": [
+                        {
+                            "id": window.id,
+                            "kind": window.kind,
+                            "role": window.role,
+                            "duration": str(window.duration),
+                            "anchor": window.anchor.isoformat() if window.anchor else None,
+                        }
+                        for window in pool.windows
+                    ],
+                }
+            )
+        routes = [
+            {
+                "id": route.id,
+                "kind": route.kind,
+                "pool": route.pool,
+                "backend": route.backend if route.kind == "harness" else route.upstream,
+                "model": route.model,
+                "tiers": [tier for tier in TIERS if tier in route.tiers],
+                "modes": [mode for mode in ("read", "write") if mode in route.modes],
+                "enabled": route.enabled,
+            }
+            for route in deps.config.routes
+        ]
+        return {
+            "title": "Settings",
+            "pools": pools,
+            "routes": routes,
+            "callers": [
+                {"name": name, "pool": pool} for name, pool in sorted(deps.config.callers.items())
+            ],
+            "findings": doctor_findings(deps.config),
+        }
+
+    @router.get("/settings")
+    def get_settings(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return render_page(request, "settings.html", settings_context(), sid=sid, nav="settings")
 
     @router.get("/calibrate")
     def get_calibration(request: Request) -> Response:

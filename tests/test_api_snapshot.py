@@ -46,6 +46,7 @@ USAGE_FIELDS = {
     "last_attempt_at",
     "last_success_at",
     "last_error",
+    "warning",
     "age_s",
     "stale",
     "missing_fields",
@@ -237,7 +238,7 @@ def test_advise_and_decision_json(config, store, clock):
         "claude-cli/sonnet",
         "opencode-cli/glm-5.3",
     ]
-    assert set(body["chosen"][0]) == {"route", "pool", "reason"}
+    assert set(body["chosen"][0]) == {"route", "pool", "reason", "note"}
     excluded = {item["route"]: item["reason"] for item in body["excluded"]}
     assert excluded == {
         "cline/glm-5.3": "route disabled",
@@ -252,6 +253,33 @@ def test_advise_and_decision_json(config, store, clock):
     unknown_caller = advise(config, snapshot, "standard", "no-such-caller")
     assert len(unknown_caller.chosen) == 4
     assert body["mode"] is None
+
+
+def test_stale_fixed_window_does_not_win_route_choice(config, store, clock):
+    now = clock.now()
+    stale_observed_at = now - timedelta(days=4)
+    stale_reset = now + timedelta(hours=1)
+    store.add_observation(
+        Observation("kimi-code", "month", 0.0, stale_observed_at, stale_reset, "manual")
+    )
+    store.add_observation(
+        Observation("claude-pro", "week", 0.8, now, now + timedelta(days=1), "manual")
+    )
+    snapshot = build_snapshot(config, store, now, UTC)
+
+    decision = decision_json("standard", advise(config, snapshot, "standard", None))
+    assert decision["chosen"][0]["route"] == "claude-cli/sonnet"
+
+    pools = {pool["id"]: pool for pool in snapshot_json(snapshot, store)["pools"]}
+    stale = next(window for window in pools["kimi-code"]["windows"] if window["id"] == "month")
+    assert stale["known"] is False and stale["used"] is None
+    assert stale["note"] == "no data: observation older than max age"
+    assert stale["observed_at"] == stale_observed_at.isoformat()
+    assert stale["resets_at"] == stale_reset.isoformat()
+    stale_choice = next(
+        choice for choice in decision["chosen"] if choice["route"] == "kimi-cli/k3.1-pro"
+    )
+    assert stale_choice["note"] == "no data: observation older than max age"
 
 
 def test_advise_with_a_mode_excludes_routes_without_it(home, store, clock):

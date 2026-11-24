@@ -13,6 +13,8 @@ All notable changes are documented here. The format follows
   `missing_fields` and `format_changed`, the reader publishes `usage.fields_missing` when the
   missing set changes, and the dashboard and `doctor` warn with the remediation
   (`update agent-router or switch the pool to mode = "manual" and calibrate`).
+- The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and
+  configuration-related doctor findings with hints, without exposing tokens or environment values.
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
@@ -27,8 +29,20 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
+  shown by `agent-router status`, `doctor` and the dashboard pool card.
+- `agent-router purge` retries directory removals that failed during an earlier run and also
+  sweeps orphaned `jobs/<job-id>/` directories older than the retention cutoff.
+- `tasks.allowed_roots` and `tasks.denied_roots` entries must be non-empty absolute paths after
+  `~` expansion, so `~/...` stays valid and portable while relative or empty entries are config
+  errors. Harness routes without a non-empty `pool`, `backend` and `model` are also rejected.
+- Kimi Code jobs record input and output tokens from the session logs, including subagent usage.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
+- Fixed windows accept an optional `max_age` span (default: half the window duration, capped at
+  72 h); an observation older than `max_age` — a manual calibration as much as a usage read —
+  is reported as `no data: observation older than max age`, while a passed scheduled reset still
+  yields a fresh zero-usage window.
 
 ## [0.3.0] - 2026-11-22
 

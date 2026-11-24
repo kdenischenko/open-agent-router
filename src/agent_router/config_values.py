@@ -92,7 +92,13 @@ def _strings(value: Any, label: str, errors: list[str]) -> list[str]:
 
 
 def _paths(value: Any, label: str, errors: list[str]) -> tuple[Path, ...]:
-    return tuple(Path(item).expanduser() for item in _strings(value, label, errors))
+    paths = []
+    for index, item in enumerate(_strings(value, label, errors)):
+        path = Path(item).expanduser()
+        if not item or not path.is_absolute():
+            errors.append(f"{label}[{index}]: must be an absolute path")
+        paths.append(path)
+    return tuple(paths)
 
 
 def _check_cmd_text(value: str | None, label: str, errors: list[str]) -> None:

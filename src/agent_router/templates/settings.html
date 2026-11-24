@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="hint">Loaded configuration and configuration-only doctor findings. This page is read-only; environment variable names are shown without their values.</p>
+
+<section aria-labelledby="pools-heading">
+  <h2 id="pools-heading">Pools</h2>
+  <div class="grid">
+    {% for pool in pools %}
+    <article class="panel settings-pool">
+      <h3>{{ pool.title }} <code>{{ pool.id }}</code></h3>
+      <dl>
+        <dt>Unit</dt>
+        <dd><code>{{ pool.unit }}</code></dd>
+        <dt>Usage source</dt>
+        <dd>
+          {% if pool.usage %}
+          <code>{{ pool.usage.source or "none" }}</code> ({{ pool.usage.mode }})
+          {% if pool.usage.api_key_env %}<br><code>api_key_env = {{ pool.usage.api_key_env }}</code>{% endif %}
+          {% else %}—{% endif %}
+        </dd>
+      </dl>
+      <div class="table-scroll">
+        <table>
+          <caption>Windows</caption>
+          <thead>
+            <tr><th scope="col">ID</th><th scope="col">Kind</th><th scope="col">Role</th><th scope="col">Duration</th><th scope="col">Reset anchor</th></tr>
+          </thead>
+          <tbody>
+            {% for window in pool.windows %}
+            <tr>
+              <td><code>{{ window.id }}</code></td>
+              <td>{{ window.kind }}</td>
+              <td>{{ window.role }}</td>
+              <td>{{ window.duration }}</td>
+              <td>{% if window.anchor %}<time datetime="{{ window.anchor }}">{{ window.anchor }}</time>{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section aria-labelledby="routes-heading">
+  <h2 id="routes-heading">Routes</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th scope="col">ID</th><th scope="col">Kind</th><th scope="col">Pool</th><th scope="col">Backend / upstream</th><th scope="col">Model</th><th scope="col">Tiers</th><th scope="col">Modes</th><th scope="col">State</th></tr>
+      </thead>
+      <tbody>
+        {% for route in routes %}
+        <tr>
+          <td class="settings-route-id"><code>{{ route.id }}</code></td>
+          <td>{{ route.kind }}</td>
+          <td><code>{{ route.pool }}</code></td>
+          <td>{% if route.backend %}<code>{{ route.backend }}</code>{% else %}—{% endif %}</td>
+          <td>{% if route.model %}<code>{{ route.model }}</code>{% else %}—{% endif %}</td>
+          <td>{{ route.tiers|join(", ") }}</td>
+          <td>{{ route.modes|join(", ") }}</td>
+          <td><span class="approval-badge {{ 'approval-badge--ok' if route.enabled else 'approval-badge--danger' }}">{{ "enabled" if route.enabled else "disabled" }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="callers-heading">
+  <h2 id="callers-heading">Callers</h2>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th scope="col">Name</th><th scope="col">Own pool</th></tr></thead>
+      <tbody>
+        {% for caller in callers %}
+        <tr><td><code>{{ caller.name }}</code></td><td>{% if caller.pool %}<code>{{ caller.pool }}</code>{% else %}not mapped{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="doctor-heading">
+  <h2 id="doctor-heading">Doctor findings</h2>
+  {% if findings %}
+  <ul class="settings-findings">
+    {% for finding in findings %}
+    <li class="panel settings-finding" data-level="{{ finding.level }}">
+      <strong class="settings-finding__level">{{ finding.level }}</strong>
+      <p>{{ finding.message }}</p>
+      {% if finding.hint %}<p class="hint">Hint: {{ finding.hint }}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No configuration findings</p>
+  {% endif %}
+</section>
+{% endblock %}

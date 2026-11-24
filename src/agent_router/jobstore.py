@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import contextlib
 import json
+import re
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ from agent_router.jobs import (
 from agent_router.policy import PoolBlock
 from agent_router.spend import SpendEntry, SpendTotal
 from agent_router.store import STORAGE_GROUP, SqliteStore, Store, from_us, plugin_call, to_us
+
+_JOB_DIR_NAME = re.compile(r"j_[0-9a-f]{12}")
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,7 @@ class JobStore(Protocol):
     def purge(
         self, before: datetime, jobs_dir: Path, dry_run: bool = False
     ) -> tuple[builtins.list[str], builtins.list[Path]]:
-        """Delete old terminal jobs; return their ids and directories that could not be removed."""
+        """Delete old terminal jobs and orphan directories; return ids and removal failures."""
         ...
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
@@ -673,24 +676,63 @@ class SqliteJobStore:
         query = f"SELECT id FROM jobs WHERE {condition} ORDER BY created_at, seq"
         if dry_run:
             rows = self._store.connection().execute(query, (moment,)).fetchall()
-            return [row[0] for row in rows], []
-        with self._store.transaction() as conn:
-            rows = conn.execute(query, (moment,)).fetchall()
             job_ids = [row[0] for row in rows]
-            for table in ("attempts", "ratings", "classifier_votes"):
-                conn.execute(
-                    f"DELETE FROM {table} WHERE job_id IN (SELECT id FROM jobs WHERE {condition})",
-                    (moment,),
-                )
-            conn.execute(f"DELETE FROM jobs WHERE {condition}", (moment,))
+        else:
+            with self._store.transaction() as conn:
+                rows = conn.execute(query, (moment,)).fetchall()
+                job_ids = [row[0] for row in rows]
+                for table in ("attempts", "ratings", "classifier_votes"):
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE job_id IN"
+                        " (SELECT id FROM jobs WHERE"
+                        f" {condition})",
+                        (moment,),
+                    )
+                conn.execute(f"DELETE FROM jobs WHERE {condition}", (moment,))
         failed_dirs = []
-        for job_id in job_ids:
-            directory = Path(jobs_dir) / job_id
-            try:
-                with contextlib.suppress(FileNotFoundError):
-                    shutil.rmtree(directory)
-            except OSError:
-                failed_dirs.append(directory)
+        if not dry_run:
+            for job_id in job_ids:
+                directory = Path(jobs_dir) / job_id
+                try:
+                    with contextlib.suppress(FileNotFoundError):
+                        shutil.rmtree(directory)
+                except OSError:
+                    failed_dirs.append(directory)
+
+        purged_ids = set(job_ids)
+        cutoff = moment / 1_000_000
+        # Sweeping retries failed removals without a schema change and also cleans up after crashes
+        # and older versions.
+        with contextlib.suppress(FileNotFoundError):
+            for directory in sorted(Path(jobs_dir).iterdir()):
+                job_id = directory.name
+                if job_id in purged_ids or _JOB_DIR_NAME.fullmatch(job_id) is None:
+                    continue
+                if directory.is_symlink() or not directory.is_dir():
+                    continue
+                row = (
+                    self._store.connection()
+                    .execute("SELECT 1 FROM jobs WHERE id = ?", (job_id,))
+                    .fetchone()
+                )
+                if row is not None:
+                    continue
+                try:
+                    newest_mtime = max(
+                        (path.stat().st_mtime for path in directory.rglob("*") if path.is_file()),
+                        default=directory.stat().st_mtime,
+                    )
+                    if newest_mtime >= cutoff:
+                        continue
+                    if dry_run:
+                        job_ids.append(job_id)
+                    else:
+                        shutil.rmtree(directory)
+                        job_ids.append(job_id)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    failed_dirs.append(directory)
         return job_ids, failed_dirs
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
