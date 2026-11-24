@@ -166,6 +166,12 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    session length (default 30, from 1 to 365). Signing out of the dashboard or changing `admin.token`
    immediately signs out all browsers.
 
+   Each pool card on the Limits page includes spend history from the journal: hourly buckets for
+   the last 24 hours and local-calendar-day buckets for the last seven days. USD pools show cost;
+   other pools show input plus output tokens. Estimated buckets are marked, and every inline SVG
+   chart has an adjacent table with the same values. A pool without journal entries shows
+   `no spend recorded`.
+
    The **Settings** page at `/settings` shows the loaded pools and windows, all routes including
    disabled ones, caller mappings, and configuration-related `doctor` findings with hints. It is
    read-only and works without JavaScript. Only environment variable names are displayed, never

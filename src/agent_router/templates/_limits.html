@@ -85,6 +85,40 @@
         {% endif %}
       </section>
       {% endfor %}
+      {% set history = spend_charts.get(pool.id) %}
+      <section id="spend-history-{{ pool.id }}" class="spend-history" aria-labelledby="spend-title-{{ pool.id }}">
+        <h3 id="spend-title-{{ pool.id }}">Spend history</h3>
+        {% if history %}
+        {% for chart in history %}
+        <section id="spend-{{ chart.id }}-{{ pool.id }}" class="spend-history__period" aria-labelledby="spend-{{ chart.id }}-title-{{ pool.id }}">
+          <h4 id="spend-{{ chart.id }}-title-{{ pool.id }}">{{ chart.title }}</h4>
+          <svg class="spend-chart" viewBox="0 0 600 120" role="img" aria-label="{{ chart.aria_label }}">
+            <line x1="0" y1="110" x2="600" y2="110" stroke="var(--color-border)" aria-hidden="true" />
+            {% for bar in chart.bars %}
+            <rect x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" fill="currentColor" aria-hidden="true" />
+            {% endfor %}
+          </svg>
+          <details class="spend-chart__data">
+            <summary>{{ chart.title }} as a table</summary>
+            <table>
+              <caption>{{ chart.title }}: {{ chart.total }}{% if chart.estimated %} (estimated){% endif %}</caption>
+              <thead><tr><th scope="col">Bucket</th><th scope="col">Spend</th></tr></thead>
+              <tbody>
+                {% for bucket in chart.buckets %}
+                <tr>
+                  <th scope="row"><time datetime="{{ bucket.iso }}">{{ bucket.label }}</time></th>
+                  <td>{{ bucket.value }}{% if bucket.estimated %} <span class="spend-chart__estimated">(estimated)</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </section>
+        {% endfor %}
+        {% else %}
+        <p class="empty">no spend recorded</p>
+        {% endif %}
+      </section>
     </article>
     {% endfor %}
   </div>

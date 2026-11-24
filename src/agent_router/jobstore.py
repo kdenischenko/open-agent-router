@@ -26,7 +26,7 @@ from agent_router.jobs import (
     VoteRow,
 )
 from agent_router.policy import PoolBlock
-from agent_router.spend import SpendEntry, SpendTotal
+from agent_router.spend import SpendBucket, SpendEntry, SpendTotal
 from agent_router.store import STORAGE_GROUP, SqliteStore, Store, from_us, plugin_call, to_us
 
 
@@ -129,6 +129,12 @@ class JobStore(Protocol):
     def add_spend(self, e: SpendEntry) -> bool: ...
 
     def spend_since(self, pool: str, since: datetime | None) -> SpendTotal: ...
+
+    def spend_buckets(
+        self, pool: str, starts: Sequence[datetime], until: datetime
+    ) -> builtins.list[SpendBucket]:
+        """Non-empty buckets between consecutive starts; the end is exclusive."""
+        ...
 
     def limit_hits_in_row(self, pool: str) -> int:
         """Limit-hit attempts finished after the pool's last successful attempt."""
@@ -942,6 +948,48 @@ class SqliteJobStore:
             cost_usd=float(row[3]),
             estimated=bool(row[4]),
         )
+
+    def spend_buckets(
+        self, pool: str, starts: Sequence[datetime], until: datetime
+    ) -> builtins.list[SpendBucket]:
+        original_starts = list(starts)
+        if not original_starts:
+            return []
+        moments = [to_utc(start) for start in original_starts]
+        end = to_utc(until)
+        if (
+            any(left >= right for left, right in zip(moments, moments[1:], strict=False))
+            or moments[-1] >= end
+        ):
+            raise ValueError("bucket starts must be ascending and before until")
+        cases = []
+        params: list[Any] = []
+        for index, start in enumerate(moments):
+            stop = moments[index + 1] if index + 1 < len(moments) else end
+            cases.append("WHEN at >= ? AND at < ? THEN ?")
+            params.extend((to_us(start), to_us(stop), index))
+        params.extend((pool, to_us(moments[0]), to_us(end)))
+        rows = self._store.connection().execute(
+            "SELECT CASE " + " ".join(cases) + " ELSE -1 END AS bucket_index,"
+            " COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0),"
+            " COALESCE(SUM(cost_usd), 0), COALESCE(MAX(estimated), 0)"
+            " FROM spend WHERE pool = ? AND at >= ? AND at < ?"
+            " GROUP BY bucket_index ORDER BY bucket_index",
+            params,
+        )
+        result = []
+        for index, tokens, cost_usd, estimated in rows.fetchall():
+            if index < 0:
+                continue
+            result.append(
+                SpendBucket(
+                    start=original_starts[index],
+                    tokens=int(tokens),
+                    cost_usd=float(cost_usd),
+                    estimated=bool(estimated),
+                )
+            )
+        return result
 
     def limit_hits_in_row(self, pool: str) -> int:
         # Order the streak by finish time: a pool's attempts run in parallel, so a row
