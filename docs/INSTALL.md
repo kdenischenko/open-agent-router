@@ -171,6 +171,13 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    read-only and works without JavaScript. Only environment variable names are displayed, never
    their values, gateway tokens or other secrets.
 
+   You can also submit a job from the dashboard: the **New job** page at `/jobs/new`, linked from
+   the Jobs page, takes a working directory, a `read` or `write` mode, an optional tier (leave it
+   empty to let the gateway choose), the prompt and an optional timeout in seconds. The form works
+   without JavaScript, shows validation errors beside the fields while keeping the entered values,
+   and redirects to the job page on success; with `confirm = true` on the chosen route, the job
+   still waits for your approval.
+
    ```toml
    [server]
    panel_session_days = 30

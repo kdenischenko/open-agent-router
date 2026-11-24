@@ -185,6 +185,10 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.
+- **New job** — a form linked from the Jobs page: working directory, `read`/`write` mode, an optional
+  tier (empty lets the gateway decide), the prompt and an optional timeout. It works without JavaScript,
+  shows validation errors beside the fields while keeping your values, and on success redirects to the
+  new job's page; a route with `confirm = true` still waits for approval before the job runs.
 - **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
   totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
   in expandable blocks with copy buttons; lets you rate a finished job.

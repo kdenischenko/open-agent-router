@@ -356,6 +356,26 @@ def require_dispatcher(gateway: Gateway) -> Any:
     return gateway.dispatcher
 
 
+def submit_job(gateway: Gateway, body: JobBody) -> Job:
+    """Validate and submit a job through the dispatcher used by the API and dashboard."""
+    dispatcher = require_dispatcher(gateway)
+    request = JobRequest(
+        prompt=body.prompt,
+        cwd=Path(body.cwd),
+        mode=body.mode,  # type: ignore[arg-type]
+        tier=body.tier,  # type: ignore[arg-type]
+        kind=body.kind,
+        caller=body.caller,
+        route=body.route,
+        timeout_s=body.timeout_s,
+    )
+    try:
+        return dispatcher.submit(request)
+    except RequestRejected as exc:
+        status = 429 if exc.code == "queue_full" else 422
+        raise ApiError(status, exc.code, exc.message) from exc
+
+
 def job_json(job: Job, attempts: Sequence[Attempt], rating: Rating | None = None) -> dict[str, Any]:
     """Job state and result; the prompt and tokens are not included."""
     tail = next((a.log_tail for a in reversed(attempts) if a.log_tail), None)
@@ -536,22 +556,7 @@ def api_router(gateway: Gateway) -> APIRouter:
 
     @router.post("/jobs", status_code=201)
     def post_job(body: JobBody, role: Role = client) -> dict[str, Any]:
-        dispatcher = tasks()
-        request = JobRequest(
-            prompt=body.prompt,
-            cwd=Path(body.cwd),
-            mode=body.mode,  # type: ignore[arg-type]
-            tier=body.tier,  # type: ignore[arg-type]
-            kind=body.kind,
-            caller=body.caller,
-            route=body.route,
-            timeout_s=body.timeout_s,
-        )
-        try:
-            job = dispatcher.submit(request)
-        except RequestRejected as exc:
-            status = 429 if exc.code == "queue_full" else 422
-            raise ApiError(status, exc.code, exc.message) from exc
+        job = submit_job(gateway, body)
         return {"job_id": job.id, "status": job.status}
 
     @router.get("/jobs")

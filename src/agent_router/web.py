@@ -19,7 +19,7 @@ from agent_router import __version__, api
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
 from agent_router.diagnostics import doctor_findings
-from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
+from agent_router.jobs import MODES, STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 from agent_router.usage_reader import UnknownPoolError
@@ -476,6 +476,89 @@ def web_router(deps: Gateway) -> APIRouter:
         if sid is None:
             return login_redirect()
         return jobs_page(request, sid, job_list(request))
+
+    submit_error_fields = {
+        "bad_prompt": "prompt",
+        "bad_mode": "mode",
+        "bad_tier": "tier",
+        "bad_timeout": "timeout_s",
+        "cwd_not_allowed": "cwd",
+        "not_a_git_repo": "cwd",
+        "git_unavailable": "cwd",
+    }
+
+    def submit_page(
+        request: Request,
+        sid: str,
+        *,
+        error: str | None = None,
+        errors: dict[str, str] | None = None,
+        values: dict[str, str] | None = None,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        return render_page(
+            request,
+            "submit.html",
+            {
+                "title": "New job",
+                "error": error,
+                "errors": errors or {},
+                "values": values or {"mode": "read"},
+                "modes": MODES,
+                "tiers": TIERS,
+            },
+            sid=sid,
+            nav="jobs",
+            status_code=status_code,
+        )
+
+    @router.get("/jobs/new")
+    def get_job_submit(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        return submit_page(request, sid)
+
+    @router.post("/jobs/new")
+    async def post_job_submit(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        form = await request.form()
+        if not deps.panel.csrf_ok(sid, _field(form, "csrf")):
+            return csrf_failed(request, sid)
+        values = {
+            name: _field(form, name) for name in ("cwd", "mode", "tier", "prompt", "timeout_s")
+        }
+        raw_timeout = values["timeout_s"]
+        try:
+            timeout_s = int(raw_timeout) if raw_timeout else None
+        except ValueError:
+            timeout_s = raw_timeout
+        try:
+            job = api.submit_job(
+                deps,
+                api.JobBody(
+                    prompt=values["prompt"],
+                    cwd=values["cwd"],
+                    mode=values["mode"],
+                    tier=values["tier"] or None,
+                    timeout_s=timeout_s,
+                ),
+            )
+        except api.ApiError as exc:
+            field = submit_error_fields.get(exc.code)
+            return submit_page(
+                request,
+                sid,
+                error="check the job field values" if field else exc.message,
+                errors={field: exc.message} if field else {},
+                values=values,
+                status_code=exc.status,
+            )
+        return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
     @router.get("/fragments/jobs")
     def get_jobs_fragment(request: Request) -> Response:
