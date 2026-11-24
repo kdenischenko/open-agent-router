@@ -191,6 +191,9 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 - **Calibrate** — record what your subscription page shows. Errors are shown per field and,
   with scripts on, the form previews the pace and the local reset time; after saving, the
   updated pool card is highlighted.
+- **Settings** — a read-only view of pools and their windows, routes (including disabled ones),
+  caller mappings, and configuration-related doctor findings with hints. Environment variable
+  names are shown, but never their values or any tokens.
 
 <table>
   <tr>

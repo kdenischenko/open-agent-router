@@ -11,7 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -20,24 +20,25 @@ from urllib.parse import urlparse
 import typer
 
 from agent_router import __version__, cli_gateway, cli_jobs
-from agent_router.cli_common import _config, _export_moment, _gateway, _request, _route_harness
+from agent_router.cli_common import _config, _export_moment, _gateway, _request
 from agent_router.cli_jobs import _job_failure, _job_request
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
 from agent_router.clock import SystemClock, format_age, format_local
-from agent_router.config import Config, ConfigError, home_dir, model_key
+from agent_router.config import Config, ConfigError, home_dir
+from agent_router.diagnostics import (
+    DoctorFinding,
+    caller_findings,
+    spend_findings,
+    task_findings,
+    usage_findings,
+    weight_findings,
+)
 from agent_router.export import ExportError
 from agent_router.export import export as export_journal
 from agent_router.jobs import TERMINAL
 from agent_router.jobstore import open_jobstore
 from agent_router.periods import parse_moment
-from agent_router.registry import (
-    HARNESS_GROUP,
-    harnesses,
-    load_counter,
-    load_harness,
-    load_usage_source,
-    resolve_backend,
-)
+from agent_router.registry import HARNESS_GROUP, harnesses, load_harness, resolve_backend
 from agent_router.runner import ResolvedExecutable, resolve_executable
 from agent_router.settings_store import SqliteSettings
 from agent_router.store import open_store
@@ -407,17 +408,14 @@ def _doctor_classifier(config: Config) -> None:
         )
 
 
+def _print_doctor_findings(findings: list[DoctorFinding]) -> None:
+    for finding in findings:
+        prefix = "Warning: " if finding.level == "warning" else ""
+        typer.echo(f"{prefix}{finding.message}")
+
+
 def _doctor_callers(config: Config) -> None:
-    """Warn when a mapped caller has no enabled route outside its own pool."""
-    enabled = [route for route in config.routes if route.enabled]
-    for name, pool in config.callers.items():
-        if pool is None:
-            continue
-        if enabled and all(route.pool == pool for route in enabled):
-            typer.echo(
-                f"Warning: caller {name}: every enabled route is on its own pool "
-                f"{pool}, so its delegated jobs have no route"
-            )
+    _print_doctor_findings(caller_findings(config))
 
 
 def _doctor_store(config: Config, home: Path) -> None:
@@ -500,96 +498,15 @@ def _doctor_backends(config: Config) -> None:
 
 
 def _doctor_weights(config: Config) -> None:
-    """Pool model weights and route prices: table date, missing limits, routes without a price."""
-    today = datetime.now().date()
-    for pool in config.pools:
-        if pool.limit_base_usd is None:
-            continue
-        if pool.model_limits_date is not None:
-            try:
-                days = (today - date.fromisoformat(pool.model_limits_date)).days
-            except ValueError:
-                days = None
-            if days is not None:
-                typer.echo(
-                    f"Pool {pool.id}: model_limits from {pool.model_limits_date} ({days} days ago)"
-                )
-        for route in config.routes:
-            if not route.enabled or route.pool != pool.id:
-                continue
-            key = model_key(route.model) if route.model else route.model_group
-            if key not in pool.model_limits:
-                typer.echo(
-                    f"Warning: route {route.id}: model {key} missing from model_limits "
-                    f"of pool {pool.id}, weight 1.0"
-                )
-    for pool in config.pools:
-        if pool.price_file is None or pool.prices is None:
-            continue
-        for route in config.routes:
-            if not route.enabled or route.pool != pool.id:
-                continue
-            keys = (
-                [model_key(route.model), route.model_group] if route.model else [route.model_group]
-            )
-            if any(key in pool.prices.models for key in keys):
-                continue
-            typer.echo(
-                f"Warning: route {route.id}: no price for model {keys[0]} "
-                f"in price_file of pool {pool.id}"
-            )
+    _print_doctor_findings(weight_findings(config))
 
 
 def _doctor_spend(config: Config) -> None:
-    """Warn when a route's counter spend cannot be seen by its pool."""
-    for route in config.routes:
-        if not route.enabled or config.route_spend(route) != "counter":
-            continue
-        pool = next((item for item in config.pools if item.id == route.pool), None)
-        harness = _route_harness(config, route)
-        if pool is None or harness is None:
-            continue
-        if pool.counter is None:
-            typer.echo(
-                f"Warning: route {route.id}: pool {pool.id} has no counter, so its spend is "
-                f'invisible; set spend = "journal"'
-            )
-            continue
-        try:
-            counter = load_counter(pool.counter)
-        except ConfigError:
-            continue  # an unknown counter is rejected when the config loads
-        if harness not in counter.sees:
-            typer.echo(
-                f"Warning: route {route.id}: counter {pool.counter} does not see harness "
-                f'{harness}, so its spend is invisible; set spend = "journal"'
-            )
+    _print_doctor_findings(spend_findings(config))
 
 
 def _doctor_usage(config: Config) -> None:
-    """Usage sources: key variables, the source's own check, and auto mode without a source."""
-    for pool in config.pools:
-        if pool.usage.source is None:
-            # a pool that never mentions usage stays quiet unless [usage] opted into reads
-            if config.usage_mode(pool.id) == "auto" and (
-                pool.usage.mode == "auto" or config.usage.present
-            ):
-                typer.echo(f"Warning: pool {pool.id}: usage mode is auto but no source is set")
-            continue
-        try:
-            spec = load_usage_source(pool.usage.source)
-        except ConfigError:
-            continue  # an unknown source is rejected when the config loads
-        variable = pool.usage.api_key_env or spec.default_api_key_env
-        # presence only: an empty value counts as unset, and the value is never printed or logged
-        if variable is not None and not os.environ.get(variable):
-            typer.echo(
-                f"Warning: pool {pool.id}: usage source {pool.usage.source} "
-                f"needs environment variable {variable}, which is not set"
-            )
-        warning = spec.check(pool.usage, os.environ) if spec.check is not None else None
-        if warning is not None:
-            typer.echo(f"Warning: pool {pool.id}: usage source {pool.usage.source}: {warning}")
+    _print_doctor_findings(usage_findings(config))
 
 
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
@@ -735,8 +652,7 @@ def doctor(
     _doctor_classifier(config)
     _doctor_callers(config)
     _doctor_usage(config)
-    if not config.tasks.allowed_roots:
-        typer.echo("Warning: tasks.allowed_roots is empty, jobs not accepted")
+    _print_doctor_findings(task_findings(config))
     client = _gateway()
     stats = _request(lambda: client.get("/api/v1/events/stats"))
     typer.echo(f"Gateway: available, event #{stats['seq']}")
