@@ -603,7 +603,7 @@ def _doctor_usage(config: Config) -> None:
 
 
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
-    """Read health from the running gateway: failed reads and stale usage data per pool."""
+    """Read health from the running gateway: read problems and stale usage data per pool."""
     if not any(pool.usage.source is not None for pool in config.pools):
         return
     snapshot = _request(lambda: client.get("/api/v1/snapshot"))
@@ -613,6 +613,8 @@ def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
             continue
         if info.get("last_error"):
             typer.echo(f"Warning: pool {pool['id']}: last usage read failed: {info['last_error']}")
+        if info.get("warning"):
+            typer.echo(f"Warning: pool {pool['id']}: last usage read: {info['warning']}")
         if not info.get("stale"):
             continue
         age = info.get("age_s")

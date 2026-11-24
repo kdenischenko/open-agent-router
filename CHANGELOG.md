@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
+  shown by `agent-router status`, `doctor` and the dashboard pool card.
 - `agent-router purge` retries directory removals that failed during an earlier run and also
   sweeps orphaned `jobs/<job-id>/` directories older than the retention cutoff.
 - `tasks.allowed_roots` and `tasks.denied_roots` entries must be non-empty absolute paths after

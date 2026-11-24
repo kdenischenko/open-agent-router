@@ -34,10 +34,11 @@ class UsagePoint:
 
 @dataclass(frozen=True)
 class UsageRead:
-    """The result of one source read: data points or a reason code when there is none."""
+    """The result of one source read: data points or a reason, plus an optional warning."""
 
     points: tuple[UsagePoint, ...] = ()
     reason: str | None = None  # e.g. "unauthorized"
+    warning: str | None = None  # a non-fatal problem alongside usable points
 
     @property
     def ok(self) -> bool:

@@ -219,7 +219,7 @@ sign-in you already made in it; it never sees provider keys.
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
-| Claude Code | `claude` | journal | tested live on Windows |
+| Claude Code | `claude` | journal | covered by recorded tests; live check pending |
 
 ## Platforms
 
