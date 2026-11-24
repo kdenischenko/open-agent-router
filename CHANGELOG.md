@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The installation guide documents the write-mode flags and outside-directory controls of each
+  supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
 - Claude Code jobs use `stream-json`, so their output resets the idle timeout while the job runs.
   Write jobs use `bypassPermissions` instead of silently denying commands, and both modes load
