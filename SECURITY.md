@@ -42,9 +42,10 @@ protects against, what it does not, and how to report a vulnerability.
   does not limit *what* the harness does there.
 - **`--mode write` auto-approves tools.** To run unattended, the harness is started with its
   auto-approve option: `opencode --auto`, `cline --auto-approve true`,
-  `claude --permission-mode acceptEdits`; Kimi Code runs non-interactively (`kimi -p`) with no one
-  to ask. The harness can edit any file your user can edit and run commands, not only inside the
-  job directory.
+  `claude --permission-mode bypassPermissions`; Kimi Code runs non-interactively (`kimi -p`) with
+  no one to ask. The harness can edit any file your user can edit and run commands, not only inside
+  the job directory. See "Keeping writes inside the job directory" in
+  [the installation guide](docs/INSTALL.md) for the settings each harness offers.
 - **`--mode read` is a request, not a guarantee.** Where the harness has a read-only or plan mode,
   it is used; otherwise the prompt tells the executor not to change files. In a git repository the
   gateway compares the working tree before and after the job; if something changed, the job gets
