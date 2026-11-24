@@ -321,7 +321,9 @@ Adapters (`adapters/`) build argv/stdin and parse output:
 
 - **kimi** — `kimi -p <text> -m <model> --output-format stream-json`; prompt in argv (or a prompt
   file); read mode is enforced by the preamble only; NDJSON events, last assistant message is
-  the answer; spend source `journal`; `quiet_while_working`, so a silent answer is not idle.
+  the answer; input and output tokens are summed from `usage.record` events in every agent's
+  `wire.jsonl` under the session directory in `~/.kimi-code`, including subagents; spend source
+  `journal`; `quiet_while_working`, so a silent answer is not idle.
 - **claude** — `claude -p --output-format stream-json --verbose --model <m> --permission-mode
   <mode> --setting-sources project --strict-mcp-config`, prompt via stdin; read maps to
   `plan`, write to `bypassPermissions`. The isolation flags keep the user's settings, hooks,
