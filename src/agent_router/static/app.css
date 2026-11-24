@@ -645,7 +645,8 @@ dd {
   margin: 0;
 }
 
-.limit-stale {
+.limit-stale,
+.usage-drift {
   color: var(--color-warn);
 }
 

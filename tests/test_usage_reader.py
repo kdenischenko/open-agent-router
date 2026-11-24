@@ -340,6 +340,168 @@ def test_warning_is_published_and_cleared_by_the_next_clean_read(
     ]
 
 
+def test_missing_field_is_reported_once_and_cleared_when_it_returns(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(UsageRead(points=(UsagePoint("monthly", 0.4, RESET),)))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.missing_fields == ("rolling",)
+
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    fake.result = FakeSource().result
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.missing_fields == ()
+    assert [event for event in events() if event[0] == "usage.fields_missing"] == [
+        (
+            "usage.fields_missing",
+            {"pool": "auto-pool", "source": "fake-usage", "fields": ["rolling"]},
+        )
+    ]
+
+
+def test_missing_field_does_not_repeat_the_event_or_warn_about_unmapped_fields(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(
+        UsageRead(points=(UsagePoint("monthly", 0.4, RESET), UsagePoint("vendor_extra", 0.2)))
+    )
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    reader.refresh("auto-pool")
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    reader.refresh("auto-pool")
+
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.missing_fields == ("rolling",)
+    assert [event for event in events() if event[0] == "usage.fields_missing"] == [
+        (
+            "usage.fields_missing",
+            {"pool": "auto-pool", "source": "fake-usage", "fields": ["rolling"]},
+        )
+    ]
+
+
+def test_invalid_mapped_point_counts_as_missing(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(
+        UsageRead(
+            points=(UsagePoint("monthly", 0.4, RESET), UsagePoint("rolling", 1.5)),
+        )
+    )
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    reader.refresh("auto-pool")
+
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.missing_fields == ("rolling",)
+    assert [event for event in events() if event[0] == "usage.fields_missing"] == [
+        (
+            "usage.fields_missing",
+            {"pool": "auto-pool", "source": "fake-usage", "fields": ["rolling"]},
+        )
+    ]
+
+
+def test_changing_the_missing_set_publishes_a_new_event(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(UsageRead(points=(UsagePoint("monthly", 0.4, RESET),)))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    reader.refresh("auto-pool")
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    fake.result = UsageRead(points=(UsagePoint("rolling", 0.25),))
+    reader.refresh("auto-pool")
+
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.missing_fields == ("monthly",)
+    assert [event for event in events() if event[0] == "usage.fields_missing"] == [
+        (
+            "usage.fields_missing",
+            {"pool": "auto-pool", "source": "fake-usage", "fields": ["rolling"]},
+        ),
+        (
+            "usage.fields_missing",
+            {"pool": "auto-pool", "source": "fake-usage", "fields": ["monthly"]},
+        ),
+    ]
+
+
+def test_no_data_tracks_missing_fields_and_format_failures(
+    usage_config, store, clock, tokens, home, bus, events
+) -> None:
+    fake = FakeSource(UsageRead(points=(UsagePoint("vendor_extra", 0.4),)))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    for attempt in range(3):
+        if attempt:
+            clock.advance(timedelta(seconds=MIN_REFRESH_S))
+        reader.refresh("auto-pool")
+
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.last_reason == "no_data"
+    assert state.missing_fields == ("monthly", "rolling")
+    assert state.format_changed is True
+    assert [event for event in events() if event[0] == "usage.fields_missing"] == [
+        (
+            "usage.fields_missing",
+            {
+                "pool": "auto-pool",
+                "source": "fake-usage",
+                "fields": ["monthly", "rolling"],
+            },
+        )
+    ]
+
+
+def test_three_format_failures_set_format_changed_and_success_resets_it(
+    usage_config, store, clock, tokens, home, bus
+) -> None:
+    fake = FakeSource(UsageRead(reason="malformed_response"))
+    reader = make_reader(usage_config, store, clock, tokens, home, bus, {"auto-pool": fake})
+
+    reader.refresh("auto-pool")
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.format_changed is False
+
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    fake.result = UsageRead(reason="no_data")
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.format_changed is True
+
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    fake.result = FakeSource().result
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.format_changed is False
+
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    fake.result = UsageRead(reason="malformed_response")
+    reader.refresh("auto-pool")
+    clock.advance(timedelta(seconds=MIN_REFRESH_S))
+    reader.refresh("auto-pool")
+    state = reader.state("auto-pool")
+    assert state is not None
+    assert state.format_changed is False
+
+
 # --- API: POST /api/v1/usage/refresh ---------------------------------------------------
 
 
@@ -498,6 +660,8 @@ def test_snapshot_reports_usage_state_and_figure_sources(api_client, tokens, clo
         "warning": None,
         "age_s": None,
         "stale": True,
+        "missing_fields": [],
+        "format_changed": False,
     }
     assert pools["manual-pool"]["usage"]["mode"] == "manual"
     assert pools["manual-pool"]["usage"]["stale"] is False
@@ -808,13 +972,22 @@ def test_ok_read_without_usable_points_is_a_failure(
 
     assert [(item.pool, item.reason) for item in result.failed] == [("auto-pool", "no_data")]
     assert events() == [
-        ("usage.read_failed", {"pool": "auto-pool", "source": "fake-usage", "reason": "no_data"})
+        ("usage.read_failed", {"pool": "auto-pool", "source": "fake-usage", "reason": "no_data"}),
+        (
+            "usage.fields_missing",
+            {
+                "pool": "auto-pool",
+                "source": "fake-usage",
+                "fields": ["monthly", "rolling"],
+            },
+        ),
     ]
     state = reader.state("auto-pool")
     assert state is not None
     assert state.last_success_at is None
     assert state.last_reason == "no_data"
     assert state.last_warning == warning
+    assert state.missing_fields == ("monthly", "rolling")
 
 
 def test_successful_read_runs_the_calibration_hooks(

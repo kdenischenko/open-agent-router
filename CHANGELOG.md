@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A usage read that stops returning a mapped field, or fails with `malformed_response`/`no_data`
+  three times in a row, is surfaced as usage-source drift: the snapshot `usage` object gains
+  `missing_fields` and `format_changed`, the reader publishes `usage.fields_missing` when the
+  missing set changes, and the dashboard and `doctor` warn with the remediation
+  (`update agent-router or switch the pool to mode = "manual" and calibrate`).
 - The Limits page charts spend per pool over the last 24 hours and seven days from the journal,
   with USD or token units, estimate markers, accessible tables and responsive inline SVG.
 - The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and

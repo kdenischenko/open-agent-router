@@ -22,7 +22,7 @@ from agent_router.diagnostics import doctor_findings
 from agent_router.jobs import MODES, STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
-from agent_router.usage_reader import UnknownPoolError
+from agent_router.usage_reader import UnknownPoolError, usage_drift_warnings
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
@@ -367,6 +367,24 @@ def web_router(deps: Gateway) -> APIRouter:
             if reader.state(pool.id) is not None and deps.config.usage_mode(pool.id) != "manual"
         }
 
+    def usage_warnings(snapshot: dict) -> dict[str, list[str]]:
+        configured = {pool.id: pool for pool in deps.config.pools}
+        warnings = {}
+        for pool in snapshot["pools"]:
+            info = pool.get("usage")
+            settings = configured.get(pool["id"])
+            if info is None or settings is None or info["mode"] == "manual":
+                continue
+            messages = usage_drift_warnings(
+                info["source"],
+                info.get("missing_fields", []),
+                info.get("format_changed", False),
+                settings.usage.windows,
+            )
+            if messages:
+                warnings[pool["id"]] = messages
+        return warnings
+
     def spend_chart(pool, chart_id: str, title: str, starts: list[datetime], end: datetime) -> dict:
         rows = deps.jobs.spend_buckets(pool.id, starts, end)
         by_start = {row.start: row for row in rows}
@@ -441,6 +459,7 @@ def web_router(deps: Gateway) -> APIRouter:
             "stale_after_s": LIMIT_STALE_AFTER_S,
             "recorded_pool": recorded_pool(request),
             "usage_refresh": usage_refresh_pools(),
+            "usage_warnings": usage_warnings(snapshot),
             "spend_charts": spend_charts(now),
         }
 

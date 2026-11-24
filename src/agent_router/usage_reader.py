@@ -39,6 +39,29 @@ class UsageReadState:
     last_success_at: datetime | None = None
     last_reason: str | None = None  # None after a success
     last_warning: str | None = None
+    missing_fields: tuple[str, ...] = ()
+    format_changed: bool = False
+
+
+def usage_drift_warnings(
+    source: str,
+    missing_fields: list[str] | tuple[str, ...],
+    format_changed: bool,
+    windows: Mapping[str, str],
+) -> list[str]:
+    """Actionable dashboard and doctor text for source fields that stopped matching."""
+    hint = 'update agent-router or switch the pool to mode = "manual" and calibrate'
+    warnings = []
+    for field in missing_fields:
+        window = windows.get(field)
+        if window is not None:
+            warnings.append(
+                f"usage source {source} no longer reports {field}; "
+                f"window {window} falls back to the journal; {hint}"
+            )
+    if format_changed:
+        warnings.append(f"usage source {source} response format may have changed; {hint}")
+    return warnings
 
 
 @dataclass(frozen=True)
@@ -118,6 +141,7 @@ class UsageReader:
         self._state: dict[str, UsageReadState] = {
             pool_id: UsageReadState(pool_id) for pool_id in self._sources
         }
+        self._format_failures = dict.fromkeys(self._sources, 0)
 
     @property
     def has_sources(self) -> bool:
@@ -188,23 +212,39 @@ class UsageReader:
         except Exception:
             result = UsageRead(reason="error")  # a crashing source is a failed read
         warning = result.warning
-        found = observations(pool, spec, result, now)
+        source_succeeded = result.ok
+        found = []
+        usable_fields = set()
+        if source_succeeded:
+            for point in result.points:
+                point_observations = observations(pool, spec, UsageRead(points=(point,)), now)
+                if point_observations:
+                    usable_fields.add(point.field)
+                    found.extend(point_observations)
+        missing = tuple(sorted(set(pool.usage.windows) - usable_fields))
         if result.ok and not found:
             # nothing the pool maps was usable: report it rather than a success that wrote nothing
             result = UsageRead(reason="no_data")
         if not result.ok:
             reason = result.reason or "error"
-            self._mark(pool_id, now, reason, warning)
+            missing_event = self._mark(
+                pool_id, now, reason, warning, missing if source_succeeded else None
+            )
             failed.append(PoolOutcome(pool_id, reason))
             self._bus.publish(
                 "usage.read_failed",
                 {"pool": pool_id, "source": spec.name, "reason": reason},
             )
+            if missing_event:
+                self._bus.publish(
+                    "usage.fields_missing",
+                    {"pool": pool_id, "source": spec.name, "fields": list(missing_event)},
+                )
             return
         for obs in found:
             with self._gateway.write_lock:
                 self._gateway.record_observation(obs)
-        self._mark(pool_id, now, None, warning)
+        missing_event = self._mark(pool_id, now, None, warning, missing)
         for hook in list(self._gateway.after_calibration):
             # the same out-of-schedule counter check a manual calibration triggers
             with contextlib.suppress(Exception):
@@ -215,14 +255,38 @@ class UsageReader:
         if warning is not None:
             payload["warning"] = warning
         self._bus.publish("usage.read", payload)
+        if missing_event:
+            self._bus.publish(
+                "usage.fields_missing",
+                {"pool": pool_id, "source": spec.name, "fields": list(missing_event)},
+            )
 
-    def _mark(self, pool_id: str, now: datetime, reason: str | None, warning: str | None) -> None:
+    def _mark(
+        self,
+        pool_id: str,
+        now: datetime,
+        reason: str | None,
+        warning: str | None,
+        missing_fields: tuple[str, ...] | None = None,
+    ) -> tuple[str, ...] | None:
         with self._lock:
             previous = self._state[pool_id]
+            if reason is None:
+                failures = 0
+            elif reason in {"malformed_response", "no_data"}:
+                failures = self._format_failures[pool_id] + 1
+            else:
+                failures = 0
+            self._format_failures[pool_id] = failures
+            fields = previous.missing_fields if missing_fields is None else missing_fields
+            changed = fields if fields and fields != previous.missing_fields else None
             self._state[pool_id] = UsageReadState(
                 pool=pool_id,
                 last_attempt_at=now,
                 last_success_at=now if reason is None else previous.last_success_at,
                 last_reason=reason,
                 last_warning=warning,
+                missing_fields=fields,
+                format_changed=failures >= 3,
             )
+            return changed

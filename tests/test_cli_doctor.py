@@ -921,3 +921,46 @@ def test_doctor_is_quiet_about_usage_when_the_config_never_mentions_it(
     assert result.exit_code == 0, result.output
     assert not any("usage" in line for line in _warnings(result))
     assert ("GET", "/api/v1/snapshot", {}) not in [call[:3] for call in gateway.calls]
+
+
+def test_doctor_warns_about_missing_usage_fields_and_format_change(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _write_source_config(monkeypatch, home, gateway)
+    gateway.snapshot = _snapshot_pool_usage(missing_fields=["monthly"], format_changed=True)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    hint = 'update agent-router or switch the pool to mode = "manual" and calibrate'
+    assert (
+        "Warning: pool opencode-go: usage source fake-usage no longer reports monthly; "
+        f"window month falls back to the journal; {hint}" in _warnings(result)
+    )
+    assert (
+        "Warning: pool opencode-go: usage source fake-usage response format may have changed; "
+        f"{hint}" in _warnings(result)
+    )
+
+
+def test_doctor_hides_usage_drift_warnings_in_manual_mode(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    _write_source_config(monkeypatch, home, gateway)
+    gateway.snapshot = _snapshot_pool_usage(
+        mode="manual", missing_fields=["monthly"], format_changed=True
+    )
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("no longer reports" in line for line in _warnings(result))
+    assert not any("response format may have changed" in line for line in _warnings(result))
