@@ -35,6 +35,14 @@ class SpendTotal:
     estimated: bool
 
 
+@dataclass(frozen=True)
+class SpendBucket:
+    start: datetime
+    tokens: int
+    cost_usd: float
+    estimated: bool
+
+
 class SpendReader(Protocol):
     def spend_since(self, pool: str, since: datetime | None) -> SpendTotal: ...
 

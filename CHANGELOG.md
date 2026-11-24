@@ -8,6 +8,8 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- The Limits page charts spend per pool over the last 24 hours and seven days from the journal,
+  with USD or token units, estimate markers, accessible tables and responsive inline SVG.
 - The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and
   configuration-related doctor findings with hints, without exposing tokens or environment values.
 - The dashboard has a New job page at `/jobs/new`, linked from the Jobs page: it submits a job

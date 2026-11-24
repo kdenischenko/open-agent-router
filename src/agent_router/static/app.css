@@ -659,6 +659,35 @@ dd {
   font-size: var(--text-sm);
 }
 
+.spend-history {
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.spend-history h3,
+.spend-history h4 {
+  font-size: var(--text-base);
+}
+
+.spend-chart {
+  color: var(--color-accent);
+  display: block;
+  height: auto;
+  max-width: 100%;
+  width: 100%;
+}
+
+.spend-chart__data summary {
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.spend-chart__estimated {
+  color: var(--color-muted);
+}
+
 /* Read-only settings */
 
 .table-scroll .settings-route-id {
