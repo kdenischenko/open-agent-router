@@ -6,12 +6,12 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
-from agent_router.periods import Duration
+from agent_router.periods import Duration, approx_length
 from agent_router.prices import PriceTable
 
 Tier = Literal["cheap", "standard", "strong"]
@@ -73,6 +73,13 @@ class Window:
     anchor: datetime | None
     limit_usd: float | None
     block_at: float
+    max_age: timedelta | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_age is None:
+            # Half a window tolerates collection gaps; the 72h cap bounds staleness on long windows.
+            default = min(approx_length(self.duration) / 2, timedelta(hours=72))
+            object.__setattr__(self, "max_age", default)
 
 
 @dataclass(frozen=True)

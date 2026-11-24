@@ -106,13 +106,18 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    denied_roots = ["C:/work/projects/secret-repo"]
    ```
 
+   Each entry must be a non-empty absolute path after `~` expansion: `~/work` is valid
+   and portable, while a relative or empty entry is a config error. The lists themselves
+   may stay empty.
+
 2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
    others are commented out. Uncomment a route after you install its harness, and set
    `enabled = true` on the routes you want to use (`cline/glm-5.3` starts disabled, while
    `claude-cli/sonnet` starts enabled). Write the route model as the harness understands it:
    `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
    `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
-   the setup; see [SECURITY](../SECURITY.md).
+   the setup; see [SECURITY](../SECURITY.md). Every harness route needs a non-empty `pool`,
+   `backend` and `model`; a route with any of them missing or empty is a config error.
 
 3. **Harness not in PATH.** Specify the path explicitly:
 
@@ -123,7 +128,11 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 4. **Limits.** The `[[pools.windows]]` windows in the template are examples. Every
    `limit_usd = 10  # set your plan limit` is a placeholder: replace it with the limit of your
-   `opencode-go` plan. Leave any extra pools in place: they are not used without routes.
+   `opencode-go` plan. Leave any extra pools in place: they are not used without routes. A fixed
+   window may set `max_age = "2h30m"` — a span like `75m`, `3h` or `2d`. A calibration or usage
+   read older than `max_age` is shown as `no data: observation older than max age` until a newer
+   one replaces it; when `max_age` is absent, half the window duration applies, capped at 72 h
+   (`5h` → `2h30m`, `7d` → `72h`, `1mo` → `72h`).
 
 5. **Prices for Cline.** Cline does not report job costs, so without a price table its spending is
    not counted toward the `opencode-go` limit share. Create `prices-opencode-go.toml` next to
