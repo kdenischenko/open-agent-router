@@ -7,7 +7,7 @@ import importlib.resources
 import json
 import tomllib
 from dataclasses import FrozenInstanceError
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
@@ -133,6 +133,26 @@ def test_unknown_route_tier_is_rejected(tmp_path: Path, config_module) -> None:
 
 def test_bad_window_duration_is_rejected(tmp_path: Path, config_module) -> None:
     text = VALID_CONFIG.replace('duration = "7d"', 'duration = "seven days"')
+    with pytest.raises(config_module.ConfigError):
+        load_text(tmp_path, config_module, text)
+
+
+def test_window_max_age_parses(tmp_path: Path, config_module) -> None:
+    text = VALID_CONFIG.replace('role = "pace"', 'role = "pace"\nmax_age = "75m"')
+    config = load_text(tmp_path, config_module, text)
+    assert getattr(config.pools[0].windows[0], "max_age", None) == timedelta(minutes=75)
+
+
+def test_window_max_age_defaults_to_half_duration_capped_at_72_hours(
+    tmp_path: Path, config_module
+) -> None:
+    config = load_text(tmp_path, config_module, VALID_CONFIG)
+    assert getattr(config.pools[0].windows[0], "max_age", None) == timedelta(hours=72)
+
+
+@pytest.mark.parametrize("value", ["0m", "-1h"])
+def test_window_max_age_must_be_positive(tmp_path: Path, config_module, value: str) -> None:
+    text = VALID_CONFIG.replace('role = "pace"', f'role = "pace"\nmax_age = "{value}"')
     with pytest.raises(config_module.ConfigError):
         load_text(tmp_path, config_module, text)
 

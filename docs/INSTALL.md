@@ -128,7 +128,11 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 4. **Limits.** The `[[pools.windows]]` windows in the template are examples. Every
    `limit_usd = 10  # set your plan limit` is a placeholder: replace it with the limit of your
-   `opencode-go` plan. Leave any extra pools in place: they are not used without routes.
+   `opencode-go` plan. Leave any extra pools in place: they are not used without routes. A fixed
+   window may set `max_age = "2h30m"` — a span like `75m`, `3h` or `2d`. A calibration or usage
+   read older than `max_age` is shown as `no data: observation older than max age` until a newer
+   one replaces it; when `max_age` is absent, half the window duration applies, capped at 72 h
+   (`5h` → `2h30m`, `7d` → `72h`, `1mo` → `72h`).
 
 5. **Prices for Cline.** Cline does not report job costs, so without a price table its spending is
    not counted toward the `opencode-go` limit share. Create `prices-opencode-go.toml` next to

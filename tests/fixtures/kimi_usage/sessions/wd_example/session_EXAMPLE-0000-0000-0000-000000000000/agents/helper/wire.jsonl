@@ -1,0 +1,2 @@
+{"type":"usage.record","agentId":"helper","model":"example/model","usage":{"inputOther":300,"output":13,"inputCacheRead":60,"inputCacheCreation":9},"usageScope":"turn","time":3}
+{"type":"tool","name":"example","result":"ok"}

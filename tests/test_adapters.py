@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
@@ -15,6 +16,7 @@ from agent_router.adapters import (
     looks_like_limit,
     with_preamble,
 )
+from agent_router.adapters.kimi import KimiAdapter
 from agent_router.registry import HARNESS_GROUP, load_harness
 from agent_router.runner import ResolvedExecutable, check_shim_args
 
@@ -24,7 +26,7 @@ SHIM = ResolvedExecutable(Path("bin") / "tool.cmd", True)
 PROMPT_FILE = Path("jobs") / "j_1" / "prompt.md"
 RESET = datetime(2026, 11, 13, 15, 0, tzinfo=UTC)
 
-kimi = load_harness("kimi").adapter
+kimi = KimiAdapter(FIXTURES / "kimi_missing_home")
 opencode = load_harness("opencode").adapter
 claude = load_harness("claude").adapter
 
@@ -225,6 +227,149 @@ def test_kimi_multi_takes_last_assistant_text() -> None:
     outcome = kimi.parse(sample("kimi_multi.jsonl"), "", 0)
     assert outcome.status == "ok" and outcome.text == "pineapple"
     assert outcome.tokens_in is None and outcome.tokens_out is None and outcome.cost_usd is None
+
+
+def kimi_stdout(session_id: str) -> str:
+    escaped_id = json.dumps(session_id)[1:-1]
+    return sample("kimi_ok.jsonl").replace("session_<id>", escaped_id)
+
+
+def write_kimi_wire(home: Path, session_id: str, lines: list[str]) -> Path:
+    wire = home / "sessions" / "wd_example" / session_id / "agents" / "main" / "wire.jsonl"
+    wire.parent.mkdir(parents=True)
+    wire.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return wire
+
+
+def usage_line(**usage: object) -> str:
+    return json.dumps({"type": "usage.record", "usage": usage})
+
+
+def test_kimi_sums_usage_records_from_all_agents(tmp_path: Path) -> None:
+    shutil.copytree(FIXTURES / "kimi_usage", tmp_path, dirs_exist_ok=True)
+    session_id = "session_EXAMPLE-0000-0000-0000-000000000000"
+
+    outcome = KimiAdapter(tmp_path).parse(kimi_stdout(session_id), "", 0)
+
+    assert outcome == RunOutcome(
+        "ok", text="done", tokens_in=738, tokens_out=31, session_id=session_id
+    )
+
+
+def test_kimi_missing_usage_key_counts_as_zero(tmp_path: Path) -> None:
+    session_id = "session_EXAMPLE"
+    write_kimi_wire(
+        tmp_path,
+        session_id,
+        [usage_line(inputOther=100, inputCacheRead=20, output=7)],
+    )
+
+    outcome = KimiAdapter(tmp_path).parse(kimi_stdout(session_id), "", 0)
+
+    assert outcome.tokens_in == 120 and outcome.tokens_out == 7
+
+
+@pytest.mark.parametrize("bad_value", [True, 1.5, -1, "1", None])
+def test_kimi_invalid_usage_value_skips_only_that_record(tmp_path: Path, bad_value: object) -> None:
+    session_id = "session_EXAMPLE"
+    write_kimi_wire(
+        tmp_path,
+        session_id,
+        [
+            usage_line(inputOther=bad_value, inputCacheRead=20, inputCacheCreation=0, output=7),
+            usage_line(inputOther=100, inputCacheRead=40, inputCacheCreation=6, output=11),
+        ],
+    )
+
+    outcome = KimiAdapter(tmp_path).parse(kimi_stdout(session_id), "", 0)
+
+    assert outcome.tokens_in == 146 and outcome.tokens_out == 11
+
+
+def test_kimi_broken_json_line_does_not_hide_valid_usage(tmp_path: Path) -> None:
+    session_id = "session_EXAMPLE"
+    write_kimi_wire(
+        tmp_path,
+        session_id,
+        [
+            '{"type":"usage.record","usage":',
+            usage_line(inputOther=100, inputCacheRead=20, inputCacheCreation=3, output=7),
+        ],
+    )
+
+    outcome = KimiAdapter(tmp_path).parse(kimi_stdout(session_id), "", 0)
+
+    assert outcome.tokens_in == 123 and outcome.tokens_out == 7
+
+
+def test_kimi_unreadable_wire_keeps_tokens_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = "session_EXAMPLE"
+    wire = write_kimi_wire(
+        tmp_path,
+        session_id,
+        [usage_line(inputOther=100, inputCacheRead=20, inputCacheCreation=3, output=7)],
+    )
+    original_open = Path.open
+
+    def fail_wire_open(self: Path, *args: object, **kwargs: object) -> object:
+        if self == wire:
+            raise OSError("unreadable")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_wire_open)
+    outcome = KimiAdapter(tmp_path).parse(kimi_stdout(session_id), "", 0)
+
+    assert outcome.status == "ok"
+    assert outcome.tokens_in is None and outcome.tokens_out is None
+
+
+@pytest.mark.parametrize("session_id", ["session_*", "session_..", "session_a/b", "session_a\\b"])
+def test_kimi_invalid_session_id_never_reads_wire_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, session_id: str
+) -> None:
+    stdout = kimi_stdout(session_id)
+
+    def unexpected_open(self: Path, *args: object, **kwargs: object) -> object:
+        raise AssertionError(f"unexpected wire read: {self}")
+
+    monkeypatch.setattr(Path, "open", unexpected_open)
+    outcome = KimiAdapter(tmp_path).parse(stdout, "", 0)
+
+    assert outcome.status == "ok" and outcome.session_id == session_id
+    assert outcome.tokens_in is None and outcome.tokens_out is None
+
+
+def test_kimi_unexpected_usage_error_does_not_fail_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = KimiAdapter(tmp_path)
+
+    def fail_usage(session_id: str) -> tuple[int, int] | None:
+        raise RuntimeError("unexpected usage failure")
+
+    monkeypatch.setattr(adapter, "_usage", fail_usage)
+    outcome = adapter.parse(kimi_stdout("session_EXAMPLE"), "", 0)
+
+    assert outcome.status == "ok" and outcome.text == "done"
+    assert outcome.tokens_in is None and outcome.tokens_out is None
+
+
+def test_kimi_missing_session_dir_keeps_tokens_unknown(tmp_path: Path) -> None:
+    outcome = KimiAdapter(tmp_path).parse(sample("kimi_ok.jsonl"), "", 0)
+
+    assert outcome.status == "ok"
+    assert outcome.tokens_in is None and outcome.tokens_out is None
+
+
+def test_kimi_without_session_id_keeps_tokens_unknown(tmp_path: Path) -> None:
+    stdout = json.dumps({"role": "assistant", "content": "done"})
+
+    outcome = KimiAdapter(tmp_path).parse(stdout, "", 0)
+
+    assert outcome.status == "ok"
+    assert outcome.tokens_in is None and outcome.tokens_out is None
 
 
 def test_kimi_error_exit_code() -> None:
