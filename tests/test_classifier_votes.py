@@ -347,15 +347,17 @@ def systemone(score: float, probabilities: dict[str, Any] | None) -> dict[str, A
 
 
 def test_systemone_backend_confidence_from_probabilities() -> None:
-    calls: list[str] = []
+    calls: list[tuple[str, dict[str, Any]]] = []
 
     def post(address: str, *, json: dict[str, Any], timeout: float) -> Response:
-        calls.append(address)
-        assert json["model"] == "d1-model"
+        calls.append((address, json))
         return Response(payload=systemone(2.0, {"0": 0.1, "1": 0.2, "2": 0.7}))
 
     vote = classify_one("task", model("d1", "systemone"), post=post, clock=Ticks())
-    assert calls == ["http://localhost:11434/v1/systemone"]
+    [(address, body)] = calls
+    assert address == "http://localhost:11434/v1/systemone"
+    assert body["model"] == "d1-model"
+    assert body["keep_alive"] == "30m"
     assert vote == Vote("d1", "d1-model", "strong", 0.7, 250, None)
 
 

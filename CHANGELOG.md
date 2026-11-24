@@ -31,6 +31,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
+  requests.
 - The New job page shows the Jobs disabled notice and omits the submit form when the job
   dispatcher is not running.
 - Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
