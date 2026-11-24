@@ -31,6 +31,8 @@ role = "pace"
 [[routes]]
 id = "route"
 pool = "pool"
+backend = "kimi"
+model = "m"
 tiers = ["standard"]
 quality = 3
 """
@@ -90,6 +92,8 @@ def test_duplicate_route_id_is_rejected(tmp_path: Path, config_module) -> None:
 [[routes]]
 id = "route"
 pool = "pool"
+backend = "kimi"
+model = "m"
 tiers = ["cheap"]
 quality = 2
 """
@@ -181,7 +185,7 @@ def test_pool_without_pace_window_is_rejected(tmp_path: Path, config_module) -> 
 @pytest.mark.parametrize("character", ["&", "|", "^", "%", '"', "\n", "\r"])
 def test_cmd_unsafe_model_is_rejected(tmp_path: Path, config_module, character: str) -> None:
     model = json.dumps(f"bad{character}model")
-    text = VALID_CONFIG.replace("quality = 3", f"model = {model}\nquality = 3")
+    text = VALID_CONFIG.replace('model = "m"', f"model = {model}")
     with pytest.raises(config_module.ConfigError):
         load_text(tmp_path, config_module, text)
 
@@ -247,6 +251,35 @@ def test_idle_timeout_below_zero_is_rejected(tmp_path: Path, config_module) -> N
     text = VALID_CONFIG + "\n[tasks]\nidle_timeout_s = -1\n"
     messages = error_messages(tmp_path, config_module, text)
     assert "tasks.idle_timeout_s: must be at least 0" in messages
+
+
+@pytest.mark.parametrize("field", ["allowed_roots", "denied_roots"])
+@pytest.mark.parametrize("root", ["", ".", "projects", "C:foo"])
+def test_task_roots_must_be_absolute(tmp_path: Path, config_module, field: str, root: str) -> None:
+    text = VALID_CONFIG + f"\n[tasks]\n{field} = [{json.dumps(root)}]\n"
+    messages = error_messages(tmp_path, config_module, text)
+    assert f"tasks.{field}[0]: must be an absolute path" in messages
+
+
+@pytest.mark.parametrize("field", ["allowed_roots", "denied_roots"])
+def test_absolute_task_root_is_accepted(tmp_path: Path, config_module, field: str) -> None:
+    root = tmp_path / "work"
+    text = VALID_CONFIG + f"\n[tasks]\n{field} = [{json.dumps(str(root))}]\n"
+    config = load_text(tmp_path, config_module, text)
+    assert getattr(config.tasks, field) == (root,)
+
+
+@pytest.mark.parametrize("field", ["pool", "backend", "model"])
+@pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
+def test_harness_route_requires_fields(
+    tmp_path: Path, config_module, field: str, value: str | None
+) -> None:
+    lines = [line for line in VALID_CONFIG.splitlines() if not line.startswith(f"{field} =")]
+    text = "\n".join(lines) + "\n"
+    if value is not None:
+        text = text.replace('id = "route"', f'id = "route"\n{field} = ""')
+    messages = error_messages(tmp_path, config_module, text)
+    assert f"routes[0].{field}: a non-empty string is required" in messages
 
 
 @pytest.mark.parametrize("backend", ["SQLite", "bad backend", "bad!"])

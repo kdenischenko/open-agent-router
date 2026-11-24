@@ -523,7 +523,8 @@ def test_init_allowed_root_keeps_the_inline_comment(
     config_path = home / "config.toml"
     text = config_path.read_bytes().decode("utf-8")
     assert "allowed_roots = []" in text
-    text = text.replace("allowed_roots = []", 'allowed_roots = ["a#b"]  # my repos', 1)
+    existing_root = (tmp_path / "a#b").resolve().as_posix()
+    text = text.replace("allowed_roots = []", f'allowed_roots = ["{existing_root}"]  # my repos', 1)
     config_path.write_bytes(text.encode("utf-8"))
 
     result = runner.invoke(cli.app, ["init", "--allowed-root", str(tmp_path)])
@@ -531,7 +532,7 @@ def test_init_allowed_root_keeps_the_inline_comment(
     assert result.exit_code == 0, result.output
     updated = config_path.read_bytes().decode("utf-8")
     root = tmp_path.resolve().as_posix()
-    assert f'allowed_roots = ["a#b", "{root}"]  # my repos' in updated.splitlines()
+    assert f'allowed_roots = ["{existing_root}", "{root}"]  # my repos' in updated.splitlines()
 
 
 @pytest.mark.parametrize("root", ["//server/share/repo", r"\\server\share\repo"])

@@ -53,6 +53,8 @@ windows = { rolling = "5h", weekly = "week", monthly = "month" }
 [[routes]]
 id = "route"
 pool = "go"
+backend = "kimi"
+model = "m"
 tiers = ["standard"]
 quality = 3
 """

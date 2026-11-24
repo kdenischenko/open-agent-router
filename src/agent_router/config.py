@@ -433,7 +433,10 @@ def _parse_routes(
         quality = _integer(raw.get("quality", 3), f"{label}.quality", errors, 3)
         if not 1 <= quality <= 5:
             errors.append(f"{label}.quality: must be in the range 1..5")
-        backend = _optional_text(raw.get("backend"), f"{label}.backend", errors)
+        if kind == "harness":
+            backend = _text(raw.get("backend"), f"{label}.backend", errors)
+        else:
+            backend = _optional_text(raw.get("backend"), f"{label}.backend", errors)
         upstream = _optional_text(raw.get("upstream"), f"{label}.upstream", errors)
         if kind == "harness":
             if upstream is not None:
@@ -445,7 +448,10 @@ def _parse_routes(
                 errors.append(f"{label}.upstream: required for an api route")
             elif upstream not in upstream_ids:
                 errors.append(f"{label}.upstream: unknown upstream: {upstream!r}")
-        model = _optional_text(raw.get("model"), f"{label}.model", errors)
+        if kind == "harness":
+            model = _text(raw.get("model"), f"{label}.model", errors)
+        else:
+            model = _optional_text(raw.get("model"), f"{label}.model", errors)
         _check_cmd_text(model, f"{label}.model", errors)
         model_key = _optional_text(raw.get("model_key"), f"{label}.model_key", errors)
         priority, weight = _parse_levers(raw, label, errors)
