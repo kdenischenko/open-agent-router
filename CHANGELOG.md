@@ -22,6 +22,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `agent-router purge` retries directory removals that failed during an earlier run and also
+  sweeps orphaned `jobs/<job-id>/` directories older than the retention cutoff.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
 

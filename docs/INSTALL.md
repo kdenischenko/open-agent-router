@@ -233,10 +233,14 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    retention_days = 30
    ```
 
-   Run `agent-router purge --dry-run` to see how many jobs would be removed, then
-   `agent-router purge` to delete their database records and `jobs/<job-id>/` directories. Only
-   terminal jobs whose finish time is older than the limit are removed; queued, running and
-   awaiting-approval jobs are always kept. Usage and spend records are kept for pool window
+   Run `agent-router purge --dry-run` to see how many job rows and leftover directories would be
+   removed, then `agent-router purge` to delete their database records and `jobs/<job-id>/`
+   directories. Only terminal jobs whose finish time is older than the limit are removed; queued,
+   running and awaiting-approval jobs are always kept. Purge also removes orphaned
+   `jobs/<job-id>/` directories left by crashes or older versions once none of their files has
+   been modified for longer than the retention period, and it retries directory removals that
+   failed during an earlier purge. `--dry-run` reports these orphans and retries separately from
+   job rows in its counts but deletes nothing. Usage and spend records are kept for pool window
    accounting. Purge never runs automatically when the gateway starts.
 
 10. **Usage sources (optional).** A usage source reads the used share of a plan's windows from
