@@ -235,10 +235,22 @@ form.inline button {
 }
 
 .login-form,
-.calibration-form {
+.calibration-form,
+.submit-form {
   display: grid;
   gap: var(--space-3);
   max-width: 36rem;
+}
+
+.submit-form input,
+.submit-form select,
+.submit-form textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+.submit-form textarea {
+  resize: vertical;
 }
 
 .calibration-field {

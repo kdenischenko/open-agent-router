@@ -10,6 +10,11 @@ All notable changes are documented here. The format follows
 
 - The dashboard's read-only Settings page shows pools, windows, routes, caller mappings and
   configuration-related doctor findings with hints, without exposing tokens or environment values.
+- The dashboard has a New job page at `/jobs/new`, linked from the Jobs page: it submits a job
+  with working directory, mode, optional tier (empty picks the gateway default), prompt and
+  optional timeout. The form works without JavaScript, keeps the entered values next to per-field
+  validation errors, redirects to the job page on success and leaves the normal approval flow
+  untouched.
 - Kimi Code jobs count the CPU time of the harness process tree and the files changed in the
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
@@ -24,6 +29,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The New job page shows the Jobs disabled notice and omits the submit form when the job
+  dispatcher is not running.
 - Claude Code plan usage remains available when the CLI fails after a valid report; the warning is
   shown by `agent-router status`, `doctor` and the dashboard pool card.
 - `agent-router purge` retries directory removals that failed during an earlier run and also
