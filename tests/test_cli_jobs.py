@@ -577,6 +577,35 @@ def test_run_sends_options_and_absolute_cwd(
     assert gateway.tokens_used == [gateway.client_token]
 
 
+def test_run_sends_exclude_pools_as_a_list(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(
+        cli.app,
+        [
+            "run",
+            "--no-wait",
+            "--exclude-pool",
+            "claude-pro",
+            "--exclude-pool",
+            "kimi-code",
+            _RUN_PROMPT,
+        ],
+    )
+
+    assert result.exit_code == 0
+    method, path, body = gateway.calls[0]
+    assert (method, path) == ("POST", "/api/v1/jobs")
+    assert body["exclude_pools"] == ["claude-pro", "kimi-code"]
+
+
+def test_run_omits_exclude_pools_without_the_option(
+    runner: CliRunner, gateway: FakeGateway
+) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    assert "exclude_pools" not in gateway.calls[0][2]
+
+
 def test_result_reads_job_with_client_token(runner: CliRunner, gateway: FakeGateway) -> None:
     result = runner.invoke(cli.app, ["result", "job-1"])
 

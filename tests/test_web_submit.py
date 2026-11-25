@@ -4,6 +4,7 @@ import html
 import re
 import sys
 from dataclasses import replace
+from urllib.parse import urlencode
 
 import pytest
 from fastapi.testclient import TestClient
@@ -50,9 +51,18 @@ def form_data(rig, **changes):
 
 def submit(web, rig, **changes):
     csrf = csrf_from(web.get("/jobs/new"))
+    data = form_data(rig, **changes) | {"csrf": csrf}
+    # a list value means a repeated form key, e.g. several exclude_pools boxes;
+    # this httpx build only takes a mapping for data=, so the body is encoded here
+    items = [
+        (name, item)
+        for name, value in data.items()
+        for item in (value if isinstance(value, list) else [value])
+    ]
     return web.post(
         "/jobs/new",
-        data=form_data(rig, **changes) | {"csrf": csrf},
+        content=urlencode(items),
+        headers={"content-type": "application/x-www-form-urlencoded"},
         follow_redirects=False,
     )
 
@@ -79,17 +89,19 @@ def test_job_submit_requires_session(client, method):
     assert response.headers["location"] == "/login"
 
 
-def test_job_submit_form_has_all_fields_and_jobs_link(web):
+def test_job_submit_form_has_all_fields_and_jobs_link(web, rig):
     response = web.get("/jobs/new")
 
     assert response.status_code == 200
-    for name in ("cwd", "mode", "tier", "prompt", "timeout_s"):
+    for name in ("cwd", "mode", "tier", "prompt", "timeout_s", "exclude_pools"):
         assert f'name="{name}"' in response.text
     assert '<textarea id="prompt" name="prompt"' in response.text
     for value in ("read", "write"):
         assert f'<option value="{value}"' in response.text
     for value in ("", "cheap", "standard", "strong"):
         assert f'<option value="{value}"' in response.text
+    for pool in rig.dispatcher.config.pools:
+        assert f'<option value="{pool.id}"' in response.text
     assert 'href="/jobs/new"' in web.get("/jobs").text
 
 
@@ -140,6 +152,31 @@ def test_job_submit_empty_tier_uses_gateway_default(web, rig):
     assert job.request.tier is None
     assert job.tier == "standard"
     assert job.tier_source == "default"
+
+
+def test_job_submit_without_excluded_pools(web, rig):
+    response = submit(web, rig)
+
+    assert response.status_code == 303
+    [job] = rig.jobs.list(limit=10)
+    assert job.excluded_pools == frozenset()
+
+
+def test_job_submit_seeds_excluded_pools(web, rig):
+    response = submit(web, rig, exclude_pools=["claude-pro", "kimi-code"])
+
+    assert response.status_code == 303
+    [job] = rig.jobs.list(limit=10)
+    assert job.excluded_pools == frozenset({"claude-pro", "kimi-code"})
+
+
+def test_job_submit_validation_error_keeps_excluded_pools(web, rig):
+    response = submit(web, rig, exclude_pools=["claude-pro"], tier="giant")
+
+    assert response.status_code == 422
+    assert '<option value="claude-pro" selected>' in response.text
+    assert '<option value="kimi-code" selected>' not in response.text
+    assert rig.jobs.list(limit=10) == []
 
 
 @pytest.mark.parametrize(

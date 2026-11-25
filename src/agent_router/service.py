@@ -135,13 +135,20 @@ def advise(
     caller: str | None,
     mode: Mode | None = None,
     views: Sequence[RouteView] | None = None,
+    exclude_pools: frozenset[str] = frozenset(),
 ) -> Decision:
     """Advice on where to send; without a mode, routes of either mode match.
 
     The caller's pool comes from [callers].
     """
     caller_pool = config.callers.get(caller) if caller else None
-    request = RouteRequest(tier=tier, mode=mode, caller_pool=caller_pool, kind="harness")
+    request = RouteRequest(
+        tier=tier,
+        mode=mode,
+        caller_pool=caller_pool,
+        request_excluded_pools=exclude_pools,
+        kind="harness",
+    )
     return decide(request, snapshot, route_views(config) if views is None else views)
 
 
@@ -387,8 +394,22 @@ class Gateway:
             return self.dispatcher.views()
         return route_views(self.config)
 
-    def advise(self, tier: Tier, caller: str | None, mode: Mode | None = None) -> Decision:
-        return advise(self.config, self.snapshot(), tier, caller, mode, self.views())
+    def advise(
+        self,
+        tier: Tier,
+        caller: str | None,
+        mode: Mode | None = None,
+        exclude_pools: frozenset[str] = frozenset(),
+    ) -> Decision:
+        return advise(
+            self.config,
+            self.snapshot(),
+            tier,
+            caller,
+            mode,
+            self.views(),
+            exclude_pools,
+        )
 
     def pool(self, pool_id: str) -> Pool | None:
         return next((pool for pool in self.config.pools if pool.id == pool_id), None)

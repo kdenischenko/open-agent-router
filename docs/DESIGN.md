@@ -33,7 +33,8 @@ delegated to a harness.
 - **Route** — a `pool` + `backend` + `model` triple with `tiers`, `quality` (1–5), `modes`,
   `confirm`, `enabled`, and optional per-route levers. The route `kind` is `harness`.
 - **Tier** — job difficulty: `cheap`, `standard`, or `strong` (in that order).
-- **Job** — a unit of work: prompt, working directory, mode, caller, and resulting lifecycle.
+- **Job** — a unit of work: prompt, working directory, mode, caller, optional pool exclusions,
+  and resulting lifecycle.
 - **Harness** (also **executor**) — the agent CLI that runs a job: `claude`, `opencode`,
   `cline` or `kimi`.
 - **Attempt** — one execution of a job on one route. A job may have several attempts (fallback).
@@ -123,11 +124,13 @@ harness could not be reaped).
 
 The policy is a pure function of the request and the quota snapshot. Exclusion filters, in order
 (first match wins, with the reason logged): route `enabled = false`; harness executable
-unavailable; `tier` not in `route.tiers`; `mode` not in `route.modes`; route or pool excluded for
-this job; caller's own pool; pool blocked until a known time; a window exhausted past its
+unavailable; `tier` not in `route.tiers`; `mode` not in `route.modes`; pools named by the
+request's optional `exclude_pools` list (`excluded by request` in advice); route or pool excluded
+for this job; caller's own pool; pool blocked until a known time; a window exhausted past its
 `block_at`; and the reserve rule — if the pool's remaining headroom is at or below `reserve`,
 jobs below `reserve_tier` are excluded. Explicitly requested routes skip the tier, caller, and
-reserve filters and ignore `priority`/`weight`.
+reserve filters and ignore `priority`/`weight`, but not requested pool exclusions. Unknown pool
+ids are rejected at intake and by advice.
 
 Survivors are ordered by a key built from: `prefer` rank (when several routes share a
 `model_key`, `[models."<key>"] prefer = [pools...]` orders their pools), `priority` (lower
@@ -146,7 +149,8 @@ spend to use up its window. The pool's urgency, like its lag, is the minimum acr
 windows (the window closest to exhaustion dominates), so a pool whose reset is near and whose
 allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
 function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
-the same tier, mode and caller would get.
+the same tier, mode, caller and pool exclusions would get. `GET /advice` accepts `exclude_pools`
+as a repeated query parameter; `POST /jobs` accepts the same name as a JSON list of strings.
 
 ## Usage tracking
 

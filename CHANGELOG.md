@@ -8,6 +8,8 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
+  pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
 - A route whose harness reports its model as unavailable (OpenCode's
   `provider.no-route: Model unavailable: <provider>/<model>`) is taken out of rotation after a
   single failure for `tasks.model_unavailable_cooldown_s` (default 1800 s, new config key);

@@ -75,6 +75,10 @@ _JOB_TIMEOUT = Field(
     "applies when it is omitted; the job also stops after tasks.idle_timeout_s without output"
 )
 _WAIT_TIMEOUT = Field(description="Seconds to wait, capped at 100")
+_EXCLUDE_POOLS = Field(
+    description="Pool ids, e.g. claude-pro, that must not run the job; routes of these pools "
+    "are excluded from the choice"
+)
 
 
 def build_server(gateway: GatewayClient) -> MCPServer:
@@ -102,6 +106,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         caller: Annotated[str | None, _CALLER] = None,
         route: Annotated[str | None, _ROUTE] = None,
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
+        exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt, "cwd": cwd, "mode": mode}
         if tier is not None:
@@ -112,6 +117,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["route"] = route
         if timeout_s is not None:
             body["timeout_s"] = timeout_s
+        if exclude_pools is not None:
+            body["exclude_pools"] = exclude_pools
         return run(lambda: gateway.post("/api/v1/jobs", body))
 
     @server.tool(description=_WAIT_DESCRIPTION, structured_output=False)
@@ -151,8 +158,12 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         tier: str = "standard",
         mode: str | None = None,
         caller: Annotated[str | None, _CALLER] = None,
+        exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
     ) -> dict[str, Any]:
-        return run(lambda: gateway.get("/api/v1/advice", tier=tier, caller=caller, mode=mode))
+        params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
+        if exclude_pools is not None:
+            params["exclude_pools"] = exclude_pools
+        return run(lambda: gateway.get("/api/v1/advice", **params))
 
     @server.tool(description=_STATUS_DESCRIPTION, structured_output=False)
     def status() -> dict[str, Any]:

@@ -145,6 +145,9 @@ def run(
     route: str | None = typer.Option(
         None, "--route", help="Use this route instead of letting the gateway choose"
     ),
+    exclude_pool: list[str] = typer.Option(
+        [], "--exclude-pool", help="Pool that must not run the job; repeat to exclude several"
+    ),
     timeout: int | None = typer.Option(
         None,
         "--timeout",
@@ -172,6 +175,8 @@ def run(
     ):
         if value is not None:
             body[name] = value
+    if exclude_pool:
+        body["exclude_pools"] = exclude_pool
     client = _gateway()
     submitted = _job_request(lambda: client.post("/api/v1/jobs", body))
     job_id = submitted["job_id"]

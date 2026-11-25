@@ -320,6 +320,7 @@ class Dispatcher(RecoveryMixin):
             prompt_sha256=hashlib.sha256(req.prompt.encode("utf-8")).hexdigest(),
             prompt_chars=len(req.prompt),
             tier_pending=pending,
+            excluded_pools=req.excluded_pools,
         )
         with self._lock:
             if self.jobs.count_waiting() >= self.config.tasks.max_queued:

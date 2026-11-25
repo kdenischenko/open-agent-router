@@ -57,6 +57,7 @@ class JobRequest:
     caller: str | None = None
     route: str | None = None
     timeout_s: int | None = None
+    excluded_pools: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -319,6 +320,10 @@ def validate_request_directory(req: JobRequest, config: Config) -> CheckedDirect
         raise RequestRejected("bad_kind", f"unknown job kind: {req.kind}")
     if req.caller is not None and req.caller not in config.callers:
         raise RequestRejected("bad_caller", f"unknown caller: {req.caller}")
+    pool_ids = {pool.id for pool in config.pools}
+    for pool in sorted(req.excluded_pools):
+        if pool not in pool_ids:
+            raise RequestRejected("bad_pool", f"unknown pool: {pool}")
     if req.route is not None:
         route = next((r for r in config.routes if r.id == req.route), None)
         if route is None:

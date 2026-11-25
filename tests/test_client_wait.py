@@ -127,6 +127,15 @@ def test_urllib_post_sends_json_and_drops_none_params() -> None:
     assert seen[1].path == "/api/v1/jobs?limit=5"
 
 
+def test_urllib_get_encodes_list_params_as_repeated_keys() -> None:
+    with http_server(body=b'{"ok": true}') as (url, seen):
+        client = GatewayClient(url, TOKEN)
+        assert client.get("/api/v1/advice", exclude_pools=["claude-pro", "kimi-code"]) == {
+            "ok": True
+        }
+    assert seen[0].path == "/api/v1/advice?exclude_pools=claude-pro&exclude_pools=kimi-code"
+
+
 def test_wait_keeps_short_connect_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     """The long /wait read timeout must not slow down connecting to an unreachable host."""
     seen: list[tuple[str, float | None]] = []

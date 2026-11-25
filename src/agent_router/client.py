@@ -84,7 +84,7 @@ class _UrllibClient:
     ) -> _UrllibResponse:
         if params:
             query = urllib.parse.urlencode(
-                {name: value for name, value in params.items() if value is not None}
+                {name: value for name, value in params.items() if value is not None}, doseq=True
             )
             if query:
                 url += ("&" if "?" in url else "?") + query

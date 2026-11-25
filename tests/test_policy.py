@@ -136,6 +136,19 @@ def test_excluded_route_and_excluded_pool():
     assert ids(decision) == ["r2"]
 
 
+def test_request_excluded_pool_has_advice_reason_and_other_route_is_chosen():
+    request = RouteRequest(tier="standard", request_excluded_pools=frozenset({"a"}))
+
+    decision = decide(
+        request,
+        snapshot(status("a", 0.2), status("b", 0.2)),
+        views(route("r1", "a"), route("r2", "b")),
+    )
+
+    assert reasons(decision) == {"r1": "excluded by request"}
+    assert ids(decision) == ["r2"]
+
+
 def test_caller_pool_excluded_unless_explicit():
     snap = snapshot(status("a", 0.2))
     request = RouteRequest(tier="standard", caller_pool="a")

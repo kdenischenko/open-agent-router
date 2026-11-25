@@ -9,9 +9,9 @@ import threading
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -319,6 +319,7 @@ class JobBody(BaseModel):
     caller: StrictStr | None = None
     route: StrictStr | None = None
     timeout_s: Any = None  # fractional, boolean, etc. — error code bad_timeout, not bad_request
+    exclude_pools: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
 
 
 class RatingBody(BaseModel):
@@ -368,6 +369,7 @@ def submit_job(gateway: Gateway, body: JobBody) -> Job:
         caller=body.caller,
         route=body.route,
         timeout_s=body.timeout_s,
+        excluded_pools=frozenset(body.exclude_pools or []),
     )
     try:
         return dispatcher.submit(request)
@@ -523,13 +525,18 @@ def api_router(gateway: Gateway) -> APIRouter:
         tier: str = "standard",
         caller: str | None = None,
         mode: str | None = None,
+        exclude_pools: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
         role: Role = client,
     ) -> dict[str, Any]:
         if tier not in TIERS:
             raise ApiError(422, "bad_request", f"unknown tier: {tier}")
         if mode is not None and mode not in MODES:
             raise ApiError(422, "bad_request", f"unknown mode: {mode}")
-        decision = gateway.advise(tier, caller, mode)  # type: ignore[arg-type]
+        excluded = frozenset(exclude_pools or [])
+        for pool in sorted(excluded):
+            if gateway.pool(pool) is None:
+                raise ApiError(422, "bad_request", f"unknown pool: {pool}")
+        decision = gateway.advise(tier, caller, mode, excluded)  # type: ignore[arg-type]
         return decision_json(tier, decision, mode)  # type: ignore[arg-type]
 
     @router.get("/events/stats")
