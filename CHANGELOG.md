@@ -29,6 +29,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The README now says that a window far behind its pace makes its pool take every job it can
+  serve until it catches up, and that `priority` and `weight` in the config change the order.
 - The installation guide documents the write-mode flags and outside-directory controls of each
   supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
