@@ -41,8 +41,9 @@ _RESULT_DESCRIPTION = (
     "on it"
 )
 _LIST_DESCRIPTION = (
-    "List recent jobs with compact status and route fields, optionally filtered by status; "
-    "limit defaults to 20; verbose returns full job records"
+    "List recent jobs, optionally filtered by status; limit defaults to 20. Compact jobs "
+    "contain id, status, route, mode, caller, created_at, finished_at and error_code; "
+    "verbose=true returns full job records"
 )
 _CANCEL_DESCRIPTION = (
     "Cancel a queued or running job; returns the job state after cancellation. A running job "
@@ -76,6 +77,7 @@ _JOB_TIMEOUT = Field(
     "applies when it is omitted; the job also stops after tasks.idle_timeout_s without output"
 )
 _WAIT_TIMEOUT = Field(description="Seconds to wait, capped at 100")
+_LIST_VERBOSE = Field(description="Return full job records instead of compact jobs")
 
 
 def build_server(gateway: GatewayClient) -> MCPServer:
@@ -127,7 +129,9 @@ def build_server(gateway: GatewayClient) -> MCPServer:
 
     @server.tool(description=_LIST_DESCRIPTION, structured_output=False)
     def list_jobs(
-        status: str | None = None, limit: int = 20, verbose: bool = False
+        status: str | None = None,
+        limit: int = 20,
+        verbose: Annotated[bool, _LIST_VERBOSE] = False,
     ) -> dict[str, Any]:
         response = run(lambda: gateway.get("/api/v1/jobs", status=status, limit=limit))
         if verbose:

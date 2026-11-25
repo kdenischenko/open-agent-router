@@ -206,8 +206,7 @@ def _list_answer() -> dict[str, Any]:
                 "attempts": [{"route": "opencode-cli/glm-5.3"}],
             }
         ],
-        "next_cursor": "j_0",
-        "total": 1,
+        "outer": "preserved",  # stands for any outer key
     }
 
 
@@ -230,15 +229,16 @@ def test_list_jobs_returns_compact_jobs_by_default() -> None:
                 "error_code": "timeout",
             }
         ],
-        "next_cursor": "j_0",
-        "total": 1,
+        "outer": "preserved",
     }
 
 
 def test_list_jobs_verbose_returns_full_jobs() -> None:
     gateway = FakeGateway()
     gateway.answer = _list_answer()
+    tools = {tool.name: tool for tool in _tools(gateway)}
 
+    assert "verbose" in tools["list_jobs"].input_schema["properties"]
     payload = _payload(_call(gateway, "list_jobs", {"verbose": True}))
 
     assert payload == _list_answer()
