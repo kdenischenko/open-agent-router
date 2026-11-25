@@ -29,6 +29,7 @@ _LIMIT_SIGNS = re.compile(
     r"too many requests|(?<!\d)429(?!\d)",
     re.IGNORECASE,
 )
+_MODEL_UNAVAILABLE_SIGNS = re.compile(r"provider\.no-route|model unavailable", re.IGNORECASE)
 _RESET_AT = re.compile(
     r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})"
 )
@@ -44,6 +45,7 @@ class RunOutcome:
     session_id: str | None = None
     limit_reset_at: datetime | None = None
     error: str | None = None
+    model_unavailable: bool = False  # the route's model is gone, not a job or quota failure
 
 
 class Adapter(Protocol):
@@ -79,6 +81,11 @@ def with_preamble(prompt: str, mode: Mode) -> str:
 def looks_like_limit(text: str) -> bool:
     """Whether a harness service message looks like hitting the subscription limit."""
     return bool(_LIMIT_SIGNS.search(text))
+
+
+def looks_like_model_unavailable(text: str) -> bool:
+    """Whether a harness service message reports the route's model as unavailable."""
+    return bool(_MODEL_UNAVAILABLE_SIGNS.search(text))
 
 
 def reset_time(text: str) -> datetime | None:
@@ -153,13 +160,15 @@ def settle(
     cost_usd: float | None = None,
     session_id: str | None = None,
     limit_reset_at: datetime | None = None,
+    model_unavailable_hint: bool = False,
 ) -> RunOutcome:
     """Shared outcome resolution order.
 
     Zero exit code with non-empty text is always ok. Otherwise limit, if limit signs appear
     in the service messages (`service`, stderr) or the harness itself reported the error as
     a limit (`limit_hint`); otherwise error. The model response text is not checked for
-    limit signs.
+    limit signs. The same service messages mark the outcome as model-unavailable when the
+    harness reported the route's model as gone (`model_unavailable_hint` or the signs).
     """
     common = {
         "tokens_in": tokens_in,
@@ -170,6 +179,7 @@ def settle(
     if exit_code == 0 and text.strip():
         return RunOutcome("ok", text=text, **common)
     notes = "\n".join([*service, stderr])
+    unavailable = model_unavailable_hint or looks_like_model_unavailable(notes)
     if harness_error:
         message = harness_error
     elif exit_code == 0:
@@ -184,6 +194,9 @@ def settle(
             text=text,
             limit_reset_at=limit_reset_at or reset_time(notes),
             error=_short(message),
+            model_unavailable=unavailable,
             **common,
         )
-    return RunOutcome("error", text=text, error=_short(message), **common)
+    return RunOutcome(
+        "error", text=text, error=_short(message), model_unavailable=unavailable, **common
+    )
