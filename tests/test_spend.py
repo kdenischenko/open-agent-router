@@ -21,8 +21,10 @@ from agent_router.registry import HarnessSpec
 from agent_router.service import build_snapshot, snapshot_json
 from agent_router.spend import SpendEntry, SpendTotal, entry_for_attempt
 from agent_router.store import CounterSample, Observation
-from helpers import full_config_text, write_config
+from helpers import full_config_text, requires_git, write_config
 from test_dispatcher import ROUTES, ImmediateExecutor, Rig, ScriptAdapter, Step
+
+pytestmark = requires_git
 
 NOW = datetime(2026, 11, 12, 12, tzinfo=UTC)
 TOL = timedelta(minutes=15)

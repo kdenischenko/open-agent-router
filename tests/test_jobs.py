@@ -23,7 +23,9 @@ from agent_router.jobs import (
     new_job_id,
     validate_request,
 )
-from helpers import make_git_repo
+from helpers import make_git_repo, requires_git
+
+pytestmark = requires_git
 
 ALLOWED = {
     ("queued", "running"),

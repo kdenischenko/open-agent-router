@@ -31,3 +31,10 @@ def test_ci_runs_the_gates() -> None:
         "uv run pytest -q",
     ):
         assert f"run: {command}" in text
+
+
+def test_ci_ubuntu_suite_runs_without_installed_clis() -> None:
+    text = _workflow()
+    assert "- name: Test without installed CLIs" in text
+    assert "if: matrix.os == 'ubuntu-latest'" in text
+    assert "for cli in claude kimi opencode codex cline; do" in text

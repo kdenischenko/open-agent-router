@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.server
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -12,6 +13,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
+
+requires_git = pytest.mark.skipif(
+    shutil.which("git") is None, reason="temporary repositories require git"
+)
 
 
 def pid_alive(pid: int) -> bool:

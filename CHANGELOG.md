@@ -29,6 +29,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
+  tests that genuinely need `git` declare that dependency.
 - The installation guide documents the write-mode flags and outside-directory controls of each
   supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.

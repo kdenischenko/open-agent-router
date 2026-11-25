@@ -24,6 +24,7 @@ from typer.testing import CliRunner
 
 from agent_router.auth import ensure_tokens
 from agent_router.cli import app
+from helpers import requires_git
 
 STUB = Path(__file__).parent / "stubs" / "fake_kimi.py"
 CLI = "from agent_router.cli import main; main()"
@@ -140,6 +141,7 @@ def steps_from(output: str) -> dict[str, list[str]]:
     return steps
 
 
+@requires_git
 def test_the_steps_init_prints_run_a_first_job(newcomer, start_serve, monkeypatch):
     runner = CliRunner()
     init = runner.invoke(app, ["init", "--allowed-root", str(newcomer)])

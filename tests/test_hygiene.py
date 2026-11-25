@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -73,6 +74,8 @@ def tracked_texts() -> list[tuple[str, str]]:
 
 @pytest.fixture(scope="module")
 def texts() -> list[tuple[str, str]]:
+    if shutil.which("git") is None:
+        pytest.skip("git is required to list tracked files")
     found = tracked_texts()
     assert found, "git ls-files returned nothing"
     return found
