@@ -38,6 +38,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The result text of an OpenCode job keeps every answer that ended a turn, so a short follow-up
+  after a background command no longer replaces the main answer.
 - SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
   requests.
 - The New job page shows the Jobs disabled notice and omits the submit form when the job
