@@ -3,6 +3,8 @@
   <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/banner-light.svg" alt="open-agent-router: route coding jobs across your AI subscriptions">
 </picture>
 
+**English** | [Русский](https://github.com/kdenischenko/open-agent-router/blob/main/README_RU.md)
+
 # open-agent-router
 
 **Hand coding-agent jobs to the AI subscriptions you already pay for — Claude Code, Kimi Code,
@@ -44,7 +46,8 @@ Kimi Code, OpenCode or Cline) and an orchestrator agent that delegates jobs to o
 - **LiteLLM, OpenRouter and other API gateways** route single model requests using API keys,
   with usage billed per token. open-agent-router hands whole jobs — a prompt, a directory and
   a read or write mode — to the subscriptions you already pay for through their official CLIs,
-  and never sees provider keys.
+  and never sees provider keys for those jobs: each CLI uses its own sign-in. Optional usage
+  sources and remote classifiers read separately configured keys.
 - **Switching by hand** means checking several usage pages and guessing which limit resets
   first. The gateway keeps track of every limit window and its pace, moves a job to another
   route when a limit is hit, and keeps strong models for the jobs that need them.
@@ -170,19 +173,20 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-dark.png">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard home page: a job awaiting approval, then pool cards showing automatic Claude Code /usage and OpenCode Go figures read two minutes ago, manual Kimi Code figures, usage bars, pace badges, reset countdowns and data age">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard Limits page with Settings navigation: a job awaiting approval, then pool cards showing automatic Claude Code /usage and OpenCode Go figures read two minutes ago, manual Kimi Code figures, usage bars, pace badges, reset countdowns, data age, and 24-hour and seven-day spend charts">
 </picture>
 
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 `server.port`, default 8787). Log in with the admin token: paste the contents of the
 `admin.token` file whose path `init` prints.
 
-- **Home** — jobs waiting for your approval come first, with Approve and Deny. Below them
+- **Limits** — jobs waiting for your approval come first, with Approve and Deny. Below them
   is one card per pool: usage, expected pace, reset countdown, data age and figure source for
   each window, including stale and blocked states, with a **Refresh limits** button for pools
-  that have a usage source. Each card also charts journal spend over the last 24 hours and
-  seven days, in USD or tokens, with the same numbers in accessible tables. The full limits
-  table stays under a disclosure, followed by the routes each tier would take right now.
+  whose usable usage source is not in `manual` mode. Each card also charts journal spend over
+  the last 24 hours and seven days, in USD or tokens, with the same numbers in accessible
+  tables. The full limits table stays under a disclosure, followed by the routes each tier
+  would take right now.
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.
@@ -205,7 +209,7 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-dark.png">
-        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with filters, one job awaiting approval and finished jobs on Claude Code, Kimi Code and OpenCode routes, with status badges, callers, creation times and durations">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with a Submit a job link, filters, one job awaiting approval and finished jobs on Claude Code, Kimi Code and OpenCode routes, with status badges, callers, creation times and durations">
       </picture>
     </td>
     <td width="50%">
@@ -220,14 +224,15 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 ## Harnesses
 
 A *harness* is the coding agent CLI that does the work. The gateway runs each one with the
-sign-in you already made in it; it never sees provider keys.
+sign-in you already made in it, so harness jobs need no provider keys. Optional usage sources
+and remote classifiers read their own configured keys.
 
 | Harness | CLI command | Spend source | Status |
 |---|---|---|---|
 | Kimi Code | `kimi` | journal | tested live on Windows |
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
-| Claude Code | `claude` | journal | covered by recorded tests; live check pending |
+| Claude Code | `claude` | journal | tested live on Windows |
 
 ## Platforms
 
@@ -249,7 +254,7 @@ option.
 | `status` | Show pool usage, expected pace and window resets in local time |
 | `advice` | Show matching routes for a tier (and `--mode read` or `write`) and why the others are excluded |
 | `calibrate POOL WINDOW PERCENT` | Record the usage your subscription shows; `--resets-at` or `--resets-in 10d` sets the reset of a fixed window, a rolling window takes none (admin token) |
-| `usage refresh [POOL]` | Read the usage sources now and record what they report; without a pool every pool with a source is read, a pool read within the last 60 s is skipped (admin token) |
+| `usage refresh [POOL]` | Read the usage sources now and record what they report; without a pool every pool with a source outside `manual` mode is read, and a pool read within the last 60 s is skipped (admin token) |
 | `unblock POOL` | Remove a pool block set after a limit hit (admin token) |
 | `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin |
 | `wait JOB_ID` | Wait for a job and print its result; retries for up to 10 s while the gateway restarts |

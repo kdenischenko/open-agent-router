@@ -396,7 +396,7 @@ Tokens are files `client.token` / `admin.token` in the gateway home, created by 
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
 frontend build) logs in with the admin token and sets a signed `ar_session` cookie (HMAC keyed from
 the admin token, revocable via a settings epoch); every POST form carries a per-session CSRF token.
-Pages: an approvals inbox on the home page; limits cards with usage bars, pacing, reset
+Pages: an approvals inbox on the Limits page; limits cards with usage bars, pacing, reset
 countdowns, data age, stale and blocked states, pool unblock forms and a collapsible table;
 advice; jobs with approve/deny/cancel; calibration form. Calibration re-renders submitted
 values with field errors, enhances the form with inline validation and a usage/reset preview,
