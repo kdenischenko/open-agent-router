@@ -333,7 +333,8 @@ def test_exclude_pools_is_accepted_and_stored(api, rig) -> None:
 
     job = rig.jobs.get(job_id)
     assert job is not None
-    assert job.excluded_pools == frozenset({"pool-a"})
+    assert job.request.excluded_pools == frozenset({"pool-a"})
+    assert job.excluded_pools == frozenset()
 
 
 @pytest.mark.parametrize("exclude_pools", ["pool-a", [1], ["pool-a", ""]])
@@ -360,7 +361,7 @@ def test_exclude_pools_leaving_no_route_uses_existing_error(api, rig) -> None:
 
     assert job["status"] == "failed"
     assert job["error"]["code"] == "no_route"
-    assert "fake/main: excluded for this job" in job["error"]["message"]
+    assert "fake/main: excluded by request" in job["error"]["message"]
 
 
 def test_exclude_pools_rejects_an_ineligible_pinned_route(api, rig) -> None:
@@ -368,7 +369,7 @@ def test_exclude_pools_rejects_an_ineligible_pinned_route(api, rig) -> None:
 
     assert job["status"] == "failed"
     assert job["error"]["code"] == "no_route"
-    assert "fake/main: excluded for this job" in job["error"]["message"]
+    assert "fake/main: excluded by request" in job["error"]["message"]
 
 
 def test_advice_excludes_requested_pools(api, rig) -> None:

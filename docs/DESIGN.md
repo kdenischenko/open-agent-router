@@ -125,7 +125,7 @@ harness could not be reaped).
 The policy is a pure function of the request and the quota snapshot. Exclusion filters, in order
 (first match wins, with the reason logged): route `enabled = false`; harness executable
 unavailable; `tier` not in `route.tiers`; `mode` not in `route.modes`; pools named by the
-request's optional `exclude_pools` list (`excluded by request` in advice); route or pool excluded
+request's optional `exclude_pools` list (`excluded by request`); route or pool excluded
 for this job; caller's own pool; pool blocked until a known time; a window exhausted past its
 `block_at`; and the reserve rule — if the pool's remaining headroom is at or below `reserve`,
 jobs below `reserve_tier` are excluded. Explicitly requested routes skip the tier, caller, and

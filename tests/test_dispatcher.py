@@ -3523,6 +3523,31 @@ def test_no_route_without_caller_pool_has_no_hint(make_rig) -> None:
 TWO_ROUTES = (route("a/main", "pool-a", 5), route("b/main", "pool-b", 4))
 
 
+def test_request_excluded_pool_uses_another_pool_without_job_exclusion(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    job = rig.submit(rig.plain(), excluded_pools=frozenset({"pool-a"}))
+
+    assert job.excluded_pools == frozenset()
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "b/main")
+    (attempt,) = rig.attempts(job)
+    assert attempt.decision is not None
+    assert {"route": "a/main", "reason": "excluded by request"} in attempt.decision["excluded"]
+
+
+def test_request_excluded_pool_no_route_names_request_reason(make_rig) -> None:
+    rig = make_rig(routes=(route("a/main", "pool-a", 5),))
+    job = rig.submit(rig.plain(), excluded_pools=frozenset({"pool-a"}))
+
+    rig.tick()
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "no_route")
+    assert "a/main: excluded by request" in (done.error_message or "")
+
+
 def test_read_job_error_falls_back_to_next_route(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:harness crashed", exit_code=2))

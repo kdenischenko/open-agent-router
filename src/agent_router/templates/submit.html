@@ -34,7 +34,7 @@
   <p id="tier-error" class="field-error"{% if not errors.get('tier') %} hidden{% endif %}>{{ errors.get('tier', '') }}</p>
 
   <label for="exclude_pools">Excluded pools (optional)</label>
-  <select id="exclude_pools" name="exclude_pools" multiple size="{{ pools | length }}" aria-describedby="exclude_pools-hint{% if errors.get('exclude_pools') %} exclude_pools-error{% endif %}"{% if errors.get('exclude_pools') %} aria-invalid="true"{% endif %}>
+  <select id="exclude_pools" name="exclude_pools" multiple size="{{ pools | length or 1 }}" aria-describedby="exclude_pools-hint{% if errors.get('exclude_pools') %} exclude_pools-error{% endif %}"{% if errors.get('exclude_pools') %} aria-invalid="true"{% endif %}>
     {% for pool in pools %}
     <option value="{{ pool.id }}"{% if pool.id in values.get('exclude_pools', []) %} selected{% endif %}>{{ pool.title }}</option>
     {% endfor %}

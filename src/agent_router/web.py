@@ -620,7 +620,9 @@ def web_router(deps: Gateway) -> APIRouter:
         values = {
             name: _field(form, name) for name in ("cwd", "mode", "tier", "prompt", "timeout_s")
         }
-        exclude_pools = [value for value in form.getlist("exclude_pools") if isinstance(value, str)]
+        exclude_pools = [
+            value for value in form.getlist("exclude_pools") if isinstance(value, str) and value
+        ]
         values["exclude_pools"] = exclude_pools
         raw_timeout = values["timeout_s"]
         try:
@@ -648,6 +650,15 @@ def web_router(deps: Gateway) -> APIRouter:
                 errors={field: exc.message} if field else {},
                 values=values,
                 status_code=exc.status,
+            )
+        except ValidationError:
+            return submit_page(
+                request,
+                sid,
+                error="check the job field values",
+                errors={"exclude_pools": "invalid excluded pool selection"},
+                values=values,
+                status_code=422,
             )
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 

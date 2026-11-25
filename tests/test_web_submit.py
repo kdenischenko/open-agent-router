@@ -162,12 +162,52 @@ def test_job_submit_without_excluded_pools(web, rig):
     assert job.excluded_pools == frozenset()
 
 
-def test_job_submit_seeds_excluded_pools(web, rig):
+def test_job_submit_keeps_request_exclusions_separate(web, rig):
     response = submit(web, rig, exclude_pools=["claude-pro", "kimi-code"])
 
     assert response.status_code == 303
     [job] = rig.jobs.list(limit=10)
-    assert job.excluded_pools == frozenset({"claude-pro", "kimi-code"})
+    assert job.request.excluded_pools == frozenset({"claude-pro", "kimi-code"})
+    assert job.excluded_pools == frozenset()
+
+
+def test_job_submit_drops_empty_excluded_pool_values(web, rig):
+    response = submit(web, rig, exclude_pools=["", "claude-pro", ""])
+
+    assert response.status_code == 303
+    [job] = rig.jobs.list(limit=10)
+    assert job.request.excluded_pools == frozenset({"claude-pro"})
+    assert job.excluded_pools == frozenset()
+
+
+def test_job_submit_unknown_excluded_pool_shows_field_error(web, rig):
+    response = submit(web, rig, exclude_pools=["", "missing"])
+
+    assert_field_error(response, "exclude_pools", "unknown pool: missing")
+    assert rig.jobs.list(limit=10) == []
+
+
+def test_job_submit_pool_select_size_is_valid_without_pools(
+    home, config, store, jobstore, clock, tokens
+):
+    empty_config = replace(
+        config,
+        pools=(),
+        routes=(),
+        backends={
+            name: replace(backend, executable=sys.executable)
+            for name, backend in config.backends.items()
+        },
+    )
+    rig = WebRig(home, empty_config, store, jobstore, clock, tokens)
+    with TestClient(rig.app, base_url=BASE_URL) as client:
+        authenticated_client(client, tokens)
+        response = client.get("/jobs/new")
+
+    assert response.status_code == 200
+    control = re.search(r'<select id="exclude_pools"[^>]*>', response.text)
+    assert control is not None
+    assert 'size="1"' in control.group(0)
 
 
 def test_job_submit_validation_error_keeps_excluded_pools(web, rig):
