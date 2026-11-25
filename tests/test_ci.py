@@ -38,3 +38,5 @@ def test_ci_ubuntu_suite_runs_without_installed_clis() -> None:
     assert "- name: Test without installed CLIs" in text
     assert "if: matrix.os == 'ubuntu-latest'" in text
     assert "for cli in claude kimi opencode codex cline; do" in text
+    assert 'export PATH="/usr/bin:/bin"' in text
+    assert '"$uv_bin" run pytest -q' in text
