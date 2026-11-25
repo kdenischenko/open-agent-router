@@ -446,6 +446,30 @@ def test_opencode_text_parts_of_last_message_are_joined() -> None:
     assert opencode.parse(stdout, "", 0).text == "two\nthree"
 
 
+def test_opencode_keeps_every_answer_that_ended_a_turn() -> None:
+    # a follow-up after a background command must not hide the answer given before it
+    def text(message: str, value: str) -> str:
+        return json.dumps({"type": "text", "part": {"messageID": message, "text": value}})
+
+    def finish(message: str, reason: str) -> str:
+        part = {"messageID": message, "reason": reason}
+        return json.dumps({"type": "step_finish", "part": part})
+
+    stdout = "\n".join(
+        [
+            text("m1", "looking"),
+            finish("m1", "tool-calls"),
+            text("m2", "the answer"),
+            finish("m2", "stop"),
+            text("m3", "checking the rest"),
+            finish("m3", "tool-calls"),
+            text("m4", "follow-up"),
+            finish("m4", "stop"),
+        ]
+    )
+    assert opencode.parse(stdout, "", 0).text == "the answer\nfollow-up"
+
+
 def test_opencode_error_event() -> None:
     outcome = opencode.parse(sample("opencode_error.jsonl"), "", 1)
     assert outcome.status == "error"

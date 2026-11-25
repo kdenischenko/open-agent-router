@@ -41,6 +41,7 @@ class OpenCodeAdapter:
     def parse(self, stdout: str, stderr: str, exit_code: int | None) -> RunOutcome:
         events, other = json_lines(stdout)
         texts: list[tuple[object, str]] = []
+        answers: set[object] = set()  # messages that ended a turn, not led to a tool call
         tokens_in = tokens_out = 0
         cost = 0.0
         steps = 0
@@ -57,6 +58,8 @@ class OpenCodeAdapter:
                 if isinstance(part.get("text"), str):
                     texts.append((part.get("messageID"), part["text"]))
             elif kind == "step_finish":
+                if part.get("reason") == "stop":
+                    answers.add(part.get("messageID"))
                 tokens = part.get("tokens")
                 if isinstance(tokens, dict):
                     steps += 1
@@ -74,10 +77,10 @@ class OpenCodeAdapter:
                 service.append(harness_error)
                 lowered = error_type.lower()
                 limit_hint = limit_hint or "limit" in lowered or "quota" in lowered
-        text = ""
         if texts:
-            last_message = texts[-1][0]
-            text = "\n".join(chunk for message, chunk in texts if message == last_message)
+            # the last message counts even when the run stopped before its step finished
+            answers.add(texts[-1][0])
+        text = "\n".join(chunk for message, chunk in texts if message in answers)
         return settle(
             exit_code=exit_code,
             text=text,
