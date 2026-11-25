@@ -188,6 +188,72 @@ def test_wait_job_rejects_a_negative_timeout_without_a_request() -> None:
     assert gateway.calls == []
 
 
+def _list_answer() -> dict[str, Any]:
+    return {
+        "jobs": [
+            {
+                "id": "j_1",
+                "status": "failed",
+                "route": "opencode-cli/glm-5.3",
+                "mode": "write",
+                "caller": "claude-code",
+                "created_at": "2026-11-25T12:00:00+00:00",
+                "finished_at": "2026-11-25T12:01:00+00:00",
+                "error": {"code": "timeout", "message": "job timed out"},
+                "prompt": "Describe the repository",
+                "text": "A long result",
+                "log_tail": "executor output",
+                "attempts": [{"route": "opencode-cli/glm-5.3"}],
+            }
+        ],
+        "next_cursor": "j_0",
+        "total": 1,
+    }
+
+
+def test_list_jobs_returns_compact_jobs_by_default() -> None:
+    gateway = FakeGateway()
+    gateway.answer = _list_answer()
+
+    payload = _payload(_call(gateway, "list_jobs", {}))
+
+    assert payload == {
+        "jobs": [
+            {
+                "id": "j_1",
+                "status": "failed",
+                "route": "opencode-cli/glm-5.3",
+                "mode": "write",
+                "caller": "claude-code",
+                "created_at": "2026-11-25T12:00:00+00:00",
+                "finished_at": "2026-11-25T12:01:00+00:00",
+                "error_code": "timeout",
+            }
+        ],
+        "next_cursor": "j_0",
+        "total": 1,
+    }
+
+
+def test_list_jobs_verbose_returns_full_jobs() -> None:
+    gateway = FakeGateway()
+    gateway.answer = _list_answer()
+
+    payload = _payload(_call(gateway, "list_jobs", {"verbose": True}))
+
+    assert payload == _list_answer()
+
+
+def test_list_jobs_missing_error_returns_null_error_code() -> None:
+    gateway = FakeGateway()
+    gateway.answer = _list_answer()
+    del gateway.answer["jobs"][0]["error"]
+
+    payload = _payload(_call(gateway, "list_jobs", {}))
+
+    assert payload["jobs"][0]["error_code"] is None
+
+
 @pytest.mark.parametrize(
     ("name", "arguments", "call"),
     [
@@ -213,6 +279,8 @@ def test_wait_job_rejects_a_negative_timeout_without_a_request() -> None:
 )
 def test_tool_maps_to_api(name: str, arguments: dict, call: tuple) -> None:
     gateway = FakeGateway()
+    if name == "list_jobs":
+        gateway.answer = {"jobs": []}
 
     _payload(_call(gateway, name, arguments))
 

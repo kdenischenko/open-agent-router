@@ -41,7 +41,8 @@ _RESULT_DESCRIPTION = (
     "on it"
 )
 _LIST_DESCRIPTION = (
-    "List recent jobs with status and route, optionally filtered by status; limit defaults to 20"
+    "List recent jobs with compact status and route fields, optionally filtered by status; "
+    "limit defaults to 20; verbose returns full job records"
 )
 _CANCEL_DESCRIPTION = (
     "Cancel a queued or running job; returns the job state after cancellation. A running job "
@@ -125,8 +126,29 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         return run(lambda: gateway.get(f"/api/v1/jobs/{job_id}"))
 
     @server.tool(description=_LIST_DESCRIPTION, structured_output=False)
-    def list_jobs(status: str | None = None, limit: int = 20) -> dict[str, Any]:
-        return run(lambda: gateway.get("/api/v1/jobs", status=status, limit=limit))
+    def list_jobs(
+        status: str | None = None, limit: int = 20, verbose: bool = False
+    ) -> dict[str, Any]:
+        response = run(lambda: gateway.get("/api/v1/jobs", status=status, limit=limit))
+        if verbose:
+            return response
+        jobs = []
+        for job in response["jobs"]:
+            compact = {
+                key: job.get(key)
+                for key in (
+                    "id",
+                    "status",
+                    "route",
+                    "mode",
+                    "caller",
+                    "created_at",
+                    "finished_at",
+                )
+            }
+            compact["error_code"] = (job.get("error") or {}).get("code")
+            jobs.append(compact)
+        return {**response, "jobs": jobs}
 
     @server.tool(description=_CANCEL_DESCRIPTION, structured_output=False)
     def cancel_job(job_id: str) -> dict[str, Any]:
