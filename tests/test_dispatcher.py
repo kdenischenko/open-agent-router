@@ -32,7 +32,9 @@ from agent_router.policy import PoolBlock
 from agent_router.registry import HarnessSpec
 from agent_router.runner import Invocation, ProcessQueryError, ProcessResult, ResolvedExecutable
 from agent_router.store import Observation
-from helpers import break_index, git, make_empty_git_repo, make_git_repo, write_config
+from helpers import break_index, git, make_empty_git_repo, make_git_repo, requires_git, write_config
+
+pytestmark = requires_git
 
 # --- fakes ----------------------------------------------------------------------------
 

@@ -18,7 +18,9 @@ from agent_router.worktree import (
     tree_snapshot,
     without_paths,
 )
-from helpers import break_index, git, make_empty_git_repo, make_git_repo
+from helpers import break_index, git, make_empty_git_repo, make_git_repo, requires_git
+
+pytestmark = requires_git
 
 _BACKSLASH = chr(92)
 _NAME = "someone"

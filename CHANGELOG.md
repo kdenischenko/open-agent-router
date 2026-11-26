@@ -37,6 +37,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
+  tests that genuinely need `git` declare that dependency.
 - The MCP `list_jobs` tool returns compact job summaries by default; `verbose=true` returns the
   full job records.
 - The installation guide documents the write-mode flags and outside-directory controls of each

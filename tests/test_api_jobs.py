@@ -35,8 +35,11 @@ from helpers import (
     bearer,
     make_git_repo,
     pid_alive,
+    requires_git,
     write_config,
 )
+
+pytestmark = requires_git
 
 HARNESS = Path(__file__).parent / "stubs" / "fake_harness.py"
 PREFIX = "fake:"

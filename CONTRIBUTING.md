@@ -39,6 +39,12 @@ uv run --group smoke pytest -m smoke tests/test_web_smoke.py
 Set `AGENT_ROUTER_SMOKE_SHOTS=<dir>` to keep the theme and mobile screenshots in that directory.
 Without it, screenshots go to pytest's temporary directory.
 
+## Testing
+
+Tests set backend executables explicitly or monkeypatch their lookup. They never rely on the
+harness CLIs (`claude`, `kimi`, `opencode`, `codex`, `cline`) or `git` being on `PATH` unless the
+test declares that dependency, for example with the `requires_git` marker or a clear skip reason.
+
 ## Guidelines
 
 - **Tests first** for bug fixes: a test that fails for the stated reason, then the fix.

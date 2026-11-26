@@ -38,5 +38,19 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
+      - name: Test without installed CLIs
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          uv_bin="$(command -v uv)"
+          export PATH="/usr/bin:/bin"
+          for cli in claude kimi opencode codex cline; do
+            if command -v "$cli" >/dev/null; then
+              echo "::error::$cli must not be on PATH"
+              exit 1
+            fi
+          done
+          "$uv_bin" run pytest -q
+
       - name: Build
         run: uv build

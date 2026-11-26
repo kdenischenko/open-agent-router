@@ -470,10 +470,11 @@ def test_cmd_shim_passes_argument_with_space_verbatim(
     assert json.loads(read(result.stdout_path)) == [argument]
 
 
-def test_resolve_executable(tmp_path: Path) -> None:
+def test_resolve_executable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     found = resolve_executable(sys.executable)
     assert found.path is not None and found.path.is_file() and not found.is_shim
-    by_name = resolve_executable("git")
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent))
+    by_name = resolve_executable(Path(sys.executable).name)
     assert by_name.path is not None and by_name.path.is_file()
     missing = resolve_executable("no-such-harness-0f3a")
     assert missing.path is None and missing.is_shim is False
