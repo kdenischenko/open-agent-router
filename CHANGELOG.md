@@ -37,6 +37,8 @@ All notable changes are documented here. The format follows
 
 - The README now says that a window far behind its pace makes its pool take every job it can
   serve until it catches up, and that `priority` and `weight` in the config change the order.
+- The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
+  tests that genuinely need `git` declare that dependency.
 - The MCP `list_jobs` tool returns compact job summaries by default; `verbose=true` returns the
   full job records.
 - The installation guide documents the write-mode flags and outside-directory controls of each
