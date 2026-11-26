@@ -29,6 +29,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The MCP `list_jobs` tool returns compact job summaries by default; `verbose=true` returns the
+  full job records.
 - The installation guide documents the write-mode flags and outside-directory controls of each
   supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.

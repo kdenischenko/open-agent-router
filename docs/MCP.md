@@ -17,7 +17,7 @@ The server exposes exactly these 8 tools:
 | `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route and timeout |
 | `wait_job` | Wait up to 100 seconds for a job, returns its current state |
 | `job_result` | Get the full result text of a finished job |
-| `list_jobs` | List jobs, optionally filtered by status, with a limit |
+| `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
 | `cancel_job` | Cancel a queued or running job |
 | `rate_job` | Rate a result: `good`, `bad` or `partial`, with an optional tier hint; returns only `id`, `status` and `rating` |
 | `advice` | Ask the gateway which route a tier, mode or caller would take right now |
