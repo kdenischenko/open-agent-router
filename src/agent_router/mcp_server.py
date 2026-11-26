@@ -41,7 +41,9 @@ _RESULT_DESCRIPTION = (
     "on it"
 )
 _LIST_DESCRIPTION = (
-    "List recent jobs with status and route, optionally filtered by status; limit defaults to 20"
+    "List recent jobs, optionally filtered by status; limit defaults to 20. Compact jobs "
+    "contain id, status, route, mode, caller, created_at, finished_at and error_code; "
+    "verbose=true returns full job records"
 )
 _CANCEL_DESCRIPTION = (
     "Cancel a queued or running job; returns the job state after cancellation. A running job "
@@ -75,6 +77,7 @@ _JOB_TIMEOUT = Field(
     "applies when it is omitted; the job also stops after tasks.idle_timeout_s without output"
 )
 _WAIT_TIMEOUT = Field(description="Seconds to wait, capped at 100")
+_LIST_VERBOSE = Field(description="Return full job records instead of compact jobs")
 
 
 def build_server(gateway: GatewayClient) -> MCPServer:
@@ -125,8 +128,31 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         return run(lambda: gateway.get(f"/api/v1/jobs/{job_id}"))
 
     @server.tool(description=_LIST_DESCRIPTION, structured_output=False)
-    def list_jobs(status: str | None = None, limit: int = 20) -> dict[str, Any]:
-        return run(lambda: gateway.get("/api/v1/jobs", status=status, limit=limit))
+    def list_jobs(
+        status: str | None = None,
+        limit: int = 20,
+        verbose: Annotated[bool, _LIST_VERBOSE] = False,
+    ) -> dict[str, Any]:
+        response = run(lambda: gateway.get("/api/v1/jobs", status=status, limit=limit))
+        if verbose:
+            return response
+        jobs = []
+        for job in response["jobs"]:
+            compact = {
+                key: job.get(key)
+                for key in (
+                    "id",
+                    "status",
+                    "route",
+                    "mode",
+                    "caller",
+                    "created_at",
+                    "finished_at",
+                )
+            }
+            compact["error_code"] = (job.get("error") or {}).get("code")
+            jobs.append(compact)
+        return {**response, "jobs": jobs}
 
     @server.tool(description=_CANCEL_DESCRIPTION, structured_output=False)
     def cancel_job(job_id: str) -> dict[str, Any]:
@@ -144,7 +170,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["should_tier"] = should_tier
         if note is not None:
             body["note"] = note
-        return run(lambda: gateway.post(f"/api/v1/jobs/{job_id}/rating", body))
+        response = run(lambda: gateway.post(f"/api/v1/jobs/{job_id}/rating", body))
+        return {key: response[key] for key in ("id", "status", "rating")}
 
     @server.tool(description=_ADVICE_DESCRIPTION, structured_output=False)
     def advice(

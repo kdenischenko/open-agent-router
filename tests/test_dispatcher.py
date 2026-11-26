@@ -139,9 +139,11 @@ class ScriptRunner:
 
 
 class ScriptAdapter:
-    """Harness output: `ok:<text>`, `limit`, `limit@<ISO time>`, `error:<text>`, `crash`.
+    """Harness output: `ok:<text>`, `limit`, `limit@<ISO time>`, `error:<text>`, `nomodel`,
+    `crash`.
 
-    `crash` — the adapter could not parse the output and raised an exception.
+    `nomodel` — the route's model is unavailable (`provider.no-route`); `crash` — the adapter
+    could not parse the output and raised an exception.
     """
 
     name = "fake"
@@ -162,6 +164,12 @@ class ScriptAdapter:
             stamp = stdout.partition("@")[2]
             reset = datetime.fromisoformat(stamp) if stamp else None
             return RunOutcome("limit", limit_reset_at=reset, error="usage limit reached")
+        if stdout.startswith("nomodel"):
+            return RunOutcome(
+                "error",
+                error="provider.no-route: Model unavailable: fake/model-x",
+                model_unavailable=True,
+            )
         return RunOutcome("error", error=stdout.partition(":")[2] or "harness failure")
 
     def is_final_line(self, line: str) -> bool:
@@ -3644,3 +3652,69 @@ def test_ok_between_errors_resets_streak(make_rig) -> None:
 def test_error_streak_constants() -> None:
     assert dispatcher_module.ROUTE_ERROR_STREAK == 2
     assert dispatcher_module.ROUTE_ERROR_COOLDOWN_S == 1800
+
+
+def test_model_unavailable_excludes_route_until_cooldown(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES, model_unavailable_cooldown_s=600)
+    rig.runner.add(Step("nomodel", exit_code=2))
+    rig.submit(rig.plain(), route="a/main")
+    rig.tick(2)
+    until = rig.clock.now() + timedelta(seconds=600)
+
+    marked = views_of(rig)["a/main"]
+    assert not marked.available
+    assert marked.unavailable_reason == (
+        f"model unavailable, retry after {format_local(until, rig.dispatcher.tz)}"
+    )
+    assert views_of(rig)["b/main"].available
+    assert rig.jobs.active_blocks(rig.clock.now()) == {}  # the pool is not blocked
+
+    free = rig.submit(rig.plain())
+    rig.tick(3)
+    assert rig.job(free).route == "b/main"
+
+    rig.clock.advance(timedelta(seconds=601))
+    assert views_of(rig)["a/main"].available
+
+
+def test_model_unavailable_retries_on_next_route(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("nomodel", exit_code=2))
+    job = rig.submit(rig.plain())
+    rig.tick(3)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "b/main")
+    first, second = rig.attempts(job)
+    assert (first.route, first.outcome) == ("a/main", "error")
+    assert first.result is not None and first.result.model_unavailable
+    assert (second.route, second.outcome) == ("b/main", "ok")
+    assert second.result is not None and not second.result.model_unavailable
+
+
+def test_model_unavailable_pinned_route_fails_without_retry(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("nomodel", exit_code=2))
+    job = rig.submit(rig.plain(), route="a/main")
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "executor_error")
+    assert "Model unavailable" in (done.error_message or "")
+    assert len(rig.attempts(job)) == 1
+
+
+def test_advice_shows_model_unavailable_reason(make_rig) -> None:
+    from agent_router.service import advise
+
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("nomodel", exit_code=2))
+    rig.submit(rig.plain(), route="a/main")
+    rig.tick(2)
+
+    decision = advise(
+        rig.config, rig.dispatcher.snapshot(), "standard", None, views=rig.dispatcher.views()
+    )
+    excluded = {item.route.id: item.reason for item in decision.excluded}
+    assert excluded["a/main"].startswith("harness unavailable: model unavailable, retry after ")
+    assert [choice.route.id for choice in decision.chosen] == ["b/main"]

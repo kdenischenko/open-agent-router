@@ -48,6 +48,7 @@ class OpenCodeAdapter:
         session_id: str | None = None
         harness_error: str | None = None
         limit_hint = False
+        model_unavailable_hint = False
         service = list(other)
         for event in events:
             kind = event.get("type")
@@ -77,6 +78,11 @@ class OpenCodeAdapter:
                 service.append(harness_error)
                 lowered = error_type.lower()
                 limit_hint = limit_hint or "limit" in lowered or "quota" in lowered
+                model_unavailable_hint = (
+                    model_unavailable_hint
+                    or "no-route" in lowered
+                    or "model unavailable" in message.lower()
+                )
         if texts:
             # the last message counts even when the run stopped before its step finished
             answers.add(texts[-1][0])
@@ -88,6 +94,7 @@ class OpenCodeAdapter:
             stderr=stderr,
             limit_hint=limit_hint,
             harness_error=harness_error,
+            model_unavailable_hint=model_unavailable_hint,
             tokens_in=tokens_in if steps else None,
             tokens_out=tokens_out if steps else None,
             cost_usd=cost if cost > 0 else None,

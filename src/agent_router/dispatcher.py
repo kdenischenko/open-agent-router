@@ -170,6 +170,8 @@ class Dispatcher(RecoveryMixin):
         self._views: list[RouteView] | None = None
         self._views_at: datetime | None = None
         self._exes: dict[str, ResolvedExecutable] = {}
+        # route id → end of its model-unavailable exclusion; not persisted across restarts
+        self._model_unavailable: dict[str, datetime] = {}
         self._cache = SnapshotCache(bus, clock, config.snapshot_ttl_s, self._build_snapshot)
 
     # --- snapshot and routes ---------------------------------------------------------
@@ -221,9 +223,14 @@ class Dispatcher(RecoveryMixin):
         return self._views
 
     def _mark_error_streak(self, view: RouteView, now: datetime) -> RouteView:
-        """A route with a streak of errors is unavailable until the cooldown ends."""
+        """A route is unavailable while its model-unavailable or error-streak cooldown lasts."""
         if not view.available:
             return view
+        excluded_until = self._model_unavailable.get(view.route.id)
+        if excluded_until is not None and excluded_until > now:
+            # one model-unavailable report takes the route out of rotation at once
+            reason = f"model unavailable, retry after {format_local(excluded_until, self.tz)}"
+            return replace(view, available=False, unavailable_reason=reason)
         count, last = self.jobs.route_errors_in_row(view.route.id)
         if last is None or count < ROUTE_ERROR_STREAK:
             return view
@@ -234,7 +241,7 @@ class Dispatcher(RecoveryMixin):
         return replace(view, available=False, unavailable_reason=reason)
 
     def views(self) -> list[RouteView]:
-        """Routes with executable availability and error-streak health; the cached list is
+        """Routes with executable availability and error-streak/model health; the cached list is
         recomputed at most once every 60 s, then marked on every call."""
         with self._views_lock:
             now = self.clock.now()
@@ -927,6 +934,7 @@ class Dispatcher(RecoveryMixin):
                 error=error,
                 limit_reset_at=parsed.limit_reset_at,
                 survived=done.survived,
+                model_unavailable=parsed.model_unavailable,
             )
         return result, done.duration_s, tail, tokens
 
@@ -1035,6 +1043,9 @@ class Dispatcher(RecoveryMixin):
         )
         if result.outcome == "limit":
             self._block(pool, result.limit_reset_at, job.id)
+        if result.outcome == "error" and result.model_unavailable and job.route is not None:
+            cooldown = timedelta(seconds=self.config.tasks.model_unavailable_cooldown_s)
+            self._model_unavailable[job.route] = self.clock.now() + cooldown
         if job.cancel_requested or (result.outcome == "cancelled" and not shutdown):
             self._move(job, "cancelled")
         elif result.outcome == "ok":
