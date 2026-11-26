@@ -126,6 +126,20 @@ def test_expired_deadline_renders_expired_with_a_warning_class(web, rig) -> None
 # --- actions from the inbox --------------------------------------------------------------------
 
 
+def test_card_actions_share_an_inline_row(web, rig) -> None:
+    job = rig.add_job("awaiting_approval")
+
+    section = approvals_section(web.get("/").text)
+
+    row = re.search(r'<div class="inline">(.*?)</div>', section, re.S)
+    assert row is not None
+    assert f'<form method="post" action="/jobs/{job.id}/approve" class="inline">' in row.group(1)
+    assert (
+        f'<a href="/jobs/{job.id}/deny" data-confirm-action="deny" '
+        f'aria-label="Deny {job.id}">Deny</a>' in row.group(1)
+    )
+
+
 def test_approve_form_posts_to_the_existing_route_with_csrf(web, rig) -> None:
     job = rig.add_job("awaiting_approval")
 

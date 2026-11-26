@@ -29,6 +29,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The MCP `list_jobs` tool returns compact job summaries by default; `verbose=true` returns the
+  full job records.
 - The installation guide documents the write-mode flags and outside-directory controls of each
   supported harness, including OpenCode's `external_directory` permission.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
@@ -40,6 +42,7 @@ All notable changes are documented here. The format follows
 
 - The job page attempt timeline formats each attempt's duration with units, like the job total
   duration, and shows a dash instead of an empty cell when an attempt has no cost.
+- Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.
 - The result text of an OpenCode job keeps every answer that ended a turn, so a short follow-up
   after a background command no longer replaces the main answer.
 - SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
@@ -60,6 +63,8 @@ All notable changes are documented here. The format follows
   72 h); an observation older than `max_age` — a manual calibration as much as a usage read —
   is reported as `no data: observation older than max age`, while a passed scheduled reset still
   yields a fresh zero-usage window.
+- The MCP `rate_job` tool returns only the compact fields `id`, `status` and `rating` instead of
+  the full job.
 
 ## [0.3.0] - 2026-11-22
 
