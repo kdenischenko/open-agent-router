@@ -14,13 +14,13 @@ The server exposes exactly these 8 tools:
 
 | Tool | Purpose |
 |---|---|
-| `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route and timeout |
+| `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route, excluded pools and timeout |
 | `wait_job` | Wait up to 100 seconds for a job, returns its current state |
 | `job_result` | Get the full result text of a finished job |
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
 | `cancel_job` | Cancel a queued or running job |
 | `rate_job` | Rate a result: `good`, `bad` or `partial`, with an optional tier hint; returns only `id`, `status` and `rating` |
-| `advice` | Ask the gateway which route a tier, mode or caller would take right now |
+| `advice` | Ask which route a tier, mode or caller would take, optionally excluding pools |
 | `status` | Gateway snapshot: pool limits, spend and blocks (job state is in `list_jobs`) |
 
 ## Job modes and tiers
@@ -36,6 +36,9 @@ The server exposes exactly these 8 tools:
 - `route` is a route id from `advice`, for example `opencode-cli/glm-5.3`; it pins the job
   to that route instead of letting the gateway choose, and the job is still rejected
   if the route cannot serve it.
+- `exclude_pools` is an optional list of pool ids that `submit_job` and `advice` leave out of
+  the route choice. Advice marks their routes `excluded by request`; a pinned route on an
+  excluded pool is rejected. Pool ids must be known and non-empty.
 - Write the job with full context: the directory it may work in, the expected result
   and the constraints. Do not submit a second write job in the same directory until
   the first one has finished.

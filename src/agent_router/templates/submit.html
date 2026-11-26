@@ -33,6 +33,15 @@
   <p id="tier-hint" class="hint">Leave empty to use the gateway default.</p>
   <p id="tier-error" class="field-error"{% if not errors.get('tier') %} hidden{% endif %}>{{ errors.get('tier', '') }}</p>
 
+  <label for="exclude_pools">Excluded pools (optional)</label>
+  <select id="exclude_pools" name="exclude_pools" multiple size="{{ pools | length or 1 }}" aria-describedby="exclude_pools-hint{% if errors.get('exclude_pools') %} exclude_pools-error{% endif %}"{% if errors.get('exclude_pools') %} aria-invalid="true"{% endif %}>
+    {% for pool in pools %}
+    <option value="{{ pool.id }}"{% if pool.id in values.get('exclude_pools', []) %} selected{% endif %}>{{ pool.title }}</option>
+    {% endfor %}
+  </select>
+  <p id="exclude_pools-hint" class="hint">Hold Ctrl to select several; the job never routes to an excluded pool. Leave empty to allow every pool.</p>
+  <p id="exclude_pools-error" class="field-error"{% if not errors.get('exclude_pools') %} hidden{% endif %}>{{ errors.get('exclude_pools', '') }}</p>
+
   <label for="prompt">Prompt</label>
   <textarea id="prompt" name="prompt" rows="10" required aria-describedby="prompt-hint{% if errors.get('prompt') %} prompt-error{% endif %}"{% if errors.get('prompt') %} aria-invalid="true"{% endif %}>{{ values.get('prompt', '') }}</textarea>
   <p id="prompt-hint" class="hint">The task for the coding agent.</p>

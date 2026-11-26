@@ -20,6 +20,7 @@ class RouteRequest:
     caller_pool: str | None = None
     excluded_routes: frozenset[str] = frozenset()
     excluded_pools: frozenset[str] = frozenset()
+    request_excluded_pools: frozenset[str] = frozenset()
     explicit: bool = False  # explicit route: reserve and caller pool do not apply
     kind: RouteKind = "harness"
     model_group: str | None = None
@@ -106,6 +107,8 @@ def _exclusion(request: RouteRequest, snapshot: Snapshot, view: RouteView) -> st
         return f"does not serve tier {request.tier}"
     if request.mode is not None and request.mode not in route.modes:
         return f"mode {request.mode} not supported"
+    if route.pool in request.request_excluded_pools:
+        return "excluded by request"
     if route.id in request.excluded_routes or route.pool in request.excluded_pools:
         return "excluded for this job"
     if not request.explicit and request.caller_pool == route.pool:

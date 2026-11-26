@@ -331,6 +331,71 @@ def test_known_caller_is_accepted(api, rig) -> None:
     assert api.get(f"/api/v1/jobs/{job_id}", headers=cl(rig)).json()["caller"] == "agent-a"
 
 
+def test_exclude_pools_is_accepted_and_stored(api, rig) -> None:
+    job_id = post(api, rig, exclude_pools=["pool-a"])
+
+    job = rig.jobs.get(job_id)
+    assert job is not None
+    assert job.request.excluded_pools == frozenset({"pool-a"})
+    assert job.excluded_pools == frozenset()
+
+
+@pytest.mark.parametrize("exclude_pools", ["pool-a", [1], ["pool-a", ""]])
+def test_exclude_pools_rejects_invalid_values(api, rig, exclude_pools) -> None:
+    response = api.post("/api/v1/jobs", json=rig.body(exclude_pools=exclude_pools), headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "bad_request"
+    assert "exclude_pools" in response.json()["error"]["message"]
+
+
+def test_exclude_pools_rejects_unknown_pool(api, rig) -> None:
+    response = api.post("/api/v1/jobs", json=rig.body(exclude_pools=["missing"]), headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "bad_pool",
+        "message": "unknown pool: missing",
+    }
+
+
+def test_exclude_pools_leaving_no_route_uses_existing_error(api, rig) -> None:
+    job = run_job(api, rig, exclude_pools=["pool-a"])
+
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "no_route"
+    assert "fake/main: excluded by request" in job["error"]["message"]
+
+
+def test_exclude_pools_rejects_an_ineligible_pinned_route(api, rig) -> None:
+    job = run_job(api, rig, route="fake/main", exclude_pools=["pool-a"])
+
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "no_route"
+    assert "fake/main: excluded by request" in job["error"]["message"]
+
+
+def test_advice_excludes_requested_pools(api, rig) -> None:
+    response = api.get("/api/v1/advice", params={"exclude_pools": ["pool-a"]}, headers=cl(rig))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chosen"] == []
+    assert [(item["route"], item["reason"]) for item in body["excluded"]] == [
+        ("fake/main", "excluded by request")
+    ]
+
+
+def test_advice_rejects_unknown_excluded_pool(api, rig) -> None:
+    response = api.get("/api/v1/advice", params={"exclude_pools": ["missing"]}, headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "bad_request",
+        "message": "unknown pool: missing",
+    }
+
+
 def test_queue_full_is_429(make_rig) -> None:
     rig = make_rig(max_queued=1)
     with TestClient(rig.app, base_url=BASE_URL) as api:

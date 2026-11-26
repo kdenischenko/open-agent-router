@@ -101,9 +101,15 @@ def advice(
     mode: str | None = typer.Option(
         None, "--mode", help="Job mode: read or write; without it routes of either mode match"
     ),
+    exclude_pool: list[str] = typer.Option(
+        [], "--exclude-pool", help="Pool to leave out of the choice; repeat to exclude several"
+    ),
 ) -> None:
     """Show which routes match a job and why the others are excluded."""
-    result = _request(lambda: _gateway().get("/api/v1/advice", tier=tier, caller=caller, mode=mode))
+    params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
+    if exclude_pool:
+        params["exclude_pools"] = exclude_pool
+    result = _request(lambda: _gateway().get("/api/v1/advice", **params))
     typer.echo(f"Tier: {result['tier']}")
     if result.get("mode"):
         typer.echo(f"Mode: {result['mode']}")

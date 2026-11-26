@@ -120,6 +120,8 @@ def test_submit_job_parameters_say_what_to_pass() -> None:
     assert "advice" in submit["route"]["description"].lower()
     assert "seconds" in submit["timeout_s"]["description"]
     assert "capped at 100" in wait["timeout_s"]["description"]
+    assert "pool" in submit["exclude_pools"]["description"]
+    assert "pool" in tools["advice"].input_schema["properties"]["exclude_pools"]["description"]
 
 
 def test_submit_job_posts_the_job() -> None:
@@ -160,6 +162,38 @@ def test_submit_job_defaults_to_read_and_omits_empty_hints() -> None:
     _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
 
     assert gateway.calls[0][2] == {"prompt": "p", "cwd": "C:/work/repo", "mode": "read"}
+
+
+def test_submit_job_sends_exclude_pools() -> None:
+    gateway = FakeGateway()
+
+    _call(
+        gateway,
+        "submit_job",
+        {"prompt": "p", "cwd": "C:/work/repo", "exclude_pools": ["claude-pro", "kimi-code"]},
+    )
+
+    method, path, body = gateway.calls[0]
+    assert (method, path) == ("POST", "/api/v1/jobs")
+    assert body["exclude_pools"] == ["claude-pro", "kimi-code"]
+
+
+def test_submit_job_omits_exclude_pools_when_not_given() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
+
+    assert "exclude_pools" not in gateway.calls[0][2]
+
+
+def test_advice_sends_exclude_pools() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "advice", {"exclude_pools": ["claude-pro"]})
+
+    method, path, params = gateway.calls[0]
+    assert (method, path) == ("GET", "/api/v1/advice")
+    assert params["exclude_pools"] == ["claude-pro"]
 
 
 def test_wait_job_caps_the_timeout_and_returns_an_unfinished_job() -> None:

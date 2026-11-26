@@ -567,6 +567,7 @@ def web_router(deps: Gateway) -> APIRouter:
         "bad_prompt": "prompt",
         "bad_mode": "mode",
         "bad_tier": "tier",
+        "bad_pool": "exclude_pools",
         "bad_timeout": "timeout_s",
         "cwd_not_allowed": "cwd",
         "not_a_git_repo": "cwd",
@@ -579,7 +580,7 @@ def web_router(deps: Gateway) -> APIRouter:
         *,
         error: str | None = None,
         errors: dict[str, str] | None = None,
-        values: dict[str, str] | None = None,
+        values: dict[str, str | list[str]] | None = None,
         status_code: int = 200,
     ) -> HTMLResponse:
         return render_page(
@@ -592,6 +593,7 @@ def web_router(deps: Gateway) -> APIRouter:
                 "values": values or {"mode": "read"},
                 "modes": MODES,
                 "tiers": TIERS,
+                "pools": deps.config.pools,
             },
             sid=sid,
             nav="jobs",
@@ -618,6 +620,10 @@ def web_router(deps: Gateway) -> APIRouter:
         values = {
             name: _field(form, name) for name in ("cwd", "mode", "tier", "prompt", "timeout_s")
         }
+        exclude_pools = [
+            value for value in form.getlist("exclude_pools") if isinstance(value, str) and value
+        ]
+        values["exclude_pools"] = exclude_pools
         raw_timeout = values["timeout_s"]
         try:
             timeout_s = int(raw_timeout) if raw_timeout else None
@@ -632,6 +638,7 @@ def web_router(deps: Gateway) -> APIRouter:
                     mode=values["mode"],
                     tier=values["tier"] or None,
                     timeout_s=timeout_s,
+                    exclude_pools=exclude_pools,
                 ),
             )
         except api.ApiError as exc:
@@ -643,6 +650,15 @@ def web_router(deps: Gateway) -> APIRouter:
                 errors={field: exc.message} if field else {},
                 values=values,
                 status_code=exc.status,
+            )
+        except ValidationError:
+            return submit_page(
+                request,
+                sid,
+                error="check the job field values",
+                errors={"exclude_pools": "invalid excluded pool selection"},
+                values=values,
+                status_code=422,
             )
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 

@@ -103,6 +103,7 @@ def test_job_roundtrip_with_all_fields(jobstore) -> None:
             caller="claude-code",
             route="kimi/k3",
             timeout_s=900,
+            excluded_pools=frozenset({"claude-pro"}),
         ),
         status="awaiting_approval",
         tier="strong",

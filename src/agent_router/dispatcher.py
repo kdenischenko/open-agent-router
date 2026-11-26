@@ -583,6 +583,7 @@ class Dispatcher(RecoveryMixin):
             caller_pool=self.config.callers.get(caller) if caller else None,
             excluded_routes=job.excluded_routes,
             excluded_pools=job.excluded_pools,
+            request_excluded_pools=job.request.excluded_pools,
             explicit=explicit,
             kind="harness",
         )
