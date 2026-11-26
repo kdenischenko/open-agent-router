@@ -91,6 +91,15 @@ after the route's last `ok` attempt, a later `ok` resets the streak — is marke
 is available again. A route the caller pinned still runs, and a job already approved for a route
 keeps it.
 
+Model availability: when an adapter reports that the route's model is unavailable (OpenCode
+prints `provider.no-route: Model unavailable: <provider>/<model>`; the outcome carries
+`model_unavailable`), a single such failure takes the route out of rotation for
+`tasks.model_unavailable_cooldown_s` (default 1800 s). The exclusion is per route, held in
+memory by the dispatcher (a restart clears it); the pool and its other routes are not affected,
+and the failure is otherwise an ordinary `error` outcome — a gateway-chosen job is retried on
+the next route, a pinned one fails. The policy and `advice` show
+`harness unavailable: model unavailable, retry after <local time>` until the cooldown ends.
+
 Limit detection is adapter-side (error patterns and reset times parsed from CLI output). The
 dispatcher blocks the pool until the reported reset time, or by exponential backoff
 (`tasks.limit_backoff_s` doubling per consecutive limit hit, capped at

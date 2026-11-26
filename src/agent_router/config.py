@@ -618,6 +618,7 @@ _TASKS_KEYS = frozenset(
         "approval_timeout_s",
         "limit_backoff_s",
         "limit_backoff_max_s",
+        "model_unavailable_cooldown_s",
         "max_prompt_chars",
         "exit_grace_s",
     }
@@ -641,6 +642,7 @@ def _parse_tasks(value: Any, errors: list[str]) -> TaskSettings:
         "approval_timeout_s",
         "limit_backoff_s",
         "limit_backoff_max_s",
+        "model_unavailable_cooldown_s",
         "max_prompt_chars",
         "exit_grace_s",
     ):

@@ -477,6 +477,42 @@ def test_opencode_error_event() -> None:
     assert outcome.session_id == "ses_<id>"
 
 
+def test_opencode_model_unavailable_is_reported() -> None:
+    outcome = opencode.parse(sample("opencode_error.jsonl"), "", 1)
+    assert outcome.status == "error" and outcome.model_unavailable
+
+
+def test_opencode_model_unavailable_from_stderr_line() -> None:
+    stderr = "provider.no-route: Model unavailable: opencode-go/longcat-2.0\n"
+    outcome = opencode.parse("", stderr, 1)
+    assert outcome.status == "error" and outcome.model_unavailable
+
+
+def test_opencode_model_unavailable_match_is_case_insensitive() -> None:
+    line = json.dumps(
+        {"type": "error", "error": {"type": "PROVIDER.NO-ROUTE", "message": "MODEL UNAVAILABLE"}}
+    )
+    outcome = opencode.parse(line + "\n", "", 1)
+    assert outcome.status == "error" and outcome.model_unavailable
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr"),
+    [
+        ("", "boom\n"),
+        (json.dumps({"type": "error", "error": {"type": "provider.http", "message": "502"}}), ""),
+    ],
+)
+def test_opencode_other_errors_are_not_model_unavailable(stdout: str, stderr: str) -> None:
+    outcome = opencode.parse(stdout + ("\n" if stdout else ""), stderr, 1)
+    assert outcome.status == "error" and not outcome.model_unavailable
+
+
+def test_opencode_limit_is_not_model_unavailable() -> None:
+    outcome = opencode.parse(sample("limit_opencode.txt"), "", 1)
+    assert outcome.status == "limit" and not outcome.model_unavailable
+
+
 def test_opencode_limit_sample_by_error_type() -> None:
     outcome = opencode.parse(sample("limit_opencode.txt"), "", 1)
     assert outcome.status == "limit"

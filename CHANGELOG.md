@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A route whose harness reports its model as unavailable (OpenCode's
+  `provider.no-route: Model unavailable: <provider>/<model>`) is taken out of rotation after a
+  single failure for `tasks.model_unavailable_cooldown_s` (default 1800 s, new config key);
+  `advice` and the dashboard show `model unavailable, retry after <local time>`, a
+  gateway-chosen job is retried on the next route, and a caller-pinned route fails without a
+  retry.
 - A usage read that stops returning a mapped field, or fails with `malformed_response`/`no_data`
   three times in a row, is surfaced as usage-source drift: the snapshot `usage` object gains
   `missing_fields` and `format_changed`, the reader publishes `usage.fields_missing` when the

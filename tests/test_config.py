@@ -235,11 +235,25 @@ def test_task_timeout_defaults(config_module) -> None:
     tasks = config_module.TaskSettings(allowed_roots=(), denied_roots=())
     assert tasks.default_timeout_s == 14400
     assert tasks.idle_timeout_s == 600
+    assert tasks.model_unavailable_cooldown_s == 1800
 
 
 def test_default_template_task_timeouts(default_config) -> None:
     assert default_config.tasks.default_timeout_s == 14400
     assert default_config.tasks.idle_timeout_s == 600
+    assert default_config.tasks.model_unavailable_cooldown_s == 1800
+
+
+def test_model_unavailable_cooldown_is_read(tmp_path: Path, config_module) -> None:
+    text = VALID_CONFIG + "\n[tasks]\nmodel_unavailable_cooldown_s = 300\n"
+    config = load_text(tmp_path, config_module, text)
+    assert config.tasks.model_unavailable_cooldown_s == 300
+
+
+def test_model_unavailable_cooldown_below_one_is_rejected(tmp_path: Path, config_module) -> None:
+    text = VALID_CONFIG + "\n[tasks]\nmodel_unavailable_cooldown_s = 0\n"
+    messages = error_messages(tmp_path, config_module, text)
+    assert "tasks.model_unavailable_cooldown_s: must be at least 1" in messages
 
 
 def test_idle_timeout_zero_is_accepted(tmp_path: Path, config_module) -> None:

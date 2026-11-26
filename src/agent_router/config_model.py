@@ -168,6 +168,7 @@ class TaskSettings:
     approval_timeout_s: int = 600
     limit_backoff_s: int = 1800
     limit_backoff_max_s: int = 18000
+    model_unavailable_cooldown_s: int = 1800
     max_prompt_chars: int = 200_000
     exit_grace_s: int = 60
 

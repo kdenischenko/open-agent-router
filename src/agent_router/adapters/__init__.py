@@ -7,6 +7,7 @@ from agent_router.adapters.base import (
     Adapter,
     RunOutcome,
     looks_like_limit,
+    looks_like_model_unavailable,
     with_preamble,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "Adapter",
     "RunOutcome",
     "looks_like_limit",
+    "looks_like_model_unavailable",
     "with_preamble",
 ]
