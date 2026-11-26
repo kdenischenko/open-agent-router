@@ -27,7 +27,10 @@ spend a strong model on a task a cheap one handles fine. open-agent-router is a 
 gateway that keeps your subscriptions busy without surprises:
 
 - **Subscriptions do not sit idle.** The gateway tracks usage in every limit window and
-  prefers the pool that is furthest behind its pace for the time left in the window.
+  prefers the pool that is furthest behind its pace for the time left in the window. When one
+  window is far behind its pace, its pool takes every job it can serve until it catches up.
+  This is intended — the under-used subscription is spent first — and `priority` and `weight`
+  in the config change the order.
 - **Limits do not surprise you.** A pool that reports a limit is blocked until its reset;
   on a usage limit and on an executor error the job moves to another route. A writing
   attempt that already changed files ends `partial` and is not retried.
