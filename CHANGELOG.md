@@ -48,6 +48,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The job page attempt timeline formats each attempt's duration with units, like the job total
+  duration, and shows a dash instead of an empty cell when an attempt has no cost.
 - Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.
 - The result text of an OpenCode job keeps every answer that ended a turn, so a short follow-up
   after a background command no longer replaces the main answer.

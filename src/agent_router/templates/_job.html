@@ -100,11 +100,11 @@
         <dt>Outcome</dt>
         <dd><span class="status-badge status-badge--{{ status_kind.get(attempt.outcome, 'muted') }}">{{ attempt.outcome or '—' }}</span></dd>
         <dt>Duration</dt>
-        <dd>{{ '%.1f' % attempt.duration_s if attempt.duration_s is not none else '—' }}</dd>
+        <dd>{{ attempt.duration_s|age }}</dd>
         <dt>Tokens</dt>
         <dd>{% if attempt.tokens_in is none and attempt.tokens_out is none %}—{% else %}{{ attempt.tokens_in if attempt.tokens_in is not none else '—' }} / {{ attempt.tokens_out if attempt.tokens_out is not none else '—' }}{% endif %}</dd>
         <dt>Cost</dt>
-        <dd>{{ '$%.4f' % attempt.cost_usd if attempt.cost_usd is not none else '' }}</dd>
+        <dd>{{ '$%.4f' % attempt.cost_usd if attempt.cost_usd is not none else '—' }}</dd>
       </dl>
       {% if attempt.log_tail %}
       <details>
