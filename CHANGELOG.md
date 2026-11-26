@@ -58,6 +58,8 @@ All notable changes are documented here. The format follows
   72 h); an observation older than `max_age` — a manual calibration as much as a usage read —
   is reported as `no data: observation older than max age`, while a passed scheduled reset still
   yields a fresh zero-usage window.
+- The MCP `rate_job` tool returns only the compact fields `id`, `status` and `rating` instead of
+  the full job.
 
 ## [0.3.0] - 2026-11-22
 

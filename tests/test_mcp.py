@@ -238,6 +238,31 @@ def test_rate_job_posts_the_rating() -> None:
     assert body == {"value": "good", "should_tier": "cheap", "note": "fine"}
 
 
+def test_rate_job_returns_compact_response() -> None:
+    gateway = FakeGateway()
+    rating = {
+        "job_id": "j_1",
+        "value": "good",
+        "should_tier": "cheap",
+        "by": None,
+        "note_sha256": None,
+        "note_chars": None,
+        "at": "2026-11-25T12:00:00+00:00",
+    }
+    gateway.answer = {
+        "id": "j_1",
+        "status": "completed",
+        "rating": rating,
+        "prompt": "Describe the repository",
+        "text": "A long result",
+        "attempts": [{"route": "opencode-cli/glm-5.3"}],
+    }
+
+    payload = _payload(_call(gateway, "rate_job", {"job_id": "j_1", "value": "good"}))
+
+    assert payload == {"id": "j_1", "status": "completed", "rating": rating}
+
+
 def test_rate_job_omits_empty_fields() -> None:
     gateway = FakeGateway()
 

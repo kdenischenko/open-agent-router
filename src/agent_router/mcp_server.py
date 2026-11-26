@@ -144,7 +144,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["should_tier"] = should_tier
         if note is not None:
             body["note"] = note
-        return run(lambda: gateway.post(f"/api/v1/jobs/{job_id}/rating", body))
+        response = run(lambda: gateway.post(f"/api/v1/jobs/{job_id}/rating", body))
+        return {key: response[key] for key in ("id", "status", "rating")}
 
     @server.tool(description=_ADVICE_DESCRIPTION, structured_output=False)
     def advice(
