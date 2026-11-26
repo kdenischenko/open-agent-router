@@ -40,6 +40,7 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.
 - The result text of an OpenCode job keeps every answer that ended a turn, so a short follow-up
   after a background command no longer replaces the main answer.
 - SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat
