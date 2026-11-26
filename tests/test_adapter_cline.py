@@ -11,6 +11,7 @@ import pytest
 from agent_router.adapters.base import EMPTY_OUTPUT, MAX_ARG_CHARS, with_preamble
 from agent_router.registry import HARNESS_GROUP, load_harness
 from agent_router.runner import ResolvedExecutable, check_shim_args
+from helpers import requires_git
 from test_dispatcher import Step
 from test_spend import new_spend_rig
 
@@ -186,6 +187,7 @@ def test_answer_mentioning_limits_is_ok() -> None:
     assert outcome.text == "rate limit and quota explained"
 
 
+@requires_git
 def test_cline_job_writes_spend(tmp_path, home, store, jobstore, clock, register_harness) -> None:
     rig = new_spend_rig(
         tmp_path,
