@@ -20,6 +20,8 @@ idle_timeout_s = 600
 approval_timeout_s = 600
 limit_backoff_s = 1800
 limit_backoff_max_s = 18000
+# how long a route stays out of rotation after its model is reported unavailable
+model_unavailable_cooldown_s = 1800
 max_prompt_chars = 200000
 exit_grace_s = 60
 

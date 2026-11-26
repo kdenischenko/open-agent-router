@@ -139,6 +139,27 @@ def test_duration_falls_back_to_attempt_durations(web, rig) -> None:
     assert format_age(120) in totals_block(text)
 
 
+def test_attempt_duration_has_unit_and_missing_cost_is_dash(web, rig) -> None:
+    job = rig.add_job("completed", text="done")
+    add_attempt(rig, job, 1, duration_s=95.0, cost_usd=0.01)
+    add_attempt(rig, job, 2, duration_s=30.0)
+
+    text = job_page(web, job)
+
+    timeline = re.search(r'<ol\b(?=[^>]*class="attempt-timeline")[^>]*>(.*?)</ol>', text, re.S)
+    assert timeline is not None, "no ol.attempt-timeline"
+    items = re.findall(r"<li>(.*?)</li>", timeline.group(1), re.S)
+    assert len(items) == 2
+    assert re.search(
+        r"<dt>\s*Duration\s*</dt>\s*<dd>\s*" + re.escape(format_age(95)) + r"\s*</dd>", items[0]
+    )
+    assert re.search(r"<dt>\s*Cost\s*</dt>\s*<dd>\s*\$0\.0100\s*</dd>", items[0])
+    assert re.search(
+        r"<dt>\s*Duration\s*</dt>\s*<dd>\s*" + re.escape(format_age(30)) + r"\s*</dd>", items[1]
+    )
+    assert re.search(r"<dt>\s*Cost\s*</dt>\s*<dd>\s*—\s*</dd>", items[1])
+
+
 def test_attempts_without_log_tail_say_no_output(web, rig) -> None:
     job = rig.add_job("failed")
     add_attempt(rig, job, 1, log_tail=None)

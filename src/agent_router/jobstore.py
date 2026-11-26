@@ -308,6 +308,7 @@ def _result_data(result: AttemptResult | None) -> str | None:
             "head_moved": result.head_moved,
             "changes_unknown": result.changes_unknown,
             "survived": result.survived,
+            "model_unavailable": result.model_unavailable,
         },
         ensure_ascii=False,
     )
@@ -334,6 +335,9 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
         flags = (data["head_moved"], data["changes_unknown"], data["survived"])
         if not all(isinstance(flag, bool) for flag in flags):
             return None
+        unavailable = data.get("model_unavailable", False)
+        if not isinstance(unavailable, bool):
+            return None
         if not all(isinstance(data[key], (str, type(None))) for key in ("text", "error")):
             return None
         return AttemptResult(
@@ -345,6 +349,7 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
             head_moved=data["head_moved"],
             changes_unknown=data["changes_unknown"],
             survived=data["survived"],
+            model_unavailable=unavailable,
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError):
         return None
