@@ -921,6 +921,7 @@ class Dispatcher(RecoveryMixin):
                 pass
             else:
                 tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
+                result = replace(result, model_unavailable=parsed.model_unavailable)
         else:
             parsed = adapter.parse(stdout, stderr, done.exit_code)
             tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
@@ -1044,7 +1045,11 @@ class Dispatcher(RecoveryMixin):
         )
         if result.outcome == "limit":
             self._block(pool, result.limit_reset_at, job.id)
-        if result.outcome == "error" and result.model_unavailable and job.route is not None:
+        if (
+            result.outcome in {"error", "timeout"}
+            and result.model_unavailable
+            and job.route is not None
+        ):
             cooldown = timedelta(seconds=self.config.tasks.model_unavailable_cooldown_s)
             self._model_unavailable[job.route] = self.clock.now() + cooldown
         if job.cancel_requested or (result.outcome == "cancelled" and not shutdown):

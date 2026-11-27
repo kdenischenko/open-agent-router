@@ -167,8 +167,8 @@ def settle(
     Zero exit code with non-empty text is always ok. Otherwise limit, if limit signs appear
     in the service messages (`service`, stderr) or the harness itself reported the error as
     a limit (`limit_hint`); otherwise error. The model response text is not checked for
-    limit signs. The same service messages mark the outcome as model-unavailable when the
-    harness reported the route's model as gone (`model_unavailable_hint` or the signs).
+    limit signs. Error outcomes are marked as model-unavailable when the service messages
+    report the route's model as gone (`model_unavailable_hint` or the signs).
     """
     common = {
         "tokens_in": tokens_in,
@@ -194,7 +194,6 @@ def settle(
             text=text,
             limit_reset_at=limit_reset_at or reset_time(notes),
             error=_short(message),
-            model_unavailable=unavailable,
             **common,
         )
     return RunOutcome(
