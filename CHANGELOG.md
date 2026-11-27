@@ -8,6 +8,9 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Dashboard and API responses (including rejected-host and body-limit errors) carry security
+  headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; static assets keep normal caching.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.

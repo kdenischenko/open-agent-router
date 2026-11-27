@@ -100,6 +100,42 @@ class HostCheck:
         await self.app(scope, receive, send)
 
 
+SECURITY_HEADERS = (
+    (b"cache-control", b"no-store"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"no-referrer"),
+    (b"x-frame-options", b"DENY"),
+)
+
+
+class SecurityHeaders:
+    """Security headers on every HTTP response except static assets.
+
+    Static files keep their normal caching headers; everything else (dashboard pages,
+    fragments, API responses, including the 400/413 responses of HostCheck and BodyLimit)
+    is marked as non-cacheable. Pure ASGI for the same reason as HostCheck: it must wrap
+    every response, including the ones produced before the router is reached.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope["path"].startswith("/static/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def secured_send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                headers = message.get("headers", [])
+                headers = [pair for pair in headers if pair[0].lower() != b"cache-control"]
+                headers.extend(SECURITY_HEADERS)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, secured_send)
+
+
 # a JSON string spends at most twelve bytes on one character: a surrogate pair escaped as two \uXXXX
 JSON_BYTES_PER_CHAR = 12
 API_BODY_OVERHEAD_BYTES = 64 * 1024  # job fields other than the prompt, and JSON syntax
@@ -767,6 +803,7 @@ def create_app(
 
     app.add_middleware(BodyLimit, api_limit=api_body_limit(config))
     app.add_middleware(HostCheck)
+    app.add_middleware(SecurityHeaders)
 
     @app.exception_handler(ApiError)
     async def on_api_error(request: Request, exc: ApiError) -> JSONResponse:
