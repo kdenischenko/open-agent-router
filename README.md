@@ -200,7 +200,9 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
   is one card per pool: usage, expected pace, reset countdown, data age and figure source for
   each window, including stale and blocked states, with a **Refresh limits** button for pools
   that have a usage source. The full limits table stays under a disclosure, followed by the
-  routes each tier would take right now.
+  routes each tier would take right now. The dashboard is keyboard-driven: `j`/`k` move a
+  selection cursor, `1`–`4` switch pages, `r` refreshes, `/` focuses search, `?` shows the
+  key overlay, and `a`/`d` then Enter approve or deny a job.
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.

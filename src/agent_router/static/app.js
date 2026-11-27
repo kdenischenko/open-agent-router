@@ -27,6 +27,8 @@ async function refresh(path, id) {
       if (id === 'limits') {
         setupLimitCards(current);
       }
+      // a fresh fragment drops the cursor class with the old nodes: put it back by identity
+      restoreCursor();
     }
   } catch (_error) {
     return;
@@ -376,3 +378,117 @@ function setupCopyButtons() {
 }
 
 setupCopyButtons();
+
+// hotkeys (logged-in pages): a j/k cursor over rows and cards, digits for pages,
+// two-step a/d for approvals; letters never fire while a form control has focus
+let cursorKey = null;  // the selected row's identity, stable across fragment refreshes
+
+function cursorRows() {
+  return Array.from(document.querySelectorAll('#approvals .job, .limit-card, .job-row'));
+}
+
+function cursorKeyOf(row) {
+  return row.querySelector('code')?.textContent || row.querySelector('h2')?.textContent || '';
+}
+
+function restoreCursor() {
+  const row = cursorRows().find((item) => cursorKeyOf(item) === cursorKey);
+  if (row) row.classList.add('cursor');
+}
+
+function setupHotkeys() {
+  const overlay = document.getElementById('keyoverlay');
+  if (!overlay) return;  // not logged in
+  const pages = {'1': '/', '2': '/jobs', '3': '/stats', '4': '/calibrate'};
+  let armed = null;
+
+  const typing = () => {
+    const el = document.activeElement;
+    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+      || el.tagName === 'SELECT' || el.isContentEditable);
+  };
+  const apply = (row) => {
+    cursorRows().forEach((item) => item.classList.remove('cursor'));
+    row.classList.add('cursor');
+    cursorKey = cursorKeyOf(row);
+    row.scrollIntoView({block: 'nearest'});
+  };
+  const move = (dir) => {
+    const list = cursorRows();
+    if (!list.length) return;
+    const index = list.findIndex((item) => cursorKeyOf(item) === cursorKey);
+    const next = index < 0 ? (dir > 0 ? 0 : list.length - 1)
+      : Math.min(list.length - 1, Math.max(0, index + dir));
+    apply(list[next]);
+  };
+  const disarm = () => {
+    if (armed) armed.classList.remove('armed');
+    armed = null;
+  };
+  const arm = (kind) => {
+    const row = cursorRows().find((item) => cursorKeyOf(item) === cursorKey);
+    const card = row?.closest('#approvals .job');
+    if (!card) return;
+    const target = kind === 'approve'
+      ? card.querySelector('form button[type="submit"]')
+      : card.querySelector('a[data-confirm-action="deny"]');
+    if (!target) return;
+    disarm();
+    armed = target;
+    armed.classList.add('armed');
+    armed.focus();
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'Escape') { disarm(); return; }
+    if (typing()) return;
+    if (event.key === 'Enter' && armed) {
+      event.preventDefault();
+      const target = armed;
+      disarm();
+      target.click();
+      return;
+    }
+    if (event.key === 'Enter') {
+      const row = cursorRows().find((item) => cursorKeyOf(item) === cursorKey);
+      const link = row?.querySelector('a[href]');
+      if (link) { event.preventDefault(); link.click(); }
+      return;
+    }
+    if (event.key === 'j' || event.key === 'ArrowDown') { event.preventDefault(); move(1); return; }
+    if (event.key === 'k' || event.key === 'ArrowUp') { event.preventDefault(); move(-1); return; }
+    if (event.key === 'a') { arm('approve'); return; }
+    if (event.key === 'd') { arm('deny'); return; }
+    if (event.key === 'r') {
+      // one manual sweep: every fragment this page actually shows
+      const sweeps = [['/fragments/limits', 'limits'], ['/fragments/advice', 'advice'],
+        ['/fragments/jobs', 'jobs'], ['/fragments/approvals', 'approvals'],
+        ['/fragments/stats', 'stats']];
+      sweeps.forEach(([path, id]) => {
+        if (document.getElementById(id)) refresh(path + location.search, id);
+      });
+      const job = document.getElementById('job');
+      if (job) refresh('/fragments/jobs/' + job.dataset.jobId, 'job');
+      return;
+    }
+    if (event.key === '/') {
+      const field = document.querySelector('.job-filters input[name="q"], .job-filters input, input[type="search"]');
+      if (field) { event.preventDefault(); field.focus(); }
+      return;
+    }
+    if (event.key === '?') {
+      if (overlay.open) overlay.close(); else overlay.showModal();
+      return;
+    }
+    if (pages[event.key] && !overlay.open) {
+      location.href = pages[event.key];
+    }
+  });
+  // q closes the overlay alongside the native Esc; the dialog handles Esc itself
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'q') overlay.close();
+  });
+}
+
+setupHotkeys();

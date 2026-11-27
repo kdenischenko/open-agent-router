@@ -1,103 +1,84 @@
-/* Token definitions: hex colours are allowed only in this block and the light override below. */
+/* Token definitions: hex colours are allowed only in this block and the light override below.
+   The language follows the opencode console: a near-black ground, one warm accent, muted
+   chrome, square hairline frames; hierarchy is weight and colour, never font size. */
 :root {
   color-scheme: dark;
-  --color-bg: #070b12;
-  --color-surface: #0d1421;
-  --color-surface-2: #16202f;
-  --color-border: #22304a;
-  --color-control-border: #546a8c;
-  --color-text: #e9eef8;
-  --color-muted: #93a5c0;
-  --color-accent: #35d6e8;
-  --color-accent-contrast: #04222a;
-  --color-ok: #3ddc97;
+  --color-bg: #0f0f0f;
+  --color-surface: #161616;
+  --color-surface-2: #1e1e1e;
+  --color-border: #2d2d2d;
+  --color-control-border: #6e6e6e;
+  --color-text: #edecee;
+  --color-muted: #8a8a8a;
+  --color-accent: #fab283;
+  --color-accent-contrast: #241505;
+  --color-ok: #7fd88f;
   --color-warn: #f5c453;
-  --color-danger: #ff7a74;
-  --color-info: #7cc7ff;
-  --color-ok-bg: #0c2b21;
+  --color-danger: #ff6b6b;
+  --color-info: #8ab4ff;
+  --color-ok-bg: #18251c;
   --color-warn-bg: #2b2310;
-  --color-danger-bg: #2e1315;
-  --color-info-bg: #0d2434;
-  --color-backdrop: rgb(2 6 12 / 0.75);
+  --color-danger-bg: #2b1518;
+  --color-info-bg: #16202e;
+  --color-backdrop: rgb(0 0 0 / 0.7);
 
-  --chart-1: #35d6e8;
-  --chart-2: #a78bfa;
-  --chart-3: #3ddc97;
+  --chart-1: #fab283;
+  --chart-2: #7fd88f;
+  --chart-3: #8ab4ff;
   --chart-4: #f5c453;
-  --chart-5: #f472b6;
-  --chart-6: #6ea8fe;
-
-  --accent-deep: #21b8cc;
-  --accent-gradient: linear-gradient(180deg, var(--color-accent), var(--accent-deep));
-  --page-glow: radial-gradient(1100px 520px at 50% -220px, rgb(53 214 232 / 0.10), transparent 70%);
-  --card-edge: rgb(148 178 214 / 0.09);
-  --card-shadow: inset 0 1px 0 var(--card-edge), 0 14px 34px rgb(2 6 12 / 0.55);
-  --accent-glow: 0 0 18px rgb(53 214 232 / 0.28);
-  --badge-glow: 0 0 12px rgb(245 196 83 / 0.35);
-  --pace-glow: 0 0 8px rgb(245 196 83 / 0.6);
-  --header-bg: rgb(7 11 18 / 0.8);
+  --chart-5: #e8a2c0;
+  --chart-6: #6ee7d8;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
-  --space-3: 1rem;
-  --space-4: 1.5rem;
-  --space-5: 2rem;
-  --space-6: 3rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
 
-  --radius-1: 0.5rem;
-  --radius-2: 0.75rem;
-  --radius-3: 0.875rem;
+  --radius-1: 2px;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 
   --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 1.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.25rem;
 
-  --focus-ring: 2px solid var(--color-accent);
+  --focus-ring: 1px solid var(--color-accent);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --color-bg: #f3f5fa;
+    --color-bg: #faf9f7;
     --color-surface: #ffffff;
-    --color-surface-2: #e9edf5;
-    --color-border: #d9e0ec;
-    --color-control-border: #667799;
-    --color-text: #161f2c;
-    --color-muted: #51617a;
-    --color-accent: #0b6e7e;
+    --color-surface-2: #f0ede8;
+    --color-border: #d8d3cc;
+    --color-control-border: #6e675f;
+    --color-text: #1c1a17;
+    --color-muted: #6b6560;
+    --color-accent: #9d4f02;
     --color-accent-contrast: #ffffff;
-    --color-ok: #157a45;
-    --color-warn: #8f6108;
-    --color-danger: #c02929;
+    --color-ok: #1c7c43;
+    --color-warn: #8a6104;
+    --color-danger: #c22f2f;
     --color-info: #0b5f9e;
-    --color-ok-bg: #e3f6ea;
-    --color-warn-bg: #fbf0d3;
-    --color-danger-bg: #fcebeb;
-    --color-info-bg: #e0f1fc;
-    --color-backdrop: rgb(15 23 42 / 0.45);
+    --color-ok-bg: #e5f4ea;
+    --color-warn-bg: #f7ecd4;
+    --color-danger-bg: #faeaea;
+    --color-info-bg: #e4eff8;
+    --color-backdrop: rgb(28 26 23 / 0.4);
 
-    --chart-1: #0e7490;
-    --chart-2: #6d28d9;
-    --chart-3: #047857;
-    --chart-4: #b45309;
-    --chart-5: #be185d;
-    --chart-6: #1d4ed8;
-
-    --accent-deep: #095a68;
-    --page-glow: radial-gradient(1100px 520px at 50% -220px, rgb(11 110 126 / 0.08), transparent 70%);
-    --card-edge: rgb(22 31 44 / 0.04);
-    --card-shadow: inset 0 1px 0 var(--card-edge), 0 10px 30px rgb(23 32 54 / 0.08);
-    --accent-glow: 0 0 18px rgb(11 110 126 / 0.22);
-    --badge-glow: 0 0 12px rgb(143 97 8 / 0.25);
-    --pace-glow: 0 0 8px rgb(143 97 8 / 0.35);
-    --header-bg: rgb(243 245 250 / 0.85);
+    --chart-1: #9d4f02;
+    --chart-2: #1c7c43;
+    --chart-3: #0b5f9e;
+    --chart-4: #8a6104;
+    --chart-5: #a4345f;
+    --chart-6: #0e7a6c;
   }
 }
 
@@ -113,16 +94,14 @@ html {
 }
 
 body {
-  background-color: var(--color-bg);
-  background-image: var(--page-glow);
-  background-repeat: no-repeat;
+  background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: var(--text-base);
-  line-height: 1.6;
+  line-height: 1.45;
   margin: 0;
   min-width: 0;
-  padding: 0;
+  padding: 0 0 2rem;
 }
 
 main {
@@ -145,27 +124,26 @@ h3 {
   margin: 0 0 var(--space-3);
 }
 
-/* the page title carries a short accent dash: hierarchy without extra markup */
+/* one cell grid: headings differ by weight and colour, not by size */
 main > h1 {
-  font-size: var(--text-2xl);
+  font-size: var(--text-xl);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
   margin-bottom: var(--space-4);
+  text-transform: lowercase;
 }
 
 main > h1::after {
-  background: var(--accent-gradient);
-  border-radius: var(--radius-1);
+  background: var(--color-accent);
   content: "";
   display: block;
-  height: 3px;
-  margin-top: var(--space-2);
+  height: 1px;
+  margin-top: var(--space-1);
   width: 3rem;
 }
 
 h2 {
-  font-size: var(--text-lg);
-  letter-spacing: -0.01em;
+  font-size: var(--text-base);
 }
 
 h3 {
@@ -179,13 +157,11 @@ dl {
   margin: 0 0 var(--space-3);
 }
 
-/* Header & navigation: a translucent sticky bar over the page glow */
+/* Header & navigation: a flat bar with a bottom hairline */
 
 body > header {
   align-items: center;
-  background: var(--header-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
   display: flex;
   flex-wrap: wrap;
@@ -197,26 +173,22 @@ body > header {
   z-index: 10;
 }
 
-@media (min-width: 48rem) {
-  body > header {
-    padding: var(--space-3) var(--space-4);
-  }
-}
-
 .brand {
   align-items: center;
+  color: var(--color-accent);
   display: inline-flex;
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
+  font-weight: 700;
   gap: var(--space-2);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
 }
 
 .brand-mark {
   fill: none;
-  height: 1.35em;
+  height: 1.2em;
   stroke: var(--color-accent);
   stroke-width: 1.5;
-  width: 1.35em;
+  width: 1.2em;
 }
 
 .brand-mark path:last-child {
@@ -229,30 +201,27 @@ nav {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-1) var(--space-3);
 }
 
 nav a,
 .nav-link {
   border-radius: var(--radius-1);
   color: var(--color-muted);
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-1);
   text-decoration: none;
-  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 nav a:hover,
 .nav-link:hover {
-  background: var(--color-surface-2);
   color: var(--color-text);
 }
 
 nav a[aria-current="page"],
 .nav-link[aria-current="page"] {
-  background: var(--color-surface-2);
-  box-shadow: inset 0 -2px 0 var(--color-accent);
-  color: var(--color-text);
-  font-weight: 600;
+  box-shadow: inset 0 -1px 0 var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 700;
 }
 
 /* Inline clusters (logout form, job action buttons) */
@@ -270,10 +239,11 @@ nav a[aria-current="page"],
 a {
   color: var(--color-accent);
   overflow-wrap: anywhere;
+  text-decoration: none;
 }
 
 a:hover {
-  text-decoration-thickness: 2px;
+  text-decoration: underline;
 }
 
 /* Forms */
@@ -293,7 +263,7 @@ textarea {
   border-radius: var(--radius-1);
   color: var(--color-text);
   max-width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-2);
 }
 
 input:focus-visible,
@@ -302,42 +272,40 @@ textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: var(--focus-ring);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 button {
-  background: var(--accent-gradient);
-  border: 1px solid var(--accent-deep);
+  background: none;
+  border: 1px solid var(--color-accent);
   border-radius: var(--radius-1);
-  box-shadow: var(--accent-glow);
-  color: var(--color-accent-contrast);
+  color: var(--color-accent);
   cursor: pointer;
-  font-weight: 600;
-  padding: var(--space-2) var(--space-3);
-  transition: filter 0.15s ease, box-shadow 0.15s ease;
+  font-weight: 400;
+  padding: var(--space-1) var(--space-3);
 }
 
 button:hover {
-  filter: brightness(1.1);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
 }
 
 form.inline button {
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
 }
 
 .button-secondary,
 .button-ghost {
-  background: var(--color-bg);
+  background: none;
   border-color: var(--color-control-border);
-  box-shadow: none;
   color: var(--color-text);
 }
 
 .button-secondary:hover,
 .button-ghost:hover {
+  background: none;
   border-color: var(--color-accent);
   color: var(--color-accent);
-  filter: none;
 }
 
 .login-form,
@@ -353,7 +321,7 @@ form.inline button {
 
 .calibration-field {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -391,21 +359,14 @@ form.inline button {
   display: none;
 }
 
-/* Panels & grids: cards over the glow, a hairline top edge, a soft depth shadow */
+/* Panels: flat square frames, a hairline border, no shadows — the TUI box */
 
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-1);
   min-width: 0;
   padding: var(--space-3);
-}
-
-@media (min-width: 48rem) {
-  .panel {
-    padding: var(--space-4);
-  }
 }
 
 .grid,
@@ -417,16 +378,8 @@ form.inline button {
   min-width: 0;
 }
 
-@media (min-width: 48rem) {
-  .grid,
-  .advice-grid,
-  .job-list {
-    gap: var(--space-4);
-  }
-}
-
 .job h2 {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
 }
 
 .job h2 code {
@@ -451,7 +404,7 @@ table {
 th,
 td {
   border-bottom: 1px solid var(--color-border);
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   text-align: left;
   vertical-align: top;
 }
@@ -465,10 +418,10 @@ td {
 }
 
 thead th {
-  background: var(--color-surface-2);
-  border-bottom-width: 2px;
   border-bottom-color: var(--color-control-border);
+  color: var(--color-muted);
   font-size: var(--text-xs);
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -499,7 +452,7 @@ code {
 pre {
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-1);
   max-width: 100%;
   overflow-x: auto;
   padding: var(--space-3);
@@ -514,7 +467,7 @@ pre code {
 /* Definition lists */
 
 dt {
-  font-weight: 600;
+  font-weight: 700;
   margin-top: var(--space-2);
 }
 
@@ -524,18 +477,17 @@ dd {
   overflow-wrap: anywhere;
 }
 
-/* Status badges: tinted pills with a small state dot */
+/* Status badges: square bordered tags with a state dot */
 
 .approval-badge,
 .status-badge {
   align-items: center;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-1);
   color: var(--color-text);
   display: inline-flex;
   font-size: var(--text-sm);
-  font-weight: 600;
   gap: var(--space-1);
   line-height: 1.5;
   padding: 0 var(--space-2);
@@ -544,7 +496,6 @@ dd {
 
 .approval-badge::before,
 .status-badge::before {
-  border-radius: 999px;
   content: "";
   height: 0.375rem;
   width: 0.375rem;
@@ -614,11 +565,10 @@ dd {
   background: var(--color-muted);
 }
 
-/* the inbox counter in the top bar glows until it is opened */
+/* the inbox counter in the top bar stays warn-tinted until it is opened */
 nav .approval-badge {
   background: var(--color-warn-bg);
   border-color: var(--color-warn);
-  box-shadow: var(--badge-glow);
   color: var(--color-warn);
 }
 
@@ -696,25 +646,24 @@ nav .approval-badge::before {
 
 .empty {
   border: 1px dashed var(--color-control-border);
-  border-radius: var(--radius-3);
+  border-radius: var(--radius-1);
   color: var(--color-muted);
   padding: var(--space-4);
   text-align: center;
 }
 
-/* Limits cards: one card per pool, one bordered block per window; the full
+/* Limits cards: one frame per pool, one bordered block per window; the full
    table stays behind a details disclosure so the view works without scripts */
 
 .limit-card {
   align-content: start;
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .limit-card--recorded {
-  box-shadow: var(--card-shadow), var(--accent-glow);
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .limit-card__header {
@@ -758,9 +707,9 @@ nav .approval-badge::before {
 .limit-window {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-1);
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -786,7 +735,7 @@ nav .approval-badge::before {
   -webkit-appearance: none;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: 0;
   display: block;
   height: 0.5rem;
   overflow: hidden;
@@ -798,20 +747,16 @@ nav .approval-badge::before {
 }
 
 .usage-bar progress::-webkit-progress-value {
-  background: var(--accent-gradient);
-  border-radius: 999px;
+  background: var(--color-accent);
 }
 
 .usage-bar progress::-moz-progress-bar {
-  background: var(--accent-gradient);
-  border-radius: 999px;
+  background: var(--color-accent);
 }
 
 .usage-pace {
   background: var(--color-warn);
-  border-radius: 999px;
   bottom: -2px;
-  box-shadow: var(--pace-glow);
   left: var(--expected, 0%);
   position: absolute;
   top: -2px;
@@ -852,6 +797,7 @@ nav .approval-badge::before {
 }
 
 /* Global guard: long unbroken ids and paths must never cause horizontal page scroll */
+
 main,
 .panel,
 .job,
@@ -869,7 +815,7 @@ dd {
 #approvals:not(:empty) {
   display: grid;
   gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 #approvals .job p {
@@ -881,10 +827,8 @@ a[data-confirm-action] {
   border-radius: var(--radius-1);
   color: var(--color-text);
   display: inline-block;
-  font-weight: 600;
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
   text-decoration: none;
-  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 a[data-confirm-action]:hover {
@@ -896,8 +840,7 @@ a[data-confirm-action]:hover {
 .confirm-dialog {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  box-shadow: var(--card-shadow), var(--accent-glow);
+  border-radius: var(--radius-1);
   color: var(--color-text);
   max-width: min(32rem, calc(100vw - 2rem));
   padding: var(--space-4);
@@ -907,13 +850,27 @@ a[data-confirm-action]:hover {
   background: var(--color-backdrop);
 }
 
+/* Keyboard cursor and the armed approve/deny state (the hotkey engine in app.js) */
+
+.cursor {
+  background: var(--color-surface-2);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  outline: none;
+}
+
+.armed {
+  border-color: var(--color-warn) !important;
+  box-shadow: 0 0 0 1px var(--color-warn);
+  color: var(--color-warn) !important;
+}
+
 /* Job list: filters, rows and pages */
 
 .job-filters {
   display: grid;
   gap: var(--space-2) var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .job-filters label {
@@ -947,8 +904,7 @@ a[data-confirm-action]:hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-1);
-  transition: background-color 0.15s ease;
+  padding: var(--space-1) var(--space-2);
 }
 
 .job-row:hover {
@@ -990,13 +946,13 @@ a[data-confirm-action]:hover {
 
 /* Job page */
 
-/* .job-header is a <header> inside main, so the sticky banner styles above do not reach it */
+/* .job-header is a <header> inside main, so the top bar styles above do not reach it */
 .job-header {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
   justify-content: flex-start;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .job-header h2 {
@@ -1028,20 +984,13 @@ a[data-confirm-action]:hover {
 .job-totals {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-1);
   display: grid;
   gap: var(--space-2) var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   min-width: 0;
   padding: var(--space-3);
-}
-
-@media (min-width: 48rem) {
-  .job-totals {
-    padding: var(--space-4);
-  }
 }
 
 .job-totals dt {
@@ -1054,7 +1003,7 @@ a[data-confirm-action]:hover {
 
 .job-totals dd {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 0;
 }
 
@@ -1067,7 +1016,7 @@ a[data-confirm-action]:hover {
 }
 
 .attempt-timeline li {
-  border-left: 0.25rem solid var(--color-border);
+  border-left: 2px solid var(--color-border);
   min-width: 0;
   padding-left: var(--space-3);
 }
@@ -1104,20 +1053,18 @@ pre.wrap {
 }
 
 .copy-button {
-  background: var(--color-bg);
+  background: none;
   border-color: var(--color-control-border);
-  box-shadow: none;
-  color: var(--color-text);
+  color: var(--color-muted);
   font-size: var(--text-sm);
-  font-weight: 400;
   margin: var(--space-2) 0;
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
 }
 
 .copy-button:hover {
+  background: none;
   border-color: var(--color-accent);
   color: var(--color-accent);
-  filter: none;
 }
 
 /* Stats: range pills, summary cards, server-drawn charts */
@@ -1126,19 +1073,17 @@ pre.wrap {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .range-link {
-  background: var(--color-surface);
+  background: none;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-1);
   color: var(--color-muted);
   font-size: var(--text-sm);
-  font-weight: 600;
-  padding: var(--space-1) var(--space-3);
+  padding: 0 var(--space-2);
   text-decoration: none;
-  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .range-link:hover {
@@ -1148,27 +1093,24 @@ pre.wrap {
 }
 
 .range-link[aria-current="true"] {
-  background: var(--color-surface-2);
   border-color: var(--color-accent);
-  box-shadow: var(--accent-glow);
-  color: var(--color-text);
+  color: var(--color-accent);
 }
 
 .stat-cards {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   min-width: 0;
 }
 
 .stat-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-3);
-  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-1);
   min-width: 0;
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 
 .stat-card__label {
@@ -1183,7 +1125,6 @@ pre.wrap {
   font-variant-numeric: tabular-nums;
   font-size: var(--text-xl);
   font-weight: 700;
-  letter-spacing: -0.01em;
   margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
 }
@@ -1195,12 +1136,12 @@ pre.wrap {
 }
 
 .chart-card {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .chart-card > h2 {
   font-size: var(--text-base);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .chart {
@@ -1217,7 +1158,7 @@ pre.wrap {
 
 .chart-label {
   fill: var(--color-muted);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
@@ -1240,7 +1181,6 @@ pre.wrap {
 }
 
 .chart-swatch {
-  border-radius: 3px;
   display: inline-block;
   height: 0.625rem;
   margin-right: var(--space-2);
@@ -1270,3 +1210,57 @@ pre.wrap {
 .chart-bar--avg { color: var(--color-accent); }
 .chart-tick--p50 { color: var(--color-muted); }
 .chart-tick--p95 { color: var(--chart-4); }
+
+/* The footer hint bar and the hotkey overlay (logged-in pages only) */
+
+.footbar {
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  bottom: 0;
+  color: var(--color-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+  gap: 0 2ch;
+  left: 0;
+  padding: 3px var(--space-3);
+  position: fixed;
+  right: 0;
+  z-index: 10;
+}
+
+.footbar b {
+  color: var(--color-accent);
+  font-weight: 400;
+}
+
+.footbar .spacer {
+  margin-left: auto;
+}
+
+.keyoverlay {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-1);
+  color: var(--color-text);
+  max-width: min(30rem, calc(100vw - 2rem));
+  padding: var(--space-3) var(--space-4);
+}
+
+.keyoverlay::backdrop {
+  background: var(--color-backdrop);
+}
+
+.keyoverlay h2 {
+  font-size: var(--text-base);
+  margin-bottom: var(--space-2);
+}
+
+.keyoverlay table {
+  font-size: var(--text-sm);
+}
+
+.keyoverlay td:first-child {
+  color: var(--color-accent);
+  white-space: nowrap;
+}

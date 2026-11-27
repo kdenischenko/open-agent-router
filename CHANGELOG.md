@@ -6,7 +6,18 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard restyles into a console language: near-black ground with one warm accent,
+  flat hairline frames instead of cards, monospace text everywhere, denser spacing, and
+  hierarchy by weight and colour rather than font size. A footer bar lists the hotkeys.
+
 ### Added
+
+- Dashboard hotkeys: a `j`/`k` selection cursor over rows and cards (it survives fragment
+  refreshes), `1`–`4` for the pages, `r` to refresh, `/` to focus search, `?` for the key
+  overlay, and a two-step `a`/`d` then Enter to approve or deny a job, so a stray keystroke
+  never approves.
 
 - The dashboard gains a **Stats** page (`/stats`, refreshed like the other fragments) with a
   24-hour, 7-day and 30-day range selector: summary cards for jobs, outcomes, attempts,

@@ -33,5 +33,32 @@
     <h1>{{ title }}</h1>
     {% block content %}{% endblock %}
   </main>
+  {% if csrf %}
+  <footer class="footbar" aria-label="Keyboard shortcuts">
+    <span><b>1</b> limits</span>
+    <span><b>2</b> jobs</span>
+    <span><b>3</b> stats</span>
+    <span><b>4</b> calibrate</span>
+    <span><b>j/k</b> move</span>
+    <span><b>⏎</b> open</span>
+    <span><b>a/d</b> approve·deny</span>
+    <span><b>r</b> refresh</span>
+    <span><b>/</b> search</span>
+    <span><b>?</b> keys</span>
+  </footer>
+  <dialog class="keyoverlay" id="keyoverlay" aria-labelledby="keyoverlay-title">
+    <h2 id="keyoverlay-title">keyboard</h2>
+    <table>
+      <tr><td>j / k</td><td>move the selection</td></tr>
+      <tr><td>enter</td><td>open the selected item</td></tr>
+      <tr><td>esc</td><td>back, disarm, close</td></tr>
+      <tr><td>1–4</td><td>limits, jobs, stats, calibrate</td></tr>
+      <tr><td>a / d</td><td>arm approve / deny, then enter confirms</td></tr>
+      <tr><td>r</td><td>refresh the page fragments</td></tr>
+      <tr><td>/</td><td>focus the search field</td></tr>
+      <tr><td>?</td><td>this overlay</td></tr>
+    </table>
+  </dialog>
+  {% endif %}
 </body>
 </html>
