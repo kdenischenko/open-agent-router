@@ -665,6 +665,68 @@ it will be replaced. After this, `doctor` shows the age of the last signal. The 
 limits only, so `[statusline] pool` must name the pool of your Claude Code routes (`claude-pro` in
 the template); the examples without Claude Code leave `[statusline]` out.
 
+## Backup and restore
+
+`agent-router backup` copies the gateway database (`agent-router.sqlite` in the
+gateway home directory) using SQLite's online backup API, so the copy is consistent
+even while the gateway is running and writing. The backup covers the database
+contents: job history, ratings, classifier votes, calibrations and the spend ledger.
+It runs locally and needs no running gateway:
+
+```powershell
+agent-router backup
+```
+
+Without a path the backup is written to
+`<gateway home>\backups\agent-router-<UTC YYYYMMDD-HHMMSS>.sqlite`. With a path,
+that file is the target:
+
+```powershell
+agent-router backup D:/agent-router-backups/snapshot.sqlite
+```
+
+`--keep N` (N at least 1) prunes older timestamp-named backups in the target
+directory after a successful backup, keeping the newest N by filename; files that
+are not agent-router timestamped backups are left alone:
+
+```powershell
+agent-router backup --keep 14
+```
+
+What the backup does not cover:
+
+- `config.toml` and price files (`prices-*.toml`) are separate files next to the
+  database; copy them yourself if you need them.
+- The two token files are secrets and are never part of the backup; if you lose
+  them, `agent-router init` creates them again.
+- Job directories `jobs/<job-id>/` with attempt logs are not included.
+
+To restore from a backup:
+
+1. Stop the gateway (end the `agent-router serve` process).
+2. Replace `agent-router.sqlite` in the gateway home directory with the backup copy.
+3. Remove `agent-router.sqlite-wal` and `agent-router.sqlite-shm` next to it, if
+   they exist.
+4. Start the gateway again with `agent-router serve`.
+
+**Scheduled backups.** To back up every night on Windows, create a scheduled task
+(the path is the one `uv tool dir --bin` prints):
+
+```powershell
+schtasks /create /tn "agent-router-backup" /sc daily /st 03:00 `
+  /tr '"%USERPROFILE%\.local\bin\agent-router.exe" backup --keep 14'
+```
+
+The same on Linux and macOS with cron (adjust the path to your install):
+
+```cron
+0 3 * * * "$HOME/.local/bin/agent-router" backup --keep 14
+```
+
+Because the backup is consistent while the gateway writes, neither schedule needs
+to stop `agent-router serve`. If you set `AGENT_ROUTER_HOME`, set it in the
+scheduled task or crontab environment too.
+
 ## Not available yet
 
 - Routing from within Cline and OpenCode (as a model provider) is planned.
