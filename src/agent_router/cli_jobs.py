@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn
@@ -15,7 +16,9 @@ from agent_router.cli_common import _gateway
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
 from agent_router.clock import format_local
 from agent_router.config import home_dir
-from agent_router.jobs import TERMINAL
+from agent_router.jobs import KINDS, TERMINAL
+
+retry_pause = time.sleep  # pause between submit retries; tests monkeypatch it
 
 FOLLOW_PAUSE_S = 2.0
 
@@ -136,11 +139,30 @@ def _prompt_text(data: bytes) -> str:
     return data.decode("utf-8-sig").replace("\r\n", "\n")
 
 
+def _submit_job(client: GatewayClient, body: dict) -> dict:
+    """POST the job; a lost answer is retried up to twice with the same request_id.
+
+    A rejection (GatewayError) is never retried: the gateway gave an answer.
+    """
+    retries = 0
+    while True:
+        try:
+            return client.post("/api/v1/jobs", body)
+        except GatewayUnavailable:
+            if retries >= 2:
+                raise
+            retries += 1
+            retry_pause(retries)
+
+
 def run(
     text: str | None = typer.Argument(None, help="Job prompt text, or - for standard input"),
     cwd: Path = typer.Option(Path("."), "--cwd", help="Working directory for the job"),
     mode: str = typer.Option("read", "--mode", help="Job mode: read or write"),
     tier: str | None = typer.Option(None, "--tier", help="Job tier: cheap, standard or strong"),
+    kind: str | None = typer.Option(
+        None, "--kind", help="Job kind: code, review, research or other"
+    ),
     caller: str | None = typer.Option(
         None, "--caller", help="Name of the calling agent, e.g. claude-code"
     ),
@@ -149,6 +171,11 @@ def run(
     ),
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool that must not run the job; repeat to exclude several"
+    ),
+    prefer_route: list[str] = typer.Option(
+        [],
+        "--prefer-route",
+        help="Route to try first, in order; the gateway still falls back to other routes",
     ),
     review_of: str | None = typer.Option(
         None,
@@ -168,15 +195,29 @@ def run(
     prompt_file: Path | None = typer.Option(
         None, "--prompt-file", help="UTF-8 file containing the job prompt"
     ),
+    request_id: str | None = typer.Option(
+        None,
+        "--request-id",
+        help="Idempotency key of the submit; repeat a lost submit with the same id and the "
+        "gateway returns the existing job instead of starting a second one",
+    ),
 ) -> None:
     """Submit a job and wait for its result."""
+    if kind is not None and kind not in KINDS:
+        typer.echo(f"unknown job kind: {kind}; choose code, review, research or other", err=True)
+        raise typer.Exit(1)
+    if review_of is not None and kind not in (None, "review"):
+        typer.echo("job kind must be review when --review-of is set", err=True)
+        raise typer.Exit(1)
     body: dict[str, Any] = {
         "prompt": _prompt(text, prompt_file),
         "cwd": str(cwd.resolve()),
         "mode": mode,
+        "request_id": uuid.uuid4().hex if request_id is None else request_id,
     }
     for name, value in (
         ("tier", tier),
+        ("kind", kind),
         ("caller", caller),
         ("route", route),
         ("timeout_s", timeout),
@@ -188,8 +229,10 @@ def run(
         body["kind"] = "review"
     if exclude_pool:
         body["exclude_pools"] = exclude_pool
+    if prefer_route:
+        body["prefer_routes"] = prefer_route
     client = _gateway()
-    submitted = _job_request(lambda: client.post("/api/v1/jobs", body))
+    submitted = _job_request(lambda: _submit_job(client, body))
     job_id = submitted["job_id"]
     if no_wait:
         typer.echo(job_id)

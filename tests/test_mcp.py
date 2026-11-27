@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -153,6 +154,8 @@ def test_submit_job_posts_the_job() -> None:
     assert payload == {"job_id": "j_1", "status": "queued"}
     method, path, body = gateway.calls[0]
     assert (method, path) == ("POST", "/api/v1/jobs")
+    request_id = body.pop("request_id")
+    assert re.fullmatch(r"[0-9a-f]{32}", request_id)
     assert body == {
         "prompt": "Describe the repository",
         "cwd": "C:/work/repo",
@@ -168,7 +171,10 @@ def test_submit_job_defaults_to_read_and_omits_empty_hints() -> None:
 
     _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
 
-    assert gateway.calls[0][2] == {"prompt": "p", "cwd": "C:/work/repo", "mode": "read"}
+    body = gateway.calls[0][2]
+    request_id = body.pop("request_id")
+    assert re.fullmatch(r"[0-9a-f]{32}", request_id)
+    assert body == {"prompt": "p", "cwd": "C:/work/repo", "mode": "read"}
 
 
 def test_submit_job_sends_exclude_pools() -> None:
@@ -640,3 +646,111 @@ def test_mcp_docs_cover_opencode_schema() -> None:
     opencode = text[text.index("### OpenCode") : text.index("### Cline")]
     assert '"servers": {' in opencode
     assert '"enabled"' not in opencode
+
+
+def test_submit_job_sends_prefer_routes() -> None:
+    gateway = FakeGateway()
+
+    _call(
+        gateway,
+        "submit_job",
+        {"prompt": "p", "cwd": "C:/work/repo", "prefer_routes": ["opencode-cli/glm-5.3"]},
+    )
+
+    assert gateway.calls[0][2]["prefer_routes"] == ["opencode-cli/glm-5.3"]
+
+
+def test_submit_job_describes_preference_versus_pin() -> None:
+    tools = {tool.name: tool for tool in _tools(FakeGateway())}
+    description = tools["submit_job"].input_schema["properties"]["prefer_routes"]["description"]
+
+    assert "route" in description.lower()
+    assert "fall" in description.lower()
+
+
+def test_advice_sends_prefer_routes() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "advice", {"prefer_routes": ["opencode-cli/glm-5.3"]})
+
+    assert gateway.calls[0][2]["prefer_routes"] == ["opencode-cli/glm-5.3"]
+
+
+def test_submit_job_generates_a_request_id() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
+
+    assert re.fullmatch(r"[0-9a-f]{32}", gateway.calls[0][2]["request_id"])
+
+
+def test_submit_job_sends_the_given_request_id() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "request_id": "my-id"})
+
+    assert gateway.calls[0][2]["request_id"] == "my-id"
+
+
+def test_submit_job_retries_a_lost_submit_with_the_same_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pauses: list[float] = []
+    monkeypatch.setattr(mcp_server, "retry_pause", pauses.append)
+    gateway = FakeGateway()
+    failures = [GatewayUnavailable("gateway unavailable")] * 2
+    plain_post = gateway.post
+
+    def flaky_post(path: str, body: dict | None = None) -> dict:
+        if failures:
+            gateway.calls.append(("POST", path, body))
+            raise failures.pop()
+        return plain_post(path, body)
+
+    gateway.post = flaky_post  # type: ignore[method-assign]
+
+    _payload(_call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"}))
+
+    assert len(gateway.calls) == 3
+    assert len({body["request_id"] for _, _, body in gateway.calls}) == 1
+    assert len(pauses) == 2
+
+
+def test_submit_job_forwards_an_empty_request_id() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "request_id": ""})
+
+    assert gateway.calls[0][2]["request_id"] == ""
+
+
+def test_submit_job_sends_the_kind() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "kind": "research"})
+
+    assert gateway.calls[0][2]["kind"] == "research"
+
+
+def test_submit_job_describes_the_kind() -> None:
+    tools = {tool.name: tool for tool in _tools(FakeGateway())}
+    description = tools["submit_job"].input_schema["properties"]["kind"]["description"]
+
+    for kind in ("code", "review", "research", "other"):
+        assert kind in description
+
+
+def test_submit_job_rejects_another_kind_with_review_of() -> None:
+    gateway = FakeGateway()
+
+    message = _error(
+        _call(
+            gateway,
+            "submit_job",
+            {"prompt": "p", "cwd": "C:/work/repo", "kind": "code", "review_of": "j_1"},
+        )
+    )
+
+    assert "review_of" in message
+
+    assert gateway.calls == []

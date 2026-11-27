@@ -16,6 +16,26 @@ MAX_ARG_CHARS = 20_000
 ERROR_MAX_CHARS = 500
 EMPTY_OUTPUT = "empty output"
 
+# Windows NTSTATUS codes surfaced as process exit codes when a harness crashes.
+NTSTATUS_NAMES = {
+    0xC0000005: "STATUS_ACCESS_VIOLATION",
+    0xC00000FD: "STATUS_STACK_OVERFLOW",
+    0xC0000135: "STATUS_DLL_NOT_FOUND",
+    0xC0000142: "STATUS_DLL_INIT_FAILED",
+    0xC000013A: "STATUS_CONTROL_C_EXIT",
+    0xC0000409: "STATUS_STACK_BUFFER_OVERRUN",
+}
+NTSTATUS_MIN = 0xC0000000
+
+
+def _format_exit_code(exit_code: int) -> str:
+    if NTSTATUS_MIN <= exit_code <= 0xFFFFFFFF:
+        name = NTSTATUS_NAMES.get(exit_code)
+        suffix = f" {name}" if name else ""
+        return f"exit code {exit_code} (0x{exit_code:08X}{suffix})"
+    return f"exit code {exit_code}"
+
+
 _RULES = (
     "- Work only inside the current working directory.",
     "- Do not run `git commit`, `git push`, or any command that rewrites git history.",
@@ -46,6 +66,7 @@ class RunOutcome:
     limit_reset_at: datetime | None = None
     error: str | None = None
     model_unavailable: bool = False  # the route's model is gone, not a job or quota failure
+    content_rejected: bool = False  # the provider refused the request on content grounds
 
 
 class Adapter(Protocol):
@@ -161,6 +182,7 @@ def settle(
     session_id: str | None = None,
     limit_reset_at: datetime | None = None,
     model_unavailable_hint: bool = False,
+    content_rejected_hint: bool = False,
 ) -> RunOutcome:
     """Shared outcome resolution order.
 
@@ -168,7 +190,8 @@ def settle(
     in the service messages (`service`, stderr) or the harness itself reported the error as
     a limit (`limit_hint`); otherwise error. The model response text is not checked for
     limit signs. Error outcomes are marked as model-unavailable when the service messages
-    report the route's model as gone (`model_unavailable_hint` or the signs).
+    report the route's model as gone (`model_unavailable_hint` or the signs); a provider
+    content rejection (`content_rejected_hint`) is reported the same way.
     """
     common = {
         "tokens_in": tokens_in,
@@ -187,7 +210,7 @@ def settle(
     else:
         message = _last_line(stderr) or _last_line("\n".join(service))
         if not message:
-            message = "process did not exit" if exit_code is None else f"exit code {exit_code}"
+            message = "process did not exit" if exit_code is None else _format_exit_code(exit_code)
     if limit_hint or looks_like_limit(notes):
         return RunOutcome(
             "limit",
@@ -197,5 +220,10 @@ def settle(
             **common,
         )
     return RunOutcome(
-        "error", text=text, error=_short(message), model_unavailable=unavailable, **common
+        "error",
+        text=text,
+        error=_short(message),
+        model_unavailable=unavailable,
+        content_rejected=content_rejected_hint,
+        **common,
     )

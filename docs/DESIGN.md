@@ -85,8 +85,16 @@ executable is missing. A write attempt that changed files and then failed ends a
 automatic retry); a clean failure that is not moved to another route (a timeout, a pinned
 route, no route left) ends as `failed`.
 
+A provider content rejection (the adapter reports `content_rejected`, e.g. OpenCode's
+`provider.invalid-request` with a moderation marker) on a clean attempt — nothing changed, no
+surviving process — does not count as an executor error for routing: a pinned job fails with
+code `content_rejected`; an unpinned job excludes the route and every enabled route with the
+same `model_key` for this job only and is requeued, and when no route is left it fails with
+code `content_rejected` (not `no_route`).
+
 Route health: a route with `ROUTE_ERROR_STREAK` (2) error attempts in a row — errors finished
-after the route's last `ok` attempt, a later `ok` resets the streak — is marked unavailable for
+after the route's last `ok` attempt, a later `ok` resets the streak, a content-rejected attempt
+neither extends nor resets the streak — is marked unavailable for
 `ROUTE_ERROR_COOLDOWN_S` (1800 s). The policy excludes such a route and `advice` shows
 `harness unavailable: N errors in a row, retry after <local time>`; after the cooldown the route
 is available again. A route the caller pinned still runs, and a job already approved for a route
@@ -158,8 +166,16 @@ windows (the window closest to exhaustion dominates), so a pool whose reset is n
 allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
 function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
 the same tier, mode, caller and pool exclusions would get. `GET /advice` accepts `exclude_pools`
-as a repeated query parameter and `review_of` as a job id; `POST /jobs` accepts the same names
-as a JSON list of strings and a JSON string.
+as a repeated query parameter, `prefer_routes` likewise, and `review_of` as a job id; `POST
+/jobs` accepts the same names as a JSON list of strings and a JSON string.
+
+A caller can also name routes it prefers without pinning one: `POST /jobs` takes
+`prefer_routes` (CLI `--prefer-route`, repeatable), and so does advice. After the exclusion
+pass, eligible preferred routes move to the front of the choice in the given order; the rest
+keep their normal order, and ineligible preferred routes stay in the excluded list with their
+usual reason. An error on a preferred route falls back like any other route error — unlike a
+pinned `route`, which leaves the job without alternatives. Unknown route ids are rejected at
+intake and by advice (`bad_route`).
 
 ## Usage tracking
 
@@ -314,6 +330,24 @@ live/offline: accuracy against ground truth (manual `should_tier` ratings, then 
 jobs rated `good`), the tier confusion matrix, the underestimation rate, latency p50/p95, error
 rate, and a before/after split around the last `mode` change.
 
+## Route report
+
+The route scorecard — `agent-router report routes` and the dashboard's Routes section — is a
+pure report: `route_report.build(jobs, attempts, quality, min_jobs=5)` takes job samples, attempt
+samples and the config's route qualities and returns the rows, and the caller supplies the
+samples from `JobStore.route_samples_since(since)`, which folds finished jobs since a date
+together with their latest rating and per-attempt totals (duration, tokens, cost with the
+`estimated` flag) and every attempt's outcome. Each row is keyed by route id, tier and mode and
+carries job counts per outcome (completed/partial/failed/cancelled), attempt counts per outcome
+(limit/error/timeout), rating counts with the rated share and the good share, and medians for
+duration (median and p90), tokens and cost; estimated costs are marked `~`. Rows with at least
+`min_jobs` (default 5) jobs are ranked first, ordered by good share, and rows below the minimum
+follow in the same order as unranked. A row's `quality` and its `in_config` flag come from the
+config's `routes`: a route that no longer exists in the config keeps its row and is marked as no
+longer configured. The dashboard's Routes section runs the same build over the last 30 days. If
+the job store does not provide `route_samples_since`, the dashboard shows `not available for this
+store` instead of the scorecard.
+
 ## Runner and harness adapters
 
 The runner starts the harness without a shell: `Popen(argv, cwd, env, stdout/stderr to pipes)`.
@@ -405,14 +439,26 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
 snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
-Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with no `jobs` row)
-older than the cutoff — preferred over a deletion-marker schema because it needs no schema change
-and also cleans directories left behind by crashes or older versions.
+The `jobs` table also carries the idempotency key of a submit in the columns `request_caller` and
+`request_id`, with a UNIQUE index on the pair: a second job with the same key cannot be inserted,
+and a NULL `request_id` never collides because SQLite treats NULLs as distinct. The key lives as
+long as its job does — `purge` forgets it with the job row, so a purged `request_id` starts a
+new job again. Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with
+no `jobs` row) older than the cutoff — preferred over a deletion-marker schema because it needs
+no schema change and also cleans directories left behind by crashes or older versions.
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
-blacklist (no prompts, paths, tokens). Sinks are file/plugin based — a built-in rotating JSONL
-sink; events are not stored in SQLite.
+blacklist (no prompts, paths, tokens). Sinks: a built-in rotating JSONL file, a built-in webhook
+sink and entry-point plugins; events are not stored in SQLite. The webhook sink POSTs each event
+to an HTTP endpoint — `format = "json"` (default) sends the event payload, optionally with a
+dashboard link from `base_url`, and `format = "text"` sends a one-line message with a `Title`
+header for services like ntfy; an optional `events` list restricts the types, all events when it
+is absent. The URL is read only from the environment variable named by `url_env` and never appears
+in a log, an error or doctor output; an unset variable is a config error, so the gateway does
+not start without it. Delivery bypasses proxies from the environment. A failed delivery is retried once under a positive
+`timeout_s`; an event that still cannot be delivered is counted on the sink and dropped without
+raising, so a dead endpoint never blocks the bus.
 
 HTTP API under `/api/v1` (token in `Authorization: Bearer`; the admin token satisfies client
 routes; only `127.0.0.1`/`localhost` Host headers are accepted):
@@ -431,11 +477,27 @@ the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64
 `Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
 both answer `413` with the code `body_too_large`.
 
+Every response carries security headers — `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` —
+set by the outermost middleware, so the 400 and 413 responses of the Host and body-limit checks
+carry them too. A static file that is actually served keeps its normal caching and gets only the
+other three; errors under `/static/` are marked `no-store` like any other response.
+
 Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
 rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,
 `bad_caller` and the other field codes, and a `review_of` without `kind=review` or naming an
 unknown job with `bad_review_of`. `GET /advice` reports invalid query values — an unknown tier,
 mode, pool or reviewed job — as `bad_request`.
+
+`POST /jobs` takes an optional `request_id`: 1–128 characters of `[A-Za-z0-9._:-]`; any other
+value is rejected `422 bad_request_id`. The pair (caller or empty string, `request_id`) is the
+idempotency key of the submit, enforced by the UNIQUE index on the `jobs` table — the constraint
+is the source of truth, so two concurrent submits with one key still create one job. A repeated
+submit with a known key and the same prompt hash, working directory and mode returns the existing
+job with `200` (same `{"job_id", "status"}` body, no new job, no announce, no classifier submit),
+while a new job answers `201`. A key reused with a different prompt, directory or mode is rejected
+`422 request_id_conflict`. The key is remembered only while the job is kept: after `purge` the
+same `request_id` creates a new job again.
 
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
@@ -497,10 +559,12 @@ scripting is available.
 | `prices.py` | Price-file parsing and token-based cost estimation |
 | `progress.py` | Live state of a running attempt: bounded log-tail reads and the progress payload |
 | `registry.py` | Harness/counter specs, backend resolution, config validation |
+| `route_report.py` | Route scorecard core: rows per route, tier and mode from jobs, attempts, ratings and config quality |
 | `runner.py` | Child-process execution, log capture, timeouts, process-tree kill |
 | `service.py` | Gateway composition: snapshot cache, waiters, background loops |
 | `settings_store.py` | Atomic key-value flags over the `settings` table |
 | `sinks.py` | Event sink protocol and the rotating JSONL sink |
+| `sinks_webhook.py` | Webhook event sink: JSON or text POST with retries, env-only URL |
 | `spend.py` | Spend records and attempt cost estimation |
 | `statusline.py` | Claude Code status line script (posts rate limits to the gateway) |
 | `store.py` | SQLite storage for observations and counter samples |

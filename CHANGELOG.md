@@ -8,9 +8,33 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A built-in `webhook` event sink posts gateway events to an HTTP endpoint — `format = "json"`
+  (default) sends the event payload, `format = "text"` a one-line message with a `Title` header
+  (for example an ntfy topic) — with an optional `events` filter (all events when absent), a
+  dashboard link from `base_url`, a positive `timeout_s` per attempt and one retry by default.
+  The URL is a secret read only from the environment variable named by `url_env`, never stored in
+  the config and never written to a log or an error; `doctor` warns when that variable is not set.
+- Job submission is idempotent: an optional `request_id` (CLI `--request-id`, generated when
+  omitted; an MCP `submit_job` parameter) is unique per caller in the job store. A repeated
+  submit with the same key and the same prompt, working directory and mode returns the existing
+  job with `200` instead of starting a second one (`201` for a new job), a conflicting reuse is
+  rejected `422 request_id_conflict`, and a malformed id `422 bad_request_id`. The CLI and the
+  MCP server retry a submit whose answer was lost up to twice with the same id. After `purge`
+  the id is forgotten and starts a new job again.
+- Provider content rejections (e.g. OpenCode's `security_audit_fail` behind
+  `provider.invalid-request`) are reported by the adapter as `content_rejected`: a clean
+  attempt fails a pinned job with code `content_rejected`, moves an unpinned job off all routes
+  of the same model (the job is requeued and fails with `content_rejected` when no route is
+  left), and no longer harms route health.
+- Dashboard and API responses (including rejected-host and body-limit errors) carry security
+  headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; static assets keep normal caching.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
+- Job submission and advice accept `prefer_routes` (repeatable `--prefer-route` in the CLI and
+  MCP): eligible preferred routes run first in the given order, and the gateway still falls
+  back to the other routes, unlike `--route` which pins the job to one route.
 - A route whose harness reports its model as unavailable (OpenCode's
   `provider.no-route: Model unavailable: <provider>/<model>`) is taken out of rotation after a
   single failure for `tasks.model_unavailable_cooldown_s` (default 1800 s, new config key);
@@ -42,9 +66,26 @@ All notable changes are documented here. The format follows
   the job ends), the MCP server gains a `job_progress` tool and a `progress` summary inside a
   still-running `wait_job` result, and the dashboard job page shows the live output, refreshed
   with the page's own polling.
+- `agent-router report routes [--since DATE] [--json]` prints a route scorecard with one row
+  per route, tier and mode from jobs, attempts and ratings: job and attempt outcomes, rating
+  shares, duration/token/cost medians; rows with at least 5 jobs are ranked by good share, rows
+  below the minimum are listed separately as unranked, and rows for routes no longer in the
+  config are marked.
+- The main dashboard page gains a Routes section showing the same scorecard for the last
+  30 days.
+- `agent-router backup [PATH]` copies the gateway database with SQLite's online
+  backup API, so the backup is consistent even while the gateway writes; without a
+  path it writes `<home>/backups/agent-router-<UTC YYYYMMDD-HHMMSS>.sqlite`, and
+  `--keep N` prunes older timestamp-named backups in the target directory after a
+  successful backup, keeping the newest N and leaving unrelated files alone.
+  Restore steps and scheduled-backup examples are in `docs/INSTALL.md`.
+- `agent-router run --kind` and the MCP `submit_job` tool set the job kind (`code`, `review`,
+  `research` or `other`); `--review-of` and `review_of` set `review`.
 
 ### Changed
 
+- Job errors name a Windows NTSTATUS exit code, e.g. `exit code 3221226505 (0xC0000409
+  STATUS_STACK_BUFFER_OVERRUN)`; unknown codes in the NTSTATUS range show their hex value.
 - The README now says that a window far behind its pace makes its pool take every job it can
   serve until it catches up, and that `priority` and `weight` in the config change the order.
 - The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;

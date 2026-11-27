@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import typer
 
 from agent_router import __version__, cli_gateway, cli_jobs
+from agent_router.backup import backup_database, default_backup_path, prune_backups
 from agent_router.cli_common import _config, _export_moment, _gateway, _request
 from agent_router.cli_jobs import _job_failure, _job_request
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
@@ -29,6 +30,7 @@ from agent_router.config import Config, ConfigError, home_dir
 from agent_router.diagnostics import (
     DoctorFinding,
     caller_findings,
+    sink_findings,
     spend_findings,
     task_findings,
     usage_findings,
@@ -105,6 +107,11 @@ def advice(
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool to leave out of the choice; repeat to exclude several"
     ),
+    prefer_route: list[str] = typer.Option(
+        [],
+        "--prefer-route",
+        help="Route to put first in the choice; repeat to rank several",
+    ),
     review_of: str | None = typer.Option(
         None,
         "--review-of",
@@ -115,6 +122,8 @@ def advice(
     params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
     if exclude_pool:
         params["exclude_pools"] = exclude_pool
+    if prefer_route:
+        params["prefer_routes"] = prefer_route
     if review_of is not None:
         params["review_of"] = review_of
     result = _request(lambda: _gateway().get("/api/v1/advice", **params))
@@ -231,6 +240,37 @@ def purge(
         typer.echo(f"warning: could not remove {directory}", err=True)
     if failed_dirs:
         raise typer.Exit(1)
+
+
+@app.command()
+def backup(
+    path: Path | None = typer.Argument(
+        None, help="Backup file; by default a timestamped file in the home backups directory"
+    ),
+    keep: int | None = typer.Option(
+        None, "--keep", min=1, help="Keep only the newest N timestamped backups"
+    ),
+) -> None:
+    """Back up the SQLite store without stopping the gateway."""
+    home = home_dir()
+    config = _config(home)
+    if config.storage.backend != "sqlite":
+        typer.echo("backup supports only the sqlite store")
+        raise typer.Exit(1)
+    database = home / "agent-router.sqlite"
+    if not database.exists():
+        typer.echo(f"no database: {database}")
+        raise typer.Exit(1)
+    target = path or default_backup_path(home, SystemClock().now())
+    try:
+        size = backup_database(database, target)
+        typer.echo(f"{target} ({size} bytes)")
+        if keep is not None:
+            for removed in prune_backups(target.parent, keep):
+                typer.echo(removed)
+    except (OSError, sqlite3.Error) as exc:
+        typer.echo(f"backup failed: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @app.command("export")
@@ -369,6 +409,85 @@ def classifier_eval(
     finally:
         store.close()
     typer.echo(f"votes recorded: {count}")
+
+
+report_app = typer.Typer(help="Summarize the job history")
+app.add_typer(report_app, name="report")
+
+
+def _report_share(count: int, total: int) -> str:
+    return f"{count}/{total} ({count / total:.0%})" if total else "-"
+
+
+def _report_row_line(row: dict[str, Any], min_jobs: int) -> str:
+    outcomes = row["outcomes"]
+    attempts = row["attempts"]
+    ratings = row["ratings"]
+    rated = row["rated"]
+    jobs = row["jobs"]
+    duration = row["duration_s"]
+    duration_text = (
+        "-" if duration["median"] is None else f"{duration['median']:.1f}s/{duration['p90']:.1f}s"
+    )
+    tokens = row["tokens_median"]
+    cost = row["cost_median"]
+    cost_text = "-" if cost is None else f"${cost:.2f}"
+    if cost is not None and row["cost_estimated"]:
+        cost_text = f"~{cost_text}"
+    markers = ""
+    if not row["ranked"]:
+        markers += f" (fewer than {min_jobs} jobs)"
+    if not row["in_config"]:
+        markers += " (not in config)"
+    quality = "-" if row["quality"] is None else row["quality"]
+    attempt_text = (
+        f"attempts limit {attempts['limit']}/error {attempts['error']}"
+        f"/timeout {attempts['timeout']}"
+    )
+    return (
+        f"{row['route']} {row['tier']} {row['mode']}: jobs {jobs}, "
+        f"completed {outcomes['completed']}, partial {outcomes['partial']}, "
+        f"failed {outcomes['failed']}, cancelled {outcomes['cancelled']}, "
+        f"{attempt_text}, "
+        f"duration median/p90 {duration_text}, tokens median "
+        f"{'-' if tokens is None else f'{tokens:.0f}'}, cost {cost_text}, "
+        f"quality {quality}, rated {_report_share(rated, jobs)}, "
+        f"good {_report_share(ratings['good'], rated)}, "
+        f"partial {_report_share(ratings['partial'], rated)}, "
+        f"bad {_report_share(ratings['bad'], rated)}{markers}"
+    )
+
+
+@report_app.command("routes")
+def report_routes(
+    since: str | None = typer.Option(None, "--since", help="Start time in ISO 8601 format"),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON instead of text"),
+) -> None:
+    """Show a scorecard of routes from finished jobs and their ratings."""
+    from agent_router import route_report
+
+    home = home_dir()
+    config = _config(home)
+    if config.storage.backend != "sqlite":
+        typer.echo("report routes supports only the sqlite store")
+        raise typer.Exit(1)
+    store = open_store(config.storage, home)
+    try:
+        jobs = open_jobstore(config.storage, home, store)
+        moment = _export_moment(since) if since else _EPOCH
+        samples_jobs, samples_attempts = jobs.route_samples_since(moment)
+        quality = {route.id: route.quality for route in config.routes}
+        result = route_report.build(samples_jobs, samples_attempts, quality)
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(result, ensure_ascii=False))
+        return
+    if not result["rows"]:
+        typer.echo("no finished jobs")
+        return
+    for row in result["rows"]:
+        typer.echo(_report_row_line(row, result["min_jobs"]))
 
 
 def _doctor_classifier(config: Config) -> None:
@@ -559,6 +678,10 @@ def _doctor_usage(config: Config) -> None:
     _print_doctor_findings(usage_findings(config))
 
 
+def _doctor_sinks(config: Config) -> None:
+    _print_doctor_findings(sink_findings(config))
+
+
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
     """Read health from the running gateway: read problems and stale usage data per pool."""
     if not any(pool.usage.source is not None for pool in config.pools):
@@ -714,6 +837,7 @@ def doctor(
     _doctor_classifier(config)
     _doctor_callers(config)
     _doctor_usage(config)
+    _doctor_sinks(config)
     _print_doctor_findings(task_findings(config))
     client = _gateway()
     stats = _request(lambda: client.get("/api/v1/events/stats"))

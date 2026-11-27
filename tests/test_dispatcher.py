@@ -170,6 +170,12 @@ class ScriptAdapter:
             stamp = stdout.partition("@")[2]
             reset = datetime.fromisoformat(stamp) if stamp else None
             return RunOutcome("limit", limit_reset_at=reset, error="usage limit reached")
+        if stdout.startswith("rejected"):
+            return RunOutcome(
+                "error",
+                error="provider.invalid-request: Upstream request failed: [security_audit_fail]",
+                content_rejected=True,
+            )
         if stdout.startswith("nomodel"):
             return RunOutcome(
                 "error",
@@ -1050,6 +1056,7 @@ def test_each_attempt_has_own_decision(make_rig) -> None:
             "chosen",
             "candidates",
             "excluded",
+            "preferred",
             "note",
         }
         assert attempt.decision["tier"] == "standard"
@@ -4155,3 +4162,137 @@ def test_progress_idle_left_grows_no_shorter_than_the_limit(make_rig) -> None:
     finally:
         release.set()
         executor.shutdown(wait=True, cancel_futures=True)
+
+
+# --- preferred routes ------------------------------------------------------------------------
+
+
+@requires_git
+def test_preferred_route_runs_first(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    job = rig.submit(rig.plain(), preferred_routes=("b/main",))
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "b/main")
+    (attempt,) = rig.attempts(job)
+    assert attempt.decision is not None
+    assert attempt.decision["preferred"] == ["b/main"]
+
+
+@requires_git
+def test_preferred_route_error_falls_back_to_another_route(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("error:boom", exit_code=2))
+    job = rig.submit(rig.plain(), preferred_routes=("b/main",))
+    rig.tick(4)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "a/main")
+    first, second = rig.attempts(job)
+    assert (first.route, first.outcome) == ("b/main", "error")
+    assert second.route == "a/main"
+
+
+@requires_git
+def test_ineligible_preferred_route_shows_in_the_decision_snapshot(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    job = rig.submit(
+        rig.plain(), preferred_routes=("b/main",), excluded_pools=frozenset({"pool-b"})
+    )
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "a/main")
+    (attempt,) = rig.attempts(job)
+    assert attempt.decision is not None
+    assert attempt.decision["preferred"] == ["b/main"]
+    assert {"route": "b/main", "reason": "excluded by request"} in attempt.decision["excluded"]
+
+
+# --- content rejected -----------------------------------------------------------------------
+
+SAME_MODEL_ROUTES = (
+    route("a/main", "pool-a", 5, model_key="mk-shared"),
+    route("b/main", "pool-b", 4, model_key="mk-shared"),
+    route("c/main", "pool-c", 3, model_key="mk-other"),
+)
+
+
+@requires_git
+def test_content_rejection_does_not_count_toward_route_health(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("rejected", exit_code=1), Step("rejected", exit_code=1))
+    for _ in range(2):
+        rig.submit(rig.plain(), route="a/main")
+        rig.tick(3)
+
+    assert views_of(rig)["a/main"].available
+    assert rig.jobs.route_errors_in_row("a/main")[0] == 0
+
+
+@requires_git
+def test_content_rejection_moves_the_job_off_routes_of_the_same_model(make_rig) -> None:
+    rig = make_rig(routes=SAME_MODEL_ROUTES)
+    rig.runner.add(Step("rejected", exit_code=1))
+    job = rig.submit(rig.plain())
+    rig.tick(4)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "c/main")
+    first, second = rig.attempts(job)
+    assert (first.route, first.outcome) == ("a/main", "error")
+    assert first.result is not None and first.result.content_rejected
+    assert second.route == "c/main"
+    assert {"a/main", "b/main"} <= done.excluded_routes
+
+
+@requires_git
+def test_content_rejection_excludes_routes_only_for_that_job(make_rig) -> None:
+    rig = make_rig(routes=SAME_MODEL_ROUTES)
+    rig.runner.add(Step("rejected", exit_code=1))
+    rejected = rig.submit(rig.plain())
+    rig.tick(4)
+    assert rig.job(rejected).route == "c/main"
+
+    other = rig.submit(rig.plain())
+    rig.tick(3)
+
+    assert rig.job(other).route == "a/main"
+
+
+@requires_git
+def test_pinned_job_with_content_rejection_fails_with_content_rejected(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("rejected", exit_code=1))
+    job = rig.submit(rig.plain(), route="a/main")
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "content_rejected")
+    assert "security_audit_fail" in (done.error_message or "")
+    assert len(rig.attempts(job)) == 1
+
+
+@requires_git
+def test_content_rejection_without_another_route_fails_with_content_rejected(make_rig) -> None:
+    rig = make_rig(routes=(route("a/main", "pool-a", 5, model_key="mk-shared"),))
+    rig.runner.add(Step("rejected", exit_code=1))
+    job = rig.submit(rig.plain())
+    rig.tick(3)
+
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("failed", "content_rejected")
+    assert "security_audit_fail" in (done.error_message or "")
+
+
+@requires_git
+def test_content_rejection_after_changes_is_not_retried(make_rig) -> None:
+    rig = make_rig(routes=SAME_MODEL_ROUTES)
+    rig.runner.add(Step("rejected", exit_code=1, action=new_file()))
+    job = rig.submit(rig.repo(), "write")
+    rig.tick(3)
+
+    done = rig.job(job)
+    assert done.status == "partial"
+    assert len(rig.attempts(job)) == 1
