@@ -52,6 +52,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `doctor` warns when OpenCode is older than 2.2.6: its `opencode run` rejects `--archived`, so
+  every job on its routes failed with `executor_error` without an earlier hint.
 - The job page attempt timeline formats each attempt's duration with units, like the job total
   duration, and shows a dash instead of an empty cell when an attempt has no cost.
 - Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.
