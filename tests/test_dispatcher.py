@@ -2946,10 +2946,25 @@ def test_cancel_clears_guard_failures(make_rig, monkeypatch) -> None:
     monkeypatch.setattr(rig.dispatcher, "_consider", fail_consider)
     rig.tick()
     assert f"consider:{job.id}" in rig.dispatcher._guard_failures
+    rig.dispatcher._guard_failures.update({f"approval:{job.id}", f"collect:{job.id}"})
 
     rig.dispatcher.cancel(job.id)
 
-    assert not {key for key in rig.dispatcher._guard_failures if key.endswith(f":{job.id}")}
+    for action in ("consider", "approval", "collect"):
+        assert f"{action}:{job.id}" not in rig.dispatcher._guard_failures
+
+
+def test_release_clears_guard_failures(make_rig) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.plain())
+    active = dispatcher_module._Active(job.id, 1, rig.config.routes[0], threading.Event(), None)
+    for action in ("consider", "approval", "collect"):
+        rig.dispatcher._guard_failures.add(f"{action}:{job.id}")
+
+    rig.dispatcher._release(active)
+
+    for action in ("consider", "approval", "collect"):
+        assert f"{action}:{job.id}" not in rig.dispatcher._guard_failures
 
 
 @requires_git
