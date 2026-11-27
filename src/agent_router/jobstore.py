@@ -76,9 +76,17 @@ class JobStore(Protocol):
         ...
 
     def purge(
-        self, before: datetime, jobs_dir: Path, dry_run: bool = False
-    ) -> tuple[builtins.list[str], builtins.list[Path]]:
-        """Delete old terminal jobs and orphan directories; return ids and removal failures."""
+        self,
+        before: datetime,
+        jobs_dir: Path,
+        dry_run: bool = False,
+        *,
+        counter_samples_before: datetime | None = None,
+    ) -> (
+        tuple[builtins.list[str], builtins.list[Path]]
+        | tuple[builtins.list[str], builtins.list[Path], int, int]
+    ):
+        """Delete old jobs and requested usage history; return ids, failures and usage counts."""
         ...
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
@@ -728,8 +736,16 @@ class SqliteJobStore:
         return [_job(row) for row in rows.fetchall()], total
 
     def purge(
-        self, before: datetime, jobs_dir: Path, dry_run: bool = False
-    ) -> tuple[builtins.list[str], builtins.list[Path]]:
+        self,
+        before: datetime,
+        jobs_dir: Path,
+        dry_run: bool = False,
+        *,
+        counter_samples_before: datetime | None = None,
+    ) -> (
+        tuple[builtins.list[str], builtins.list[Path]]
+        | tuple[builtins.list[str], builtins.list[Path], int, int]
+    ):
         moment = to_us(before)
         condition = (
             "COALESCE(finished_at, created_at) < ? AND status IN"
@@ -795,7 +811,49 @@ class SqliteJobStore:
                     continue
                 except OSError:
                     failed_dirs.append(directory)
-        return job_ids, failed_dirs
+        if counter_samples_before is None:
+            return job_ids, failed_dirs
+        observations, samples = self.purge_usage(before, counter_samples_before, dry_run=dry_run)
+        return job_ids, failed_dirs, observations, samples
+
+    def purge_usage(
+        self, before: datetime, counter_samples_before: datetime, dry_run: bool = False
+    ) -> tuple[int, int]:
+        moment = to_us(before)
+        counter_moment = to_us(counter_samples_before)
+        observation_ids = (
+            "SELECT id FROM observations AS candidate WHERE candidate.observed_at < ? AND EXISTS ("
+            "SELECT 1 FROM observations AS newer"
+            " WHERE newer.pool = candidate.pool AND newer.window = candidate.window"
+            " AND (newer.observed_at > candidate.observed_at OR"
+            " (newer.observed_at = candidate.observed_at AND newer.id > candidate.id)))"
+            " AND (candidate.resets_at IS NULL OR candidate.resets_at <= candidate.observed_at"
+            " OR EXISTS (SELECT 1 FROM observations AS newer_reset"
+            " WHERE newer_reset.pool = candidate.pool AND newer_reset.window = candidate.window"
+            " AND newer_reset.resets_at > newer_reset.observed_at"
+            " AND (newer_reset.observed_at > candidate.observed_at OR"
+            " (newer_reset.observed_at = candidate.observed_at"
+            " AND newer_reset.id > candidate.id))))"
+        )
+        sample_condition = "sampled_at < ?"
+        if dry_run:
+            conn = self._store.connection()
+            observations = conn.execute(
+                f"SELECT COUNT(*) FROM observations WHERE id IN ({observation_ids})", (moment,)
+            ).fetchone()[0]
+            samples = conn.execute(
+                f"SELECT COUNT(*) FROM counter_samples WHERE {sample_condition}",
+                (counter_moment,),
+            ).fetchone()[0]
+            return int(observations), int(samples)
+        with self._store.transaction() as conn:
+            observations = conn.execute(
+                f"DELETE FROM observations WHERE id IN ({observation_ids})", (moment,)
+            ).rowcount
+            samples = conn.execute(
+                f"DELETE FROM counter_samples WHERE {sample_condition}", (counter_moment,)
+            ).rowcount
+        return observations, samples
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
         conn = self._store.connection()

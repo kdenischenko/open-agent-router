@@ -11,11 +11,13 @@ from typer.testing import CliRunner
 
 from agent_router import cli
 from agent_router.clock import FakeClock
-from agent_router.config import ConfigError, load_config
+from agent_router.config import ConfigError, Pool, Window, load_config
 from agent_router.jobs import Attempt, AttemptResult, Job, JobRequest, Rating, Status, Vote
-from agent_router.jobstore import open_jobstore
+from agent_router.jobstore import JobStore, SqliteJobStore, open_jobstore
+from agent_router.ledger import window_state
+from agent_router.periods import parse_duration
 from agent_router.spend import SpendEntry
-from agent_router.store import open_store
+from agent_router.store import CounterSample, Observation, open_store
 
 NOW = datetime(2026, 11, 21, 12, tzinfo=UTC)
 CUTOFF = NOW - timedelta(days=30)
@@ -212,7 +214,9 @@ def test_cli_purge_reports_locked_directory_and_retries_after_unlock(
     retried = runner.invoke(cli.app, ["purge"])
 
     assert retried.exit_code == 0, retried.output
-    assert retried.output == "removed 1 job entry\n"
+    assert (
+        retried.output == "removed 1 job entry\npurged 0 observations\npurged 0 counter samples\n"
+    )
     assert not blocked_dir.exists()
 
 
@@ -322,7 +326,7 @@ def test_cli_purge_reports_leftover_directory_as_job_entry(
     result = CliRunner().invoke(cli.app, ["purge"])
 
     assert result.exit_code == 0, result.output
-    assert result.output == "removed 1 job entry\n"
+    assert result.output == "removed 1 job entry\npurged 0 observations\npurged 0 counter samples\n"
     assert not orphan.exists()
 
 
@@ -349,7 +353,9 @@ def test_cli_purge_uses_injected_clock_and_dry_run_preserves_data(
     dry_run = runner.invoke(cli.app, ["purge", "--dry-run"])
 
     assert dry_run.exit_code == 0, dry_run.output
-    assert dry_run.output == "would purge 1 job\n"
+    assert dry_run.output == (
+        "would purge 1 job\nwould purge 0 observations\nwould purge 0 counter samples\n"
+    )
     assert old_dir.exists()
     store = open_store(loaded.storage, home)
     try:
@@ -361,7 +367,7 @@ def test_cli_purge_uses_injected_clock_and_dry_run_preserves_data(
     purged = runner.invoke(cli.app, ["purge"])
 
     assert purged.exit_code == 0, purged.output
-    assert purged.output == "purged 1 job\n"
+    assert purged.output == "purged 1 job\npurged 0 observations\npurged 0 counter samples\n"
     assert not old_dir.exists() and recent_dir.exists()
     store = open_store(loaded.storage, home)
     try:
@@ -372,13 +378,208 @@ def test_cli_purge_uses_injected_clock_and_dry_run_preserves_data(
         store.close()
 
 
-def test_cli_purge_with_retention_disabled_is_a_noop(
+def test_purge_deletes_old_usage_rows_and_reports_counts(jobstore, store, tmp_path: Path) -> None:
+    store.add_observation(Observation("p", "5h", 0.1, NOW - timedelta(days=50), None, "manual"))
+    store.add_observation(Observation("p", "5h", 0.2, NOW - timedelta(days=40), None, "manual"))
+    store.add_observation(Observation("p", "5h", 0.3, NOW - timedelta(days=1), None, "manual"))
+    store.add_observation(Observation("q", "week", 0.4, NOW - timedelta(days=40), None, "manual"))
+    store.add_counter_sample(CounterSample("p", 1.0, NOW - timedelta(days=40)))
+    store.add_counter_sample(CounterSample("p", 2.0, CUTOFF))
+    store.add_counter_sample(CounterSample("p", 3.0, NOW - timedelta(days=1)))
+    jobs_dir = tmp_path / "jobs"
+
+    assert jobstore.purge(CUTOFF, jobs_dir, dry_run=True, counter_samples_before=CUTOFF) == (
+        [],
+        [],
+        2,
+        1,
+    )
+    assert len(store.observations("p", "5h")) == 3
+    assert store.last_counter("p").value_usd == 3.0
+
+    assert jobstore.purge(CUTOFF, jobs_dir, counter_samples_before=CUTOFF) == ([], [], 2, 1)
+
+    assert [row.fraction for row in store.observations("p", "5h")] == [0.3]
+    assert store.last_observation("q", "week").fraction == 0.4
+    assert [
+        row.value_usd for row in store.counter_samples_since("p", NOW - timedelta(days=60))
+    ] == [
+        2.0,
+        3.0,
+    ]
+
+
+def test_purge_usage_keeps_only_old_observation_for_pool_window(jobstore, store) -> None:
+    old = Observation("p", "month", 0.6, NOW - timedelta(days=90), None, "manual")
+    store.add_observation(old)
+
+    assert jobstore.purge_usage(CUTOFF, CUTOFF) == (0, 0)
+
+    assert store.last_observation("p", "month") == old
+
+
+def test_purge_usage_preserves_reset_anchor_for_latest_observation(jobstore, store) -> None:
+    window = Window(
+        id="month",
+        duration=parse_duration("1mo"),
+        kind="fixed",
+        role="pace",
+        anchor=datetime(2026, 11, 1, tzinfo=UTC),
+        limit_usd=None,
+        block_at=1.0,
+    )
+    pool = Pool("p", "Pool", "percent", (window,), 0.0, None, None, None, None)
+    reset = datetime(2026, 11, 23, tzinfo=UTC)
+    store.add_observation(Observation("p", "month", 0.4, NOW - timedelta(days=40), reset, "manual"))
+    store.add_observation(Observation("p", "month", 0.6, NOW - timedelta(days=1), None, "manual"))
+    before = window_state(pool, window, store, NOW)
+    assert (before.window_start, before.resets_at) == (
+        datetime(2026, 10, 23, tzinfo=UTC),
+        reset,
+    )
+
+    jobstore.purge_usage(CUTOFF, CUTOFF)
+
+    assert window_state(pool, window, store, NOW) == before
+
+
+def test_cli_purge_keeps_samples_inside_two_monthly_windows(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(
+        """[storage]
+backend = "sqlite"
+retention_days = 7
+
+[[pools]]
+id = "p"
+title = "Pool"
+unit = "percent"
+
+[[pools.windows]]
+id = "month"
+duration = "1mo"
+kind = "fixed"
+role = "pace"
+""",
+        encoding="utf-8",
+    )
+    config = load_config(home / "config.toml")
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setattr(cli, "SystemClock", lambda: FakeClock(NOW))
+    store = open_store(config.storage, home)
+    try:
+        store.add_counter_sample(CounterSample("p", 1.0, NOW - timedelta(days=20)))
+        store.add_counter_sample(CounterSample("p", 2.0, NOW - timedelta(days=70)))
+    finally:
+        store.close()
+
+    result = CliRunner().invoke(cli.app, ["purge"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "purged 0 jobs\npurged 0 observations\npurged 1 counter sample\n"
+    store = open_store(config.storage, home)
+    try:
+        samples = store.counter_samples_since("p", NOW - timedelta(days=100))
+        assert [(row.value_usd, row.sampled_at) for row in samples] == [
+            (1.0, NOW - timedelta(days=20))
+        ]
+    finally:
+        store.close()
+
+
+def test_cli_purge_skips_usage_dry_run_before_deleting(
     config, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    set_retention(home, "30")
     monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setattr(cli, "SystemClock", lambda: FakeClock(NOW))
+    calls = []
+    original = SqliteJobStore.purge_usage
 
-    result = CliRunner().invoke(cli.app, ["purge", "--dry-run"])
+    def purge_usage(self, before, counter_samples_before, dry_run=False):
+        calls.append(dry_run)
+        return original(self, before, counter_samples_before, dry_run=dry_run)
+
+    monkeypatch.setattr(SqliteJobStore, "purge_usage", purge_usage)
+
+    result = CliRunner().invoke(cli.app, ["purge"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [False]
+
+
+@pytest.mark.parametrize("args", [["purge"], ["purge", "--dry-run"]])
+def test_cli_purge_with_retention_disabled_is_a_noop(
+    args: list[str], config, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    store = open_store(config.storage, home)
+    try:
+        old = Observation("p", "5h", 0.1, NOW - timedelta(days=90), None, "manual")
+        store.add_observation(old)
+        store.add_observation(Observation("p", "5h", 0.2, NOW - timedelta(days=80), None, "manual"))
+        store.add_counter_sample(CounterSample("p", 1.0, NOW - timedelta(days=90)))
+    finally:
+        store.close()
+
+    result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == 0, result.output
     assert result.output == "retention is disabled: set storage.retention_days in config.toml\n"
-    assert not (home / "agent-router.sqlite").exists()
+    store = open_store(config.storage, home)
+    try:
+        assert len(store.observations("p", "5h")) == 2
+        assert store.last_counter("p").value_usd == 1.0
+    finally:
+        store.close()
+
+
+def test_cli_purge_reports_observation_and_counter_sample_counts(
+    config, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_retention(home, "30")
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setattr(cli, "SystemClock", lambda: FakeClock(NOW))
+    store = open_store(config.storage, home)
+    try:
+        store.add_observation(Observation("p", "5h", 0.1, NOW - timedelta(days=50), None, "manual"))
+        store.add_observation(Observation("p", "5h", 0.2, NOW - timedelta(days=40), None, "manual"))
+        store.add_counter_sample(CounterSample("p", 1.0, NOW - timedelta(days=70)))
+    finally:
+        store.close()
+
+    result = CliRunner().invoke(cli.app, ["purge"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "purged 0 jobs\npurged 1 observation\npurged 1 counter sample\n"
+
+
+def test_cli_purge_supports_jobstore_without_usage_purge(
+    config, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_retention(home, "30")
+    monkeypatch.setenv("AGENT_ROUTER_HOME", str(home))
+    monkeypatch.setattr(cli, "SystemClock", lambda: FakeClock(NOW))
+    open_jobstore = cli.open_jobstore
+
+    class JobStoreWithoutUsagePurge(JobStore):
+        def __init__(self, jobs) -> None:
+            self.jobs = jobs
+
+        def get(self, job_id: str):
+            return self.jobs.get(job_id)
+
+        def purge(self, before: datetime, jobs_dir: Path, dry_run: bool = False):
+            return self.jobs.purge(before, jobs_dir, dry_run=dry_run)
+
+    def open_without_usage_purge(settings, home, store):
+        return JobStoreWithoutUsagePurge(open_jobstore(settings, home, store))
+
+    monkeypatch.setattr(cli, "open_jobstore", open_without_usage_purge)
+
+    result = CliRunner().invoke(cli.app, ["purge"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == "purged 0 jobs\npurged 0 observations\npurged 0 counter samples\n"
