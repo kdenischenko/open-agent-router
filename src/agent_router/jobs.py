@@ -58,6 +58,7 @@ class JobRequest:
     route: str | None = None
     timeout_s: int | None = None
     excluded_pools: frozenset[str] = frozenset()
+    review_of: str | None = None  # id of the job this review job looks at; requires kind=review
 
 
 @dataclass
@@ -318,6 +319,8 @@ def validate_request_directory(req: JobRequest, config: Config) -> CheckedDirect
         raise RequestRejected("bad_tier", f"unknown tier: {req.tier}")
     if req.kind is not None and req.kind not in KINDS:
         raise RequestRejected("bad_kind", f"unknown job kind: {req.kind}")
+    if req.review_of is not None and req.kind != "review":
+        raise RequestRejected("bad_review_of", "review_of requires kind=review")
     if req.caller is not None and req.caller not in config.callers:
         raise RequestRejected("bad_caller", f"unknown caller: {req.caller}")
     pool_ids = {pool.id for pool in config.pools}

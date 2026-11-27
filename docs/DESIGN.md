@@ -125,13 +125,20 @@ harness could not be reaped).
 
 The policy is a pure function of the request and the quota snapshot. Exclusion filters, in order
 (first match wins, with the reason logged): route `enabled = false`; harness executable
-unavailable; `tier` not in `route.tiers`; `mode` not in `route.modes`; pools named by the
+unavailable; the author of the reviewed job — a `review` job with `review_of` excludes every
+route of the reviewed route's model group (`model_key`) and pool (`author of reviewed job`);
+`tier` not in `route.tiers`; `mode` not in `route.modes`; pools named by the
 request's optional `exclude_pools` list (`excluded by request`); route or pool excluded
 for this job; caller's own pool; pool blocked until a known time; a window exhausted past its
 `block_at`; and the reserve rule — if the pool's remaining headroom is at or below `reserve`,
-jobs below `reserve_tier` are excluded. Explicitly requested routes skip the tier, caller, and
-reserve filters and ignore `priority`/`weight`, but not requested pool exclusions. Unknown pool
-ids are rejected at intake and by advice.
+jobs below `reserve_tier` are excluded. Explicitly requested routes skip the tier, caller,
+author and reserve filters and ignore `priority`/`weight`, but not requested pool exclusions.
+Unknown pool ids are rejected at intake and by advice. If the author exclusion leaves no route,
+it is dropped instead of failing the job: the choice runs without it and the decision carries
+the note `review runs on the author's model: nothing else was eligible`, which is also appended
+to the job's route reason. `review_of` with a kind other than `review` or with an unknown job id
+is rejected at intake (`bad_review_of`) and by advice (`bad_request`); a reviewed job that has
+not run yet has no route, so nothing is excluded.
 
 Survivors are ordered by a key built from: `prefer` rank (when several routes share a
 `model_key`, `[models."<key>"] prefer = [pools...]` orders their pools), `priority` (lower
@@ -151,7 +158,8 @@ windows (the window closest to exhaustion dominates), so a pool whose reset is n
 allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
 function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
 the same tier, mode, caller and pool exclusions would get. `GET /advice` accepts `exclude_pools`
-as a repeated query parameter; `POST /jobs` accepts the same name as a JSON list of strings.
+as a repeated query parameter and `review_of` as a job id; `POST /jobs` accepts the same names
+as a JSON list of strings and a JSON string.
 
 ## Usage tracking
 
@@ -412,8 +420,9 @@ both answer `413` with the code `body_too_large`.
 
 Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
 rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,
-`bad_caller` and the other field codes. `GET /advice` reports invalid query values — an unknown
-tier, mode or pool — as `bad_request`.
+`bad_caller` and the other field codes, and a `review_of` without `kind=review` or naming an
+unknown job with `bad_review_of`. `GET /advice` reports invalid query values — an unknown tier,
+mode, pool or reviewed job — as `bad_request`.
 
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no

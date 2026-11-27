@@ -104,11 +104,18 @@ def advice(
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool to leave out of the choice; repeat to exclude several"
     ),
+    review_of: str | None = typer.Option(
+        None,
+        "--review-of",
+        help="Show the choice for a review of this job: the author's model and pool drop out",
+    ),
 ) -> None:
     """Show which routes match a job and why the others are excluded."""
     params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
     if exclude_pool:
         params["exclude_pools"] = exclude_pool
+    if review_of is not None:
+        params["review_of"] = review_of
     result = _request(lambda: _gateway().get("/api/v1/advice", **params))
     typer.echo(f"Tier: {result['tier']}")
     if result.get("mode"):
@@ -117,6 +124,8 @@ def advice(
         typer.echo(f"Matching: {item['route']} ({item['pool']}) — {item['reason']}")
     for item in result["excluded"]:
         typer.echo(f"Excluded: {item['route']} ({item['pool']}) — {item['reason']}")
+    if result.get("note"):
+        typer.echo(f"Note: {result['note']}")
 
 
 @app.command()

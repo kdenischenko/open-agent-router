@@ -99,11 +99,12 @@ def test_job_roundtrip_with_all_fields(jobstore) -> None:
             cwd=Path("/work/проект с пробелом"),  # non-ascii on purpose
             mode="write",
             tier="strong",
-            kind="code",
+            kind="review",
             caller="claude-code",
             route="kimi/k3",
             timeout_s=900,
             excluded_pools=frozenset({"claude-pro"}),
+            review_of="j_author",
         ),
         status="awaiting_approval",
         tier="strong",
@@ -821,6 +822,7 @@ def test_old_job_json_without_tier_pending_reads(tmp_path: Path) -> None:
         assert loaded is not None
         assert loaded.tier_pending is False
         assert loaded.tier_source == "default"
+        assert loaded.request.review_of is None  # written before the field existed
         [queued] = jobstore.queued(10)
         assert queued.id == "j_old" and queued.tier_pending is False
     finally:

@@ -148,6 +148,12 @@ def run(
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool that must not run the job; repeat to exclude several"
     ),
+    review_of: str | None = typer.Option(
+        None,
+        "--review-of",
+        help="Id of the job this job reviews: submits a review that stays off the model "
+        "and pool that wrote the code",
+    ),
     timeout: int | None = typer.Option(
         None,
         "--timeout",
@@ -172,9 +178,12 @@ def run(
         ("caller", caller),
         ("route", route),
         ("timeout_s", timeout),
+        ("review_of", review_of),
     ):
         if value is not None:
             body[name] = value
+    if review_of is not None:
+        body["kind"] = "review"
     if exclude_pool:
         body["exclude_pools"] = exclude_pool
     client = _gateway()

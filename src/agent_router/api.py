@@ -320,6 +320,7 @@ class JobBody(BaseModel):
     route: StrictStr | None = None
     timeout_s: Any = None  # fractional, boolean, etc. — error code bad_timeout, not bad_request
     exclude_pools: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
+    review_of: Annotated[StrictStr, Field(min_length=1)] | None = None
 
 
 class RatingBody(BaseModel):
@@ -370,6 +371,7 @@ def submit_job(gateway: Gateway, body: JobBody) -> Job:
         route=body.route,
         timeout_s=body.timeout_s,
         excluded_pools=frozenset(body.exclude_pools or []),
+        review_of=body.review_of,
     )
     try:
         return dispatcher.submit(request)
@@ -526,6 +528,7 @@ def api_router(gateway: Gateway) -> APIRouter:
         caller: str | None = None,
         mode: str | None = None,
         exclude_pools: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
+        review_of: str | None = None,
         role: Role = client,
     ) -> dict[str, Any]:
         if tier not in TIERS:
@@ -536,7 +539,13 @@ def api_router(gateway: Gateway) -> APIRouter:
         for pool in sorted(excluded):
             if gateway.pool(pool) is None:
                 raise ApiError(422, "bad_request", f"unknown pool: {pool}")
-        decision = gateway.advise(tier, caller, mode, excluded)  # type: ignore[arg-type]
+        reviewed_route: str | None = None
+        if review_of is not None:
+            reviewed = None if gateway.jobs is None else gateway.jobs.get(review_of)
+            if reviewed is None:
+                raise ApiError(422, "bad_request", f"unknown job: {review_of}")
+            reviewed_route = reviewed.route
+        decision = gateway.advise(tier, caller, mode, excluded, reviewed_route)  # type: ignore[arg-type]
         return decision_json(tier, decision, mode)  # type: ignore[arg-type]
 
     @router.get("/events/stats")

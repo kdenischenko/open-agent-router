@@ -84,6 +84,11 @@ _EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, that must not run the job; routes of these pools "
     "are excluded from the choice"
 )
+_REVIEW_OF = Field(
+    description="Id of the job whose result this review looks at; submit_job then sends "
+    "kind=review, and the gateway keeps the review off the model group and pool that wrote "
+    "the code"
+)
 _ADVICE_EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, excluded from the recommendation; their routes "
     "show as excluded by request"
@@ -117,6 +122,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         route: Annotated[str | None, _ROUTE] = None,
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
         exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
+        review_of: Annotated[str | None, _REVIEW_OF] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt, "cwd": cwd, "mode": mode}
         if tier is not None:
@@ -129,6 +135,9 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["timeout_s"] = timeout_s
         if exclude_pools is not None:
             body["exclude_pools"] = exclude_pools
+        if review_of is not None:
+            body["kind"] = "review"
+            body["review_of"] = review_of
         return run(lambda: gateway.post("/api/v1/jobs", body))
 
     def compact_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -213,10 +222,13 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         mode: str | None = None,
         caller: Annotated[str | None, _CALLER] = None,
         exclude_pools: Annotated[list[str] | None, _ADVICE_EXCLUDE_POOLS] = None,
+        review_of: Annotated[str | None, _REVIEW_OF] = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
         if exclude_pools is not None:
             params["exclude_pools"] = exclude_pools
+        if review_of is not None:
+            params["review_of"] = review_of
         return run(lambda: gateway.get("/api/v1/advice", **params))
 
     @server.tool(description=_STATUS_DESCRIPTION, structured_output=False)

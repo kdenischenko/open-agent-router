@@ -67,34 +67,61 @@ class FakeAdapter:
 
 
 def config_text(
-    root: Path, *, confirm: bool = False, max_queued: int = 200, classifier_kind: str = "none"
+    root: Path,
+    *,
+    confirm: bool = False,
+    max_queued: int = 200,
+    classifier_kind: str = "none",
+    two_routes: bool = False,
 ) -> str:
-    return "\n".join(
-        [
-            "[tasks]",
-            f"allowed_roots = ['{root.as_posix()}']",
-            "max_parallel = 2",
-            f"max_queued = {max_queued}",
-            "max_attempts = 1",
-            "",
-            "[callers]",
-            'agent-a = "pool-a"',
-            "",
-            "[backends.fake]",
-            f"executable = '{Path(sys.executable).as_posix()}'",
-            "",
-            "[classifier]",
-            f'kind = "{classifier_kind}"',
-            "",
+    lines = [
+        "[tasks]",
+        f"allowed_roots = ['{root.as_posix()}']",
+        "max_parallel = 2",
+        f"max_queued = {max_queued}",
+        "max_attempts = 1",
+        "",
+        "[callers]",
+        'agent-a = "pool-a"',
+        "",
+        "[backends.fake]",
+        f"executable = '{Path(sys.executable).as_posix()}'",
+        "",
+        "[classifier]",
+        f'kind = "{classifier_kind}"',
+        "",
+        "[[pools]]",
+        'id = "pool-a"',
+        'title = "pool-a"',
+        'unit = "percent"',
+        "  [[pools.windows]]",
+        '  id = "5h"',
+        '  duration = "5h"',
+        '  kind = "rolling"',
+        '  role = "guard"',
+        "  [[pools.windows]]",
+        '  id = "week"',
+        '  duration = "7d"',
+        '  kind = "fixed"',
+        '  role = "pace"',
+        "",
+        "[[routes]]",
+        'id = "fake/main"',
+        'pool = "pool-a"',
+        'backend = "fake"',
+        'model = "model-x"',
+        'tiers = ["cheap", "standard", "strong"]',
+        "quality = 4",
+        'modes = ["read", "write"]',
+        f"confirm = {'true' if confirm else 'false'}",
+        "",
+    ]
+    if two_routes:
+        lines += [
             "[[pools]]",
-            'id = "pool-a"',
-            'title = "pool-a"',
+            'id = "pool-b"',
+            'title = "pool-b"',
             'unit = "percent"',
-            "  [[pools.windows]]",
-            '  id = "5h"',
-            '  duration = "5h"',
-            '  kind = "rolling"',
-            '  role = "guard"',
             "  [[pools.windows]]",
             '  id = "week"',
             '  duration = "7d"',
@@ -102,17 +129,17 @@ def config_text(
             '  role = "pace"',
             "",
             "[[routes]]",
-            'id = "fake/main"',
-            'pool = "pool-a"',
+            'id = "fake/second"',
+            'pool = "pool-b"',
             'backend = "fake"',
-            'model = "model-x"',
+            'model = "model-y"',
             'tiers = ["cheap", "standard", "strong"]',
-            "quality = 4",
+            "quality = 3",
             'modes = ["read", "write"]',
             f"confirm = {'true' if confirm else 'false'}",
             "",
         ]
-    )
+    return "\n".join(lines)
 
 
 class Rig:
@@ -400,6 +427,125 @@ def test_advice_rejects_unknown_excluded_pool(api, rig) -> None:
     assert response.json()["error"] == {
         "code": "bad_request",
         "message": "unknown pool: missing",
+    }
+
+
+# --- review_of: a review stays off the model that wrote the code -------------------------
+
+
+@requires_git
+def test_review_of_is_accepted_and_stored(api, rig) -> None:
+    author = run_job(api, rig)["id"]
+
+    review = post(api, rig, kind="review", review_of=author)
+
+    job = rig.jobs.get(review)
+    assert job is not None
+    assert job.request.kind == "review"
+    assert job.request.review_of == author
+
+
+@pytest.mark.parametrize("fields", [{"review_of": "j_x"}, {"kind": "code", "review_of": "j_x"}])
+def test_review_of_requires_review_kind(api, rig, fields) -> None:
+    response = api.post("/api/v1/jobs", json=rig.body(**fields), headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "bad_review_of",
+        "message": "review_of requires kind=review",
+    }
+
+
+@requires_git
+def test_review_of_rejects_unknown_job(api, rig) -> None:
+    body = rig.body(kind="review", review_of="j_missing")
+    response = api.post("/api/v1/jobs", json=body, headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "bad_review_of",
+        "message": "unknown job: j_missing",
+    }
+
+
+@pytest.mark.parametrize("review_of", [7, ""])
+def test_review_of_rejects_invalid_values(api, rig, review_of) -> None:
+    body = rig.body(kind="review", review_of=review_of)
+    response = api.post("/api/v1/jobs", json=body, headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "bad_request"
+    assert "review_of" in response.json()["error"]["message"]
+
+
+@requires_git
+def test_review_runs_on_another_route(make_rig) -> None:
+    rig = make_rig(two_routes=True)
+    with TestClient(rig.app, base_url=BASE_URL) as client:
+        author = post(client, rig, route="fake/main")
+        rig.drive(author)
+
+        review = run_job(client, rig, kind="review", review_of=author)
+
+        assert review["status"] == "completed"
+        assert review["route"] == "fake/second"
+        [attempt] = review["attempts"]
+        assert attempt["route"] == "fake/second"
+        stored = rig.jobs.attempts(review["id"])[0]
+        assert stored.decision is not None
+        assert {"route": "fake/main", "reason": "author of reviewed job"} in (
+            stored.decision["excluded"]
+        )
+
+
+@requires_git
+def test_review_falls_back_to_author_route_with_note(api, rig) -> None:
+    author = run_job(api, rig)["id"]
+
+    review = run_job(api, rig, kind="review", review_of=author)
+
+    assert review["status"] == "completed"
+    assert review["route"] == "fake/main"
+    assert "review runs on the author's model: nothing else was eligible" in review["reason"]
+
+
+@requires_git
+def test_advice_excludes_author_route_of_the_reviewed_job(make_rig) -> None:
+    rig = make_rig(two_routes=True)
+    with TestClient(rig.app, base_url=BASE_URL) as api:
+        author = post(api, rig, route="fake/main")
+        rig.drive(author)
+
+        response = api.get("/api/v1/advice", params={"review_of": author}, headers=cl(rig))
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["note"] is None
+        assert [(item["route"], item["reason"]) for item in body["excluded"]] == [
+            ("fake/main", "author of reviewed job")
+        ]
+        assert [item["route"] for item in body["chosen"]] == ["fake/second"]
+
+
+@requires_git
+def test_advice_review_fallback_notes_the_author_model(api, rig) -> None:
+    author = run_job(api, rig)["id"]
+
+    response = api.get("/api/v1/advice", params={"review_of": author}, headers=cl(rig))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["note"] == "review runs on the author's model: nothing else was eligible"
+    assert [item["route"] for item in body["chosen"]] == ["fake/main"]
+
+
+def test_advice_rejects_unknown_review_of(api, rig) -> None:
+    response = api.get("/api/v1/advice", params={"review_of": "j_missing"}, headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "bad_request",
+        "message": "unknown job: j_missing",
     }
 
 
