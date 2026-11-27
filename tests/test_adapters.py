@@ -16,6 +16,7 @@ from agent_router.adapters import (
     looks_like_limit,
     with_preamble,
 )
+from agent_router.adapters.base import settle
 from agent_router.adapters.kimi import KimiAdapter
 from agent_router.registry import HARNESS_GROUP, load_harness
 from agent_router.runner import ResolvedExecutable, check_shim_args
@@ -506,6 +507,17 @@ def test_opencode_model_unavailable_match_is_case_insensitive() -> None:
 def test_opencode_other_errors_are_not_model_unavailable(stdout: str, stderr: str) -> None:
     outcome = opencode.parse(stdout + ("\n" if stdout else ""), stderr, 1)
     assert outcome.status == "error" and not outcome.model_unavailable
+
+
+def test_settle_limit_does_not_report_model_unavailable() -> None:
+    outcome = settle(
+        exit_code=1,
+        text="",
+        service=["provider.no-route: Model unavailable: fake/model-x", "usage limit reached"],
+        stderr="",
+        model_unavailable_hint=True,
+    )
+    assert outcome.status == "limit" and not outcome.model_unavailable
 
 
 def test_opencode_limit_is_not_model_unavailable() -> None:

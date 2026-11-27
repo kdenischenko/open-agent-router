@@ -98,7 +98,8 @@ prints `provider.no-route: Model unavailable: <provider>/<model>`; the outcome c
 `tasks.model_unavailable_cooldown_s` (default 1800 s). The exclusion is per route, held in
 memory by the dispatcher (a restart clears it); the pool and its other routes are not affected,
 and the failure is otherwise an ordinary `error` outcome — a gateway-chosen job is retried on
-the next route, a pinned one fails. The policy and `advice` show
+the next route, a pinned one fails. A report printed before the harness hangs is honored when
+the attempt times out, while the attempt remains a `timeout`. The policy and `advice` show
 `harness unavailable: model unavailable, retry after <local time>` until the cooldown ends.
 
 Limit detection is adapter-side (error patterns and reset times parsed from CLI output). The
@@ -205,6 +206,10 @@ adds a warning instead of a failure reason. A non-synthetic assistant message me
 process and reports `malformed_response`. The source never reads the Claude Code credentials
 and never passes a token; the CLI uses the user's own `claude auth login`. The CLI path is
 `claude` from `PATH` unless the pool sets `[pools.usage] executable`.
+On `malformed_response`, both sources log a warning containing only the answer's redacted shape:
+raw byte length, JSON key names, value types, string and list lengths, and allowlisted event type
+names. Other strings and all numbers and ids are omitted; unparseable, empty or truncated output
+logs only its byte length and parse failure.
 
 **The usage reader** builds one source instance per pool with `usage.source` and reads it on a
 schedule and on demand. In auto mode a background thread (`usage-reader`) calls
@@ -404,6 +409,11 @@ under `/api/` the limit is room for the longest accepted prompt (`tasks.max_prom
 the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64 KiB. A declared
 `Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
 both answer `413` with the code `body_too_large`.
+
+Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
+rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,
+`bad_caller` and the other field codes. `GET /advice` reports invalid query values — an unknown
+tier, mode or pool — as `bad_request`.
 
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no

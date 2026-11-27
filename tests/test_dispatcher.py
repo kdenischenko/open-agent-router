@@ -3872,6 +3872,32 @@ def test_model_unavailable_excludes_route_until_cooldown(make_rig) -> None:
 
 
 @requires_git
+def test_model_unavailable_before_timeout_excludes_route_until_cooldown(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES, model_unavailable_cooldown_s=600)
+    rig.runner.add(Step("nomodel", exit_code=None, timed_out=True))
+    job = rig.submit(rig.plain(), route="a/main")
+    rig.tick(2)
+    until = rig.clock.now() + timedelta(seconds=600)
+
+    (attempt,) = rig.attempts(job)
+    assert attempt.outcome == "timeout"
+    assert attempt.result is not None and attempt.result.model_unavailable
+    marked = views_of(rig)["a/main"]
+    assert not marked.available
+    assert marked.unavailable_reason == (
+        f"model unavailable, retry after {format_local(until, rig.dispatcher.tz)}"
+    )
+    assert views_of(rig)["b/main"].available
+
+    free = rig.submit(rig.plain())
+    rig.tick(3)
+    assert rig.job(free).route == "b/main"
+
+    rig.clock.advance(timedelta(seconds=601))
+    assert views_of(rig)["a/main"].available
+
+
+@requires_git
 def test_model_unavailable_retries_on_next_route(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("nomodel", exit_code=2))

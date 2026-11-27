@@ -221,6 +221,75 @@ def test_malformed_body_reports_reason(payload: bytes) -> None:
     assert build(responding(payload)).read().reason == "malformed_response"
 
 
+def test_malformed_body_logs_only_its_redacted_shape(caplog: pytest.LogCaptureFixture) -> None:
+    secret_text = "answer-text-sentinel-731945"
+    secret_id = "answer-id-sentinel-685217"
+    secret_number = 918273645
+    payload = json.dumps(
+        {
+            "usage": {
+                "monthly": {
+                    "percent": secret_number,
+                    "request_id": secret_id,
+                    "note": secret_text,
+                    "history": [secret_text, {"token": secret_id}],
+                }
+            },
+            "type": "unrecognized-event-sentinel-564738",
+        }
+    ).encode()
+
+    with caplog.at_level(logging.WARNING):
+        read = build(responding(payload)).read()
+
+    assert read.reason == "malformed_response"
+    record = caplog.records[-1]
+    assert record.levelno == logging.WARNING
+    message = record.getMessage()
+    assert "opencode-go" in message
+    assert f"bytes={len(payload)}" in message
+    assert json.loads(message.split(" shape=", 1)[1]) == {
+        "type": {"string_length": 34},
+        "usage": {
+            "monthly": {
+                "percent": "number",
+                "request_id": {"string_length": len(secret_id)},
+                "note": {"string_length": len(secret_text)},
+                "history": {
+                    "list_length": 2,
+                    "items": [
+                        {"string_length": len(secret_text)},
+                        {"token": {"string_length": len(secret_id)}},
+                    ],
+                },
+            }
+        },
+    }
+    for secret in (
+        secret_text,
+        secret_id,
+        str(secret_number),
+        "unrecognized-event-sentinel-564738",
+    ):
+        assert secret not in caplog.text
+
+
+@pytest.mark.parametrize("payload", [b"", b"not-json-sentinel-476385", b'{"usage":'])
+def test_unparseable_body_logs_only_byte_length_and_parse_failure(
+    payload: bytes, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        read = build(responding(payload)).read()
+
+    assert read.reason == "malformed_response"
+    message = caplog.records[-1].getMessage()
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert f"bytes={len(payload)}" in message
+    assert "parsed=false" in message
+    assert "shape=" not in message
+    assert "not-json-sentinel-476385" not in caplog.text
+
+
 @pytest.mark.parametrize("env", [{}, {"OPENCODE_GO_API_KEY": ""}])
 def test_missing_or_empty_key_needs_no_request(env: dict[str, str]) -> None:
     seen: list[httpx.Request] = []

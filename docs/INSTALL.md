@@ -246,9 +246,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    When a harness reports the route's model as unavailable (OpenCode prints
    `provider.no-route: Model unavailable: <provider>/<model>`), that route alone is taken out of
    rotation for `tasks.model_unavailable_cooldown_s` (default 1800 s); the other routes of the
-   same pool keep serving. Until the cooldown ends, `advice` and the dashboard show the route as
-   excluded with `model unavailable, retry after <local time>`, and a route the caller pinned
-   still runs.
+   same pool keep serving. The report still excludes the route if the harness then hangs until
+   a timeout; the attempt remains a `timeout`. Until the cooldown ends, `advice` and the dashboard
+   show the route as excluded with `model unavailable, retry after <local time>`, and a route the
+   caller pinned still runs.
 
    Kimi Code is silent while it writes a long answer or waits for a subagent, so for kimi jobs
    the CPU time of the harness process tree and the files changed in the working directory count

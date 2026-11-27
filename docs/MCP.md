@@ -15,13 +15,22 @@ The server exposes exactly these 8 tools:
 | Tool | Purpose |
 |---|---|
 | `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route, excluded pools and timeout |
-| `wait_job` | Wait up to 100 seconds for a job, returns its current state |
-| `job_result` | Get the full result text of a finished job |
+| `wait_job` | Wait up to 100 seconds for a job and return a compact result; `verbose=true` returns the full job record |
+| `job_result` | Get a compact job result without waiting; `verbose=true` returns the full job record |
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
 | `cancel_job` | Cancel a queued or running job |
 | `rate_job` | Rate a result: `good`, `bad` or `partial`, with an optional tier hint; returns only `id`, `status` and `rating` |
 | `advice` | Ask which route a tier, mode or caller would take, optionally excluding pools |
 | `status` | Gateway snapshot: pool limits, spend and blocks (job state is in `list_jobs`) |
+
+## Compact job results
+
+By default, `wait_job` and `job_result` return only `id`, `status`, `route`, `text`,
+`changed_files` and `error`; the full `log_tail` and other diagnostic fields are left out. For a
+job whose status is `failed`, the compact result also includes the last 20 lines of `log_tail`.
+
+Pass `verbose=true` to either tool to return the complete gateway job record, including the
+full `log_tail`, attempts and timestamps.
 
 ## Job modes and tiers
 
