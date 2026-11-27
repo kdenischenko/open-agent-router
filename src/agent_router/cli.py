@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -529,6 +530,21 @@ def _harness_version(exe: ResolvedExecutable) -> str | None:
     )
 
 
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    match = re.search(r"\d+(?:\.\d+)+", text)
+    return tuple(int(part) for part in match.group().split(".")) if match else None
+
+
+def _older_than(version: str | None, minimum: str | None) -> str | None:
+    """The found version as text when it is below `minimum`; unknown versions are not reported."""
+    if version is None or minimum is None:
+        return None
+    found, needed = _version_tuple(version), _version_tuple(minimum)
+    if found is None or needed is None or found >= needed:
+        return None
+    return ".".join(map(str, found))
+
+
 def _doctor_backends(config: Config) -> None:
     typer.echo("Harness | Found | Launch | Version | Enabled routes")
     configured = harnesses(config)
@@ -539,17 +555,25 @@ def _doctor_backends(config: Config) -> None:
         exe = resolve_backend(section, spec, resolve_executable)
         label = name if section.harness == name else f"{name} ({section.harness})"
         routes = [route.id for route in config.routes if route.enabled and route.backend == name]
+        outdated = None
         if exe.path is None:
             launch = "—"
             version = "—"
         else:
             kind = "shim" if exe.is_shim else "executable"
             launch = f"{exe.path} ({kind})"
-            version = _harness_version(exe) or "failed to detect"
+            detected = _harness_version(exe)
+            version = detected or "failed to detect"
+            outdated = _older_than(detected, spec.min_version)
         typer.echo(
             f"{label} | {'yes' if exe.path is not None else 'no'} | {launch} | "
             f"{version} | {', '.join(routes) or '—'}"
         )
+        if outdated is not None:
+            typer.echo(
+                f"Warning: harness {name} {outdated} is older than {spec.min_version}, "
+                f"which jobs need: update it or set [backends.{name}] executable"
+            )
         if exe.path is None:
             for route in routes:
                 typer.echo(f"Warning: route {route} is enabled, but harness {name} not found")

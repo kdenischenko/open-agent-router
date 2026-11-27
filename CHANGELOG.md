@@ -8,6 +8,9 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Dashboard and API responses (including rejected-host and body-limit errors) carry security
+  headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; static assets keep normal caching.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
@@ -41,9 +44,13 @@ All notable changes are documented here. The format follows
   `--keep N` prunes older timestamp-named backups in the target directory after a
   successful backup, keeping the newest N and leaving unrelated files alone.
   Restore steps and scheduled-backup examples are in `docs/INSTALL.md`.
+- `agent-router run --kind` and the MCP `submit_job` tool set the job kind (`code`, `review`,
+  `research` or `other`); `--review-of` and `review_of` set `review`.
 
 ### Changed
 
+- Job errors name a Windows NTSTATUS exit code, e.g. `exit code 3221226505 (0xC0000409
+  STATUS_STACK_BUFFER_OVERRUN)`; unknown codes in the NTSTATUS range show their hex value.
 - The README now says that a window far behind its pace makes its pool take every job it can
   serve until it catches up, and that `priority` and `weight` in the config change the order.
 - The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
@@ -59,6 +66,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `doctor` warns when OpenCode is older than 2.2.6: its `opencode run` rejects `--archived`, so
+  every job on its routes failed with `executor_error` without an earlier hint.
 - The job page attempt timeline formats each attempt's duration with units, like the job total
   duration, and shows a dash instead of an empty cell when an attempt has no cost.
 - Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.

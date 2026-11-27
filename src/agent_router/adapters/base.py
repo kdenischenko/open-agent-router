@@ -16,6 +16,26 @@ MAX_ARG_CHARS = 20_000
 ERROR_MAX_CHARS = 500
 EMPTY_OUTPUT = "empty output"
 
+# Windows NTSTATUS codes surfaced as process exit codes when a harness crashes.
+NTSTATUS_NAMES = {
+    0xC0000005: "STATUS_ACCESS_VIOLATION",
+    0xC00000FD: "STATUS_STACK_OVERFLOW",
+    0xC0000135: "STATUS_DLL_NOT_FOUND",
+    0xC0000142: "STATUS_DLL_INIT_FAILED",
+    0xC000013A: "STATUS_CONTROL_C_EXIT",
+    0xC0000409: "STATUS_STACK_BUFFER_OVERRUN",
+}
+NTSTATUS_MIN = 0xC0000000
+
+
+def _format_exit_code(exit_code: int) -> str:
+    if NTSTATUS_MIN <= exit_code <= 0xFFFFFFFF:
+        name = NTSTATUS_NAMES.get(exit_code)
+        suffix = f" {name}" if name else ""
+        return f"exit code {exit_code} (0x{exit_code:08X}{suffix})"
+    return f"exit code {exit_code}"
+
+
 _RULES = (
     "- Work only inside the current working directory.",
     "- Do not run `git commit`, `git push`, or any command that rewrites git history.",
@@ -187,7 +207,7 @@ def settle(
     else:
         message = _last_line(stderr) or _last_line("\n".join(service))
         if not message:
-            message = "process did not exit" if exit_code is None else f"exit code {exit_code}"
+            message = "process did not exit" if exit_code is None else _format_exit_code(exit_code)
     if limit_hint or looks_like_limit(notes):
         return RunOutcome(
             "limit",

@@ -374,7 +374,8 @@ Adapters (`adapters/`) build argv/stdin and parse output:
   `usage` (including cache tokens) and `total_cost_usd`; spend source `journal`.
 - **opencode** — `opencode run --format json --archived --standalone --model <m>`, prompt via
   stdin; read maps to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens
-  and cost; spend source `counter`.
+  and cost; spend source `counter`. `--archived` first shipped in OpenCode 2.2.6, the harness's
+  `min_version`: `doctor` warns about an older CLI, which rejects every job.
 - **cline** — `cline --json -P <provider> -m <model> [--plan | --auto-approve true] -- <prompt>`;
   read maps to `--plan`, write to `--auto-approve`; the `run_result` event carries tokens and
   cost; spend source `journal`.
@@ -417,6 +418,12 @@ under `/api/` the limit is room for the longest accepted prompt (`tasks.max_prom
 the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64 KiB. A declared
 `Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
 both answer `413` with the code `body_too_large`.
+
+Every response carries security headers — `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` —
+set by the outermost middleware, so the 400 and 413 responses of the Host and body-limit checks
+carry them too. A static file that is actually served keeps its normal caching and gets only the
+other three; errors under `/static/` are marked `no-store` like any other response.
 
 Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
 rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,
