@@ -81,6 +81,10 @@ _EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, that must not run the job; routes of these pools "
     "are excluded from the choice"
 )
+_ADVICE_EXCLUDE_POOLS = Field(
+    description="Pool ids, e.g. claude-pro, excluded from the recommendation; their routes "
+    "show as excluded by request"
+)
 _LIST_VERBOSE = Field(description="Return full job records instead of compact jobs")
 
 
@@ -185,7 +189,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         tier: str = "standard",
         mode: str | None = None,
         caller: Annotated[str | None, _CALLER] = None,
-        exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
+        exclude_pools: Annotated[list[str] | None, _ADVICE_EXCLUDE_POOLS] = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
         if exclude_pools is not None:
