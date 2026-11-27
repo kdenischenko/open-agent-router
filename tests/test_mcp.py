@@ -126,6 +126,8 @@ def test_submit_job_parameters_say_what_to_pass() -> None:
     assert "pool" in advice_pools
     assert "recommendation" in advice_pools
     assert "job" not in advice_pools
+    assert "review" in submit["review_of"]["description"]
+    assert "review" in tools["advice"].input_schema["properties"]["review_of"]["description"]
 
 
 def test_submit_job_posts_the_job() -> None:
@@ -188,6 +190,37 @@ def test_submit_job_omits_exclude_pools_when_not_given() -> None:
     _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
 
     assert "exclude_pools" not in gateway.calls[0][2]
+
+
+def test_submit_job_sends_review_of_as_a_review() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "review_of": "j_1"})
+
+    method, path, body = gateway.calls[0]
+    assert (method, path) == ("POST", "/api/v1/jobs")
+    assert body["review_of"] == "j_1"
+    assert body["kind"] == "review"
+
+
+def test_submit_job_omits_review_of_when_not_given() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo"})
+
+    body = gateway.calls[0][2]
+    assert "review_of" not in body
+    assert "kind" not in body
+
+
+def test_advice_sends_review_of() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "advice", {"review_of": "j_1"})
+
+    method, path, params = gateway.calls[0]
+    assert (method, path) == ("GET", "/api/v1/advice")
+    assert params["review_of"] == "j_1"
 
 
 def test_advice_sends_exclude_pools() -> None:

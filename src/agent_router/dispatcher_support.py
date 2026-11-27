@@ -70,6 +70,13 @@ _METRIC_FIELDS = (
 )
 
 
+def reason_with_note(choice: Choice, decision: Decision) -> str:
+    """The choice reason with the decision's note appended, e.g. a review fallback."""
+    if decision.note is None:
+        return choice.reason
+    return f"{choice.reason}; {decision.note}"
+
+
 def decision_snapshot(job: Job, decision: Decision, at: datetime) -> dict:
     """Route choice snapshot for an attempt: candidates with metrics and the excluded ones."""
 
@@ -96,4 +103,5 @@ def decision_snapshot(job: Job, decision: Decision, at: datetime) -> dict:
         "chosen": None if chosen is None else entry(chosen),
         "candidates": [entry(choice) for choice in decision.chosen],
         "excluded": [{"route": item.route.id, "reason": item.reason} for item in decision.excluded],
+        "note": decision.note,
     }

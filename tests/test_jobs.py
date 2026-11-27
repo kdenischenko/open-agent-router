@@ -417,6 +417,13 @@ def test_tier_kind_mode(config: Config, root: Path) -> None:
         assert validate_request(JobRequest("job", root, kind=kind, tier="strong"), cfg) is None
 
 
+def test_review_of_requires_review_kind(config: Config, root: Path) -> None:
+    cfg = with_roots(config, [root])
+    for kind in (None, "code", "research", "other"):
+        assert rejected(JobRequest("job", root, kind=kind, review_of="j_1"), cfg) == "bad_review_of"
+    assert validate_request(JobRequest("job", root, kind="review", review_of="j_1"), cfg) is None
+
+
 @pytest.mark.parametrize("timeout", [29, 7201, 0, -5, True, 60.5])
 def test_bad_timeout(config: Config, root: Path, timeout: object) -> None:
     cfg = with_roots(config, [root])

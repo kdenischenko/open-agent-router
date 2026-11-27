@@ -255,11 +255,11 @@ option.
 | `serve` | Run the gateway on `127.0.0.1` (`--port` overrides `server.port`) |
 | `mcp` | Run an MCP server over stdio for orchestrator agents |
 | `status` | Show pool usage, expected pace and window resets in local time |
-| `advice` | Show matching routes for a tier (and `--mode read` or `write`) and why the others are excluded; repeatable `--exclude-pool POOL` omits pools |
+| `advice` | Show matching routes for a tier (and `--mode read` or `write`) and why the others are excluded; repeatable `--exclude-pool POOL` omits pools, `--review-of JOB_ID` shows the choice for a review of that job |
 | `calibrate POOL WINDOW PERCENT` | Record the usage your subscription shows; `--resets-at` or `--resets-in 10d` sets the reset of a fixed window, a rolling window takes none (admin token) |
 | `usage refresh [POOL]` | Read the usage sources now and record what they report; without a pool every pool with a source outside `manual` mode is read, and a pool read within the last 60 s is skipped (admin token) |
 | `unblock POOL` | Remove a pool block set after a limit hit (admin token) |
-| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools |
+| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, `--review-of JOB` submits a review kept off the model and pool that wrote the code |
 | `wait JOB_ID` | Wait for a job and print its result; retries for up to 10 s while the gateway restarts |
 | `result JOB_ID` | Print the status and result of a job without waiting |
 | `rate JOB_ID good\|bad\|partial` | Rate a finished job; the last rating wins, a `--note` is stored as hash and length only |

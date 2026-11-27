@@ -32,6 +32,7 @@ from agent_router.dispatcher_support import (
     _tail,
     _writer_key,
     decision_snapshot,
+    reason_with_note,
 )
 from agent_router.events import EventBus
 from agent_router.jobs import (
@@ -73,7 +74,7 @@ from agent_router.runner import (
     process_started,
     resolve_executable,
 )
-from agent_router.service import SnapshotCache, build_snapshot, route_views
+from agent_router.service import SnapshotCache, build_snapshot, review_targets, route_views
 from agent_router.spend import SpendEntry, entry_for_attempt, estimate_attempt_cost
 from agent_router.store import Store
 
@@ -303,6 +304,8 @@ class Dispatcher(RecoveryMixin):
     def submit(self, req: JobRequest) -> Job:
         # filesystem and git checks run outside the lock
         checked = validate_request_directory(req, self.config)
+        if req.review_of is not None and self.jobs.get(req.review_of) is None:
+            raise RequestRejected("bad_review_of", f"unknown job: {req.review_of}")
         tier = req.tier or "standard"
         pending = (
             self.config.classifier.mode == "active"
@@ -557,7 +560,7 @@ class Dispatcher(RecoveryMixin):
         route = choice.route
         if route.confirm and job.approved_route != route.id:
             job.route = route.id
-            job.reason = choice.reason
+            job.reason = reason_with_note(choice, decision)
             job.approval_route = route.id
             job.approval_deadline = self.clock.now() + timedelta(
                 seconds=self.config.tasks.approval_timeout_s
@@ -575,8 +578,17 @@ class Dispatcher(RecoveryMixin):
             decision,
         )
 
+    def _review_targets(self, review_of: str | None) -> tuple[str | None, str | None]:
+        """Model group and pool of the reviewed job's route; nothing when it has not run yet."""
+        reviewed = None if review_of is None else self.jobs.get(review_of)
+        route_id = None if reviewed is None else reviewed.route
+        return review_targets(self.config, route_id)
+
     def _decide(self, job: Job, routes: list[RouteView], explicit: bool) -> Decision:
         caller = job.request.caller
+        # a pinned or approved route is not overridden by the review exclusion
+        review_of = job.request.review_of
+        model_group, pool = (None, None) if explicit else self._review_targets(review_of)
         request = RouteRequest(
             tier=job.tier,
             mode=job.request.mode,
@@ -586,6 +598,8 @@ class Dispatcher(RecoveryMixin):
             request_excluded_pools=job.request.excluded_pools,
             explicit=explicit,
             kind="harness",
+            reviewed_model_group=model_group,
+            reviewed_pool=pool,
         )
         return decide(request, self.snapshot(), routes)
 
@@ -676,7 +690,7 @@ class Dispatcher(RecoveryMixin):
     ) -> None:
         route = choice.route
         job.route = route.id
-        job.reason = choice.reason
+        job.reason = reason_with_note(choice, decision)
         job_dir = self.home / "jobs" / job.id
         prompt_file = job_dir / "prompt.md"
         text = with_preamble(job.request.prompt, job.request.mode)

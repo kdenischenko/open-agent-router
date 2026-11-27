@@ -339,6 +339,48 @@ def test_advice_omits_exclude_pools_without_the_option(
     assert "exclude_pools" not in gateway.params
 
 
+def test_advice_sends_review_of(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, config, tokens
+) -> None:
+    gateway = AdviceGateway()
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: gateway)
+
+    result = runner.invoke(cli.app, ["advice", "--review-of", "j_1"])
+
+    assert result.exit_code == 0
+    assert gateway.params["review_of"] == "j_1"
+
+
+def test_advice_omits_review_of_without_the_option(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, config, tokens
+) -> None:
+    gateway = AdviceGateway()
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: gateway)
+
+    result = runner.invoke(cli.app, ["advice"])
+
+    assert result.exit_code == 0
+    assert "review_of" not in gateway.params
+
+
+def test_advice_prints_the_decision_note(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, config, tokens
+) -> None:
+    class NotedGateway(AdviceGateway):
+        def get(self, path: str, **params) -> dict:
+            answer = super().get(path, **params)
+            answer["note"] = "review runs on the author's model: nothing else was eligible"
+            return answer
+
+    gateway = NotedGateway()
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: gateway)
+
+    result = runner.invoke(cli.app, ["advice"])
+
+    assert result.exit_code == 0
+    assert "Note: review runs on the author's model: nothing else was eligible" in result.output
+
+
 def test_unavailable_service_returns_five_with_clear_message(
     home: Path, config, tokens, runner: CliRunner
 ) -> None:

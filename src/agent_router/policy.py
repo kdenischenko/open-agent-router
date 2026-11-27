@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
 
 from agent_router.config import TIERS, Mode, Route, RouteKind, Tier
@@ -11,6 +11,8 @@ from agent_router.pacing import PoolStatus
 
 NO_DATA = "no data, calibrate"
 CALLER_POOL_REASON = "caller pool"
+REVIEW_AUTHOR_REASON = "author of reviewed job"
+REVIEW_FALLBACK_NOTE = "review runs on the author's model: nothing else was eligible"
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,9 @@ class RouteRequest:
     explicit: bool = False  # explicit route: reserve and caller pool do not apply
     kind: RouteKind = "harness"
     model_group: str | None = None
+    # a review never runs on the model group or pool that produced the reviewed code
+    reviewed_model_group: str | None = None
+    reviewed_pool: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,8 @@ class Decision:
     chosen: tuple[Choice, ...]
     excluded: tuple[Exclusion, ...]
     metrics: Mapping[str, RouteMetrics] = field(default_factory=dict, compare=False)
+    # set when an exclusion was dropped to keep the job runnable, e.g. REVIEW_FALLBACK_NOTE
+    note: str | None = field(default=None, compare=False)
 
 
 def _clock(moment: datetime, snapshot: Snapshot) -> str:
@@ -103,6 +110,14 @@ def _exclusion(request: RouteRequest, snapshot: Snapshot, view: RouteView) -> st
         return "route disabled"
     if not view.available:
         return f"harness unavailable: {view.unavailable_reason or 'reason unknown'}"
+    if not request.explicit and (
+        (
+            request.reviewed_model_group is not None
+            and route.model_group == request.reviewed_model_group
+        )
+        or (request.reviewed_pool is not None and route.pool == request.reviewed_pool)
+    ):
+        return REVIEW_AUTHOR_REASON
     if not request.explicit and request.tier not in route.tiers:
         return f"does not serve tier {request.tier}"
     if request.mode is not None and request.mode not in route.modes:
@@ -178,7 +193,25 @@ def _ordinal(rank: int) -> str:
 
 
 def decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteView]) -> Decision:
-    """Eligible routes in preference order and excluded ones; each carries its reason string."""
+    """Eligible routes in preference order and excluded ones; each carries its reason string.
+
+    A review exclusion that leaves nothing to choose is dropped and the choice runs again
+    without it; the decision then carries REVIEW_FALLBACK_NOTE. An empty retry keeps the
+    original decision, so the failure names the author exclusion.
+    """
+    decision = _decide(request, snapshot, routes)
+    if decision.chosen or request.explicit:
+        return decision
+    if request.reviewed_model_group is None and request.reviewed_pool is None:
+        return decision
+    relaxed = replace(request, reviewed_model_group=None, reviewed_pool=None)
+    retried = _decide(relaxed, snapshot, routes)
+    if not retried.chosen:
+        return decision
+    return replace(retried, note=REVIEW_FALLBACK_NOTE)
+
+
+def _decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteView]) -> Decision:
     groups: dict[str, list[tuple[tuple[int, int, float, int, str], RouteView, Choice]]] = {}
     metrics: dict[str, RouteMetrics] = {}
     excluded: list[Exclusion] = []

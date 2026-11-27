@@ -606,6 +606,25 @@ def test_run_omits_exclude_pools_without_the_option(
     assert "exclude_pools" not in gateway.calls[0][2]
 
 
+def test_run_sends_review_of_as_a_review_job(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--review-of", "j_1", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    method, path, body = gateway.calls[0]
+    assert (method, path) == ("POST", "/api/v1/jobs")
+    assert body["review_of"] == "j_1"
+    assert body["kind"] == "review"
+
+
+def test_run_omits_review_of_without_the_option(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    body = gateway.calls[0][2]
+    assert "review_of" not in body
+    assert "kind" not in body
+
+
 def test_result_reads_job_with_client_token(runner: CliRunner, gateway: FakeGateway) -> None:
     result = runner.invoke(cli.app, ["result", "job-1"])
 

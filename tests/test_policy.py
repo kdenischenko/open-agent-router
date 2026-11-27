@@ -249,6 +249,56 @@ def test_first_matching_check_gives_the_reason():
         assert reasons(decide(req, snap_now, [view])) == {"r": reason}
 
 
+def test_review_excludes_author_model_group_and_pool():
+    request = RouteRequest(tier="standard", reviewed_model_group="mk-a", reviewed_pool="pool-a")
+    decision = decide(
+        request,
+        snapshot(status("pool-a", 0.2), status("pool-b", 0.2)),
+        views(
+            route("r-author", "pool-a", model_key="mk-a"),
+            route("r-same-model", "pool-b", model_key="mk-a"),
+            route("r-same-pool", "pool-a", model_key="mk-b"),
+            route("r-other", "pool-b", model_key="mk-b"),
+        ),
+    )
+    assert reasons(decision) == {
+        "r-author": "author of reviewed job",
+        "r-same-model": "author of reviewed job",
+        "r-same-pool": "author of reviewed job",
+    }
+    assert ids(decision) == ["r-other"]
+    assert decision.note is None
+
+
+def test_review_exclusion_skipped_for_explicit_request():
+    request = RouteRequest(
+        tier="standard", explicit=True, reviewed_model_group="mk-a", reviewed_pool="pool-a"
+    )
+    snap = snapshot(status("pool-a", 0.2))
+    assert ids(decide(request, snap, views(route("r", "pool-a", model_key="mk-a")))) == ["r"]
+
+
+def test_review_falls_back_to_author_model_with_note():
+    request = RouteRequest(tier="standard", reviewed_model_group="mk-a", reviewed_pool="pool-a")
+    snap = snapshot(status("pool-a", 0.2))
+    decision = decide(request, snap, views(route("r-author", "pool-a", model_key="mk-a")))
+    assert ids(decision) == ["r-author"]
+    assert decision.note == "review runs on the author's model: nothing else was eligible"
+    assert reasons(decision) == {}
+
+
+def test_review_fallback_keeps_original_decision_when_retry_also_empty():
+    # the author's route does not serve the tier: dropping the author exclusion changes nothing
+    request = RouteRequest(tier="strong", reviewed_model_group="mk-a", reviewed_pool="pool-a")
+    snap = snapshot(status("pool-a", 0.2))
+    decision = decide(
+        request, snap, views(route("r-author", "pool-a", model_key="mk-a", tiers=("cheap",)))
+    )
+    assert decision.chosen == ()
+    assert decision.note is None
+    assert reasons(decision) == {"r-author": "author of reviewed job"}
+
+
 # --- chosen routes: order and reasons --------------------------------------------
 
 

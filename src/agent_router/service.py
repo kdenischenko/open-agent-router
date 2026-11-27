@@ -128,6 +128,15 @@ def route_views(
     return views
 
 
+def review_targets(config: Config, route_id: str | None) -> tuple[str | None, str | None]:
+    """Model group and pool that a review of a job on this route avoids; (None, None) when the
+    reviewed job has no route yet or the route is no longer configured."""
+    route = next((route for route in config.routes if route.id == route_id), None)
+    if route is None:
+        return None, None
+    return route.model_group, route.pool
+
+
 def advise(
     config: Config,
     snapshot: Snapshot,
@@ -136,18 +145,23 @@ def advise(
     mode: Mode | None = None,
     views: Sequence[RouteView] | None = None,
     exclude_pools: frozenset[str] = frozenset(),
+    reviewed_route: str | None = None,
 ) -> Decision:
     """Advice on where to send; without a mode, routes of either mode match.
 
-    The caller's pool comes from [callers].
+    The caller's pool comes from [callers]. `reviewed_route` is the route of the job being
+    reviewed: its model group and pool are excluded.
     """
     caller_pool = config.callers.get(caller) if caller else None
+    model_group, pool = review_targets(config, reviewed_route)
     request = RouteRequest(
         tier=tier,
         mode=mode,
         caller_pool=caller_pool,
         request_excluded_pools=exclude_pools,
         kind="harness",
+        reviewed_model_group=model_group,
+        reviewed_pool=pool,
     )
     return decide(request, snapshot, route_views(config) if views is None else views)
 
@@ -306,6 +320,7 @@ def decision_json(tier: Tier, decision: Decision, mode: Mode | None = None) -> d
         "mode": mode,
         "chosen": [item(entry) for entry in decision.chosen],
         "excluded": [item(entry) for entry in decision.excluded],
+        "note": decision.note,
     }
 
 
@@ -400,6 +415,7 @@ class Gateway:
         caller: str | None,
         mode: Mode | None = None,
         exclude_pools: frozenset[str] = frozenset(),
+        reviewed_route: str | None = None,
     ) -> Decision:
         return advise(
             self.config,
@@ -409,6 +425,7 @@ class Gateway:
             mode,
             self.views(),
             exclude_pools,
+            reviewed_route,
         )
 
     def pool(self, pool_id: str) -> Pool | None:

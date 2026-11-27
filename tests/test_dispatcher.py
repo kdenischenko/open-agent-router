@@ -236,6 +236,7 @@ def route(
     modes=("read", "write"),
     confirm: bool = False,
     backend: str = "fake",
+    model_key: str | None = None,
 ) -> dict:
     return {
         "id": id,
@@ -245,6 +246,7 @@ def route(
         "modes": list(modes),
         "confirm": confirm,
         "backend": backend,
+        "model_key": model_key,
     }
 
 
@@ -291,6 +293,10 @@ def config_text(root: Path, routes, tasks: dict) -> str:
             f'pool = "{item["pool"]}"',
             f'backend = "{item["backend"]}"',
             'model = "model-x"',
+        ]
+        if item.get("model_key") is not None:
+            lines.append(f'model_key = "{item["model_key"]}"')
+        lines += [
             f"tiers = {json.dumps(item['tiers'])}",
             f"quality = {item['quality']}",
             f"modes = {json.dumps(item['modes'])}",
@@ -1036,6 +1042,7 @@ def test_each_attempt_has_own_decision(make_rig) -> None:
             "chosen",
             "candidates",
             "excluded",
+            "note",
         }
         assert attempt.decision["tier"] == "standard"
         assert attempt.decision["tier_source"] == "default"
@@ -3707,6 +3714,131 @@ def test_request_excluded_pool_no_route_names_request_reason(make_rig) -> None:
     done = rig.job(job)
     assert (done.status, done.error_code) == ("failed", "no_route")
     assert "a/main: excluded by request" in (done.error_message or "")
+
+
+# --- review jobs: the author of the reviewed job is avoided -------------------------------
+
+REVIEW_ROUTES = (
+    route("a/main", "pool-a", 5, model_key="mk-author"),
+    route("b/twin", "pool-b", 4, model_key="mk-author"),
+    route("c/other", "pool-c", 3),
+)
+
+
+def reviewed(rig: Rig, route_id: str = "a/main") -> Job:
+    """A completed job on the given route: the author the review looks at."""
+    author = rig.submit(rig.plain(), route=route_id)
+    rig.tick(2)
+    assert rig.status(author) == "completed"
+    return author
+
+
+@requires_git
+def test_review_stays_off_the_author_model_group_and_pool(make_rig) -> None:
+    rig = make_rig(routes=REVIEW_ROUTES)
+    author = reviewed(rig)
+
+    review = rig.submit(rig.plain(), kind="review", review_of=author.id)
+    rig.tick(2)
+
+    done = rig.job(review)
+    assert (done.status, done.route) == ("completed", "c/other")
+    (attempt,) = rig.attempts(review)
+    assert attempt.decision is not None
+    excluded = {item["route"]: item["reason"] for item in attempt.decision["excluded"]}
+    assert excluded == {"a/main": "author of reviewed job", "b/twin": "author of reviewed job"}
+    assert attempt.decision["note"] is None
+
+
+@requires_git
+def test_review_of_requires_review_kind(make_rig) -> None:
+    rig = make_rig()
+    author = reviewed(rig)
+
+    for kind in (None, "code"):
+        with pytest.raises(RequestRejected) as caught:
+            rig.submit(rig.plain(), kind=kind, review_of=author.id)
+        assert caught.value.code == "bad_review_of"
+
+
+@requires_git
+def test_review_of_unknown_job_is_rejected(make_rig) -> None:
+    rig = make_rig()
+    with pytest.raises(RequestRejected) as caught:
+        rig.submit(rig.plain(), kind="review", review_of="j_missing")
+    assert caught.value.code == "bad_review_of"
+    assert caught.value.message == "unknown job: j_missing"
+
+
+@requires_git
+def test_review_with_pinned_route_is_not_overridden(make_rig) -> None:
+    rig = make_rig(routes=REVIEW_ROUTES)
+    author = reviewed(rig)
+
+    review = rig.submit(rig.plain(), kind="review", review_of=author.id, route="a/main")
+    rig.tick(2)
+
+    done = rig.job(review)
+    assert (done.status, done.route) == ("completed", "a/main")
+    assert done.reason == "route set by caller"
+
+
+@requires_git
+def test_review_runs_on_author_model_when_nothing_else_is_eligible(make_rig) -> None:
+    rig = make_rig(routes=(route("a/main", "pool-a", 5),))
+    author = reviewed(rig)
+
+    review = rig.submit(rig.plain(), kind="review", review_of=author.id)
+    rig.tick(2)
+
+    done = rig.job(review)
+    assert (done.status, done.route) == ("completed", "a/main")
+    note = "review runs on the author's model: nothing else was eligible"
+    assert done.reason is not None and done.reason.endswith(f"; {note}")
+    (attempt,) = rig.attempts(review)
+    assert attempt.decision is not None
+    assert attempt.decision["note"] == note
+    assert attempt.decision["excluded"] == []
+
+
+@requires_git
+def test_review_no_route_message_names_the_author_reason(make_rig) -> None:
+    # the author's route is the only one, and it does not serve the tier: no fallback
+    rig = make_rig(routes=(route("a/main", "pool-a", 5, tiers=("cheap",)),))
+    author = rig.submit(rig.plain(), tier="cheap", route="a/main")
+    rig.tick(2)
+    assert rig.status(author) == "completed"
+
+    review = rig.submit(rig.plain(), kind="review", review_of=author.id)
+    rig.tick()
+
+    done = rig.job(review)
+    assert (done.status, done.error_code) == ("failed", "no_route")
+    assert "a/main: author of reviewed job" in (done.error_message or "")
+
+
+@requires_git
+def test_review_of_a_queued_job_has_no_author_yet(make_rig) -> None:
+    rig = make_rig(routes=REVIEW_ROUTES)
+    queued = rig.submit(rig.plain())
+
+    review = rig.submit(rig.plain(), kind="review", review_of=queued.id)
+    rig.tick(2)
+
+    assert rig.status(review) == "completed"  # no route recorded yet: nothing is excluded
+
+
+@requires_git
+def test_review_of_survives_restart(make_rig) -> None:
+    rig = make_rig(routes=REVIEW_ROUTES)
+    author = reviewed(rig)
+    review = rig.submit(rig.plain(), kind="review", review_of=author.id)
+
+    rig.restart()
+    rig.tick(2)
+
+    done = rig.job(review)
+    assert (done.status, done.route) == ("completed", "c/other")
 
 
 @requires_git
