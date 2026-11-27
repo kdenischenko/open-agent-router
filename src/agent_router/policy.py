@@ -23,6 +23,7 @@ class RouteRequest:
     excluded_routes: frozenset[str] = frozenset()
     excluded_pools: frozenset[str] = frozenset()
     request_excluded_pools: frozenset[str] = frozenset()
+    preferred_routes: tuple[str, ...] = ()  # eligible preferred routes go first, in this order
     explicit: bool = False  # explicit route: reserve and caller pool do not apply
     kind: RouteKind = "harness"
     model_group: str | None = None
@@ -274,8 +275,12 @@ def _decide(request: RouteRequest, snapshot: Snapshot, routes: Sequence[RouteVie
         ordered_groups.append((members[0][0], model_group, members))
     ordered_groups.sort(key=lambda item: (item[0], item[1]))
     excluded.sort(key=lambda item: item.route.id)
+    chosen = tuple(choice for _, _, members in ordered_groups for _, _, choice in members)
+    if request.preferred_routes:
+        rank = {route_id: index for index, route_id in enumerate(request.preferred_routes)}
+        chosen = tuple(sorted(chosen, key=lambda choice: rank.get(choice.route.id, len(rank))))
     return Decision(
-        chosen=tuple(choice for _, _, members in ordered_groups for _, _, choice in members),
+        chosen=chosen,
         excluded=tuple(excluded),
         metrics=metrics,
     )

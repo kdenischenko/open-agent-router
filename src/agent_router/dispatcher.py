@@ -6,6 +6,7 @@ import concurrent.futures
 import contextlib
 import hashlib
 import logging
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -45,6 +46,7 @@ from agent_router.jobs import (
     Status,
     WrongState,
     can_transition,
+    directory_key,
     new_job_id,
     validate_request_directory,
 )
@@ -302,6 +304,18 @@ class Dispatcher(RecoveryMixin):
     # --- calls from request threads --------------------------------------------------
 
     def submit(self, req: JobRequest) -> Job:
+        return self.submit_tracked(req)[0]
+
+    def submit_tracked(self, req: JobRequest) -> tuple[Job, bool]:
+        """Submit a job; returns the job and whether it was created by this call.
+
+        A request_id makes the submit idempotent: a repeated request with the same prompt,
+        directory and mode returns the existing job instead of creating a second one.
+        """
+        existing = self._request_replay(req)
+        if existing is not None:
+            # fast path: the insert below would fail on the same UNIQUE index anyway
+            return self._replayed(existing, req), False
         # filesystem and git checks run outside the lock
         checked = validate_request_directory(req, self.config)
         if req.review_of is not None and self.jobs.get(req.review_of) is None:
@@ -327,14 +341,40 @@ class Dispatcher(RecoveryMixin):
         with self._lock:
             if self.jobs.count_waiting() >= self.config.tasks.max_queued:
                 raise RequestRejected("queue_full", "queue is full, try again later")
-            self.jobs.create(job)
+            try:
+                self.jobs.create(job)
+            except sqlite3.IntegrityError:
+                # the constraint is the source of truth: a twin won the race to the insert
+                existing = self._request_replay(req)
+                if existing is None:
+                    raise
+                return self._replayed(existing, req), False
             self._checked_cwds[job.id] = checked.cwd
             self._announce(job, None)
             if self.classify_executor is not None and not self._stopped:
                 # a classifier queue failure must not reject the job
                 with contextlib.suppress(Exception):
                     self.classify_executor.submit(job.id, req.prompt, job.created_at)
-        return job
+        return job, True
+
+    def _request_replay(self, req: JobRequest) -> Job | None:
+        """The job stored with this request's idempotency key; None when there is none."""
+        if req.request_id is None:
+            return None
+        return self.jobs.by_request_id(req.caller or "", req.request_id)
+
+    def _replayed(self, existing: Job, req: JobRequest) -> Job:
+        """The existing job, or request_id_conflict when the same key names a different job."""
+        same = (
+            existing.request.mode == req.mode
+            and existing.prompt_sha256 == hashlib.sha256(req.prompt.encode("utf-8")).hexdigest()
+            and directory_key(existing.request.cwd) == directory_key(req.cwd)
+        )
+        if not same:
+            raise RequestRejected(
+                "request_id_conflict", "request_id is already used for a different job"
+            )
+        return existing
 
     def cancel(self, job_id: str) -> Job:
         with self._lock:
@@ -596,6 +636,7 @@ class Dispatcher(RecoveryMixin):
             excluded_routes=job.excluded_routes,
             excluded_pools=job.excluded_pools,
             request_excluded_pools=job.request.excluded_pools,
+            preferred_routes=job.request.preferred_routes,
             explicit=explicit,
             kind="harness",
             reviewed_model_group=model_group,
@@ -628,6 +669,15 @@ class Dispatcher(RecoveryMixin):
         return (decision.chosen[0] if decision.chosen else None), decision
 
     def _no_route(self, job: Job, decision: Decision) -> None:
+        attempts = self.jobs.attempts(job.id)
+        last = attempts[-1].result if attempts else None
+        if last is not None and last.content_rejected:
+            # the last attempt was refused on content and the exclusion left no route:
+            # report the rejection, not a route shortage
+            self._fail(
+                job, "content_rejected", last.error or "provider rejected the request content"
+            )
+            return
         if job.had_refusal:
             job.error_code = None
             job.error_message = "no matching routes left"
@@ -935,7 +985,11 @@ class Dispatcher(RecoveryMixin):
                 pass
             else:
                 tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
-                result = replace(result, model_unavailable=parsed.model_unavailable)
+                result = replace(
+                    result,
+                    model_unavailable=parsed.model_unavailable,
+                    content_rejected=parsed.content_rejected,
+                )
         else:
             parsed = adapter.parse(stdout, stderr, done.exit_code)
             tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
@@ -951,6 +1005,7 @@ class Dispatcher(RecoveryMixin):
                 limit_reset_at=parsed.limit_reset_at,
                 survived=done.survived,
                 model_unavailable=parsed.model_unavailable,
+                content_rejected=parsed.content_rejected,
             )
         return result, done.duration_s, tail, tokens
 
@@ -1089,6 +1144,8 @@ class Dispatcher(RecoveryMixin):
             self._move(job, "queued")  # next attempt runs in a different pool
         elif result.outcome == "timeout":
             self._emergency(job, "timeout", result.error or "timeout", changed)
+        elif result.content_rejected and not changed and not result.survived:
+            self._content_rejected(job, result)
         elif not changed and not result.survived and job.request.route is None:
             # executor error with nothing changed and no surviving process: exclude the route
             # and retry elsewhere; a writing attempt with changes ends partial below
@@ -1102,6 +1159,33 @@ class Dispatcher(RecoveryMixin):
             self._move(job, "queued")  # next attempt runs on another route
         else:
             self._emergency(job, "executor_error", result.error or "executor error", changed)
+
+    def _content_rejected(self, job: Job, result: AttemptResult) -> None:
+        """The provider refused the prompt on content grounds; not a route or executor failure.
+
+        A pinned job fails at once. An unpinned job moves off the route and every enabled
+        route of the same model — the same moderation applies there — and is retried
+        elsewhere; when no route is left, `_no_route` keeps the `content_rejected` code.
+        """
+        message = result.error or "provider rejected the request content"
+        if job.request.route is not None:
+            self._fail(job, "content_rejected", message)
+            return
+        group = next(
+            (route.model_group for route in self.config.routes if route.id == job.route),
+            None,
+        )
+        same_model = {
+            route.id for route in self.config.routes if route.enabled and route.model_group == group
+        }
+        job.excluded_routes = job.excluded_routes | {job.route} | same_model
+        attempts = self.jobs.attempts(job.id)
+        if len(attempts) >= self.config.tasks.max_attempts:
+            self._exhausted(job, attempts[-1])
+            return
+        job.error_code = None
+        job.error_message = None
+        self._move(job, "queued")  # next attempt runs on a route of another model
 
     def _emergency(self, job: Job, code: str, message: str, changed: bool) -> None:
         """Emergency outcome: partial for a writing attempt with changes, otherwise failed."""

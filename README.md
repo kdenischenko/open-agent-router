@@ -255,11 +255,11 @@ option.
 | `serve` | Run the gateway on `127.0.0.1` (`--port` overrides `server.port`) |
 | `mcp` | Run an MCP server over stdio for orchestrator agents |
 | `status` | Show pool usage, expected pace and window resets in local time |
-| `advice` | Show matching routes for a tier (and `--mode read` or `write`) and why the others are excluded; repeatable `--exclude-pool POOL` omits pools, `--review-of JOB_ID` shows the choice for a review of that job |
+| `advice` | Show matching routes for a tier (and `--mode read` or `write`) and why the others are excluded; repeatable `--exclude-pool POOL` omits pools, `--review-of JOB_ID` shows the choice for a review of that job, repeatable `--prefer-route ROUTE` puts those routes first |
 | `calibrate POOL WINDOW PERCENT` | Record the usage your subscription shows; `--resets-at` or `--resets-in 10d` sets the reset of a fixed window, a rolling window takes none (admin token) |
 | `usage refresh [POOL]` | Read the usage sources now and record what they report; without a pool every pool with a source outside `manual` mode is read, and a pool read within the last 60 s is skipped (admin token) |
 | `unblock POOL` | Remove a pool block set after a limit hit (admin token) |
-| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, `--review-of JOB` submits a review kept off the model and pool that wrote the code |
+| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, repeatable `--prefer-route ROUTE` tries those routes first but still falls back to the others (unlike `--route`, which pins), `--kind KIND` marks the job as `code`, `review`, `research` or `other`, `--review-of JOB` submits a review kept off the model and pool that wrote the code, `--request-id ID` makes a repeated submit return the existing job |
 | `wait JOB_ID` | Wait for a job and print its result; retries for up to 10 s while the gateway restarts |
 | `result JOB_ID` | Print the status and result of a job without waiting |
 | `rate JOB_ID good\|bad\|partial` | Rate a finished job; the last rating wins, a `--note` is stored as hash and length only |
@@ -269,6 +269,7 @@ option.
 | `doctor` | Check config, store, harnesses and gateway; warns when a route's `counter` spend is invisible: the pool counter cannot see its harness, or the pool has no counter; `--live` runs one read job per harness on routes without `confirm` |
 | `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length, CSV cells that a spreadsheet would read as a formula get a leading `'` |
 | `purge` | Delete terminal jobs older than `storage.retention_days`, with their prompts, results and attempt logs; usage/spend records are kept; `--dry-run` only reports the count |
+| `backup [PATH]` | Copy the gateway database consistently while it is being written; without a path writes `<home>/backups/agent-router-<UTC timestamp>.sqlite`, `--keep N` keeps the newest N timestamp-named backups in the target directory |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
 | `classifier eval --models ID,...` | Replay past prompts through offline classifier models |
 | `report routes` | Scorecard with one row per route, tier and mode: job and attempt outcomes, rating shares, duration/token/cost medians (estimates marked `~`); rows with at least 5 jobs are ranked by good share, the rest are listed as unranked; `--since DATE` limits the window, `--json` prints the rows |

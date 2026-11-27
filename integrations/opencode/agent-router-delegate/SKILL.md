@@ -21,11 +21,24 @@ delegate decisions that a human must make.
 
    Use `--mode write` for a job that changes files. The job tier is `--tier cheap`, `standard`
    (default) or `strong`; the gateway picks the route itself by the remaining subscription
-   limits. The command prints the job id. A short job can be awaited right away: omit
+   limits. Pass `--kind research` for an investigation and `--kind review --review-of <id of
+   the author job>` for a review of another job's result:
+
+   ```bash
+   agent-router run --no-wait --caller opencode --cwd . --kind research "Find every place that reads the gateway config"
+   ```
+
+   The command prints the job id. A short job can be awaited right away: omit
    `--no-wait`.
    When the gateway picks the route itself, it never sends a delegated job back to the
    caller's own pool; in a one-pool setup leave the callers unmapped (`""`), or the jobs
    have no route.
+   To ask for a particular executor without pinning the job to it, pass `--prefer-route ROUTE`
+   (repeatable, tried in the given order) instead of `--route`: the gateway falls back to the
+   other routes when a preferred one fails, while `--route` pins the job and a failure ends it.
+   Every submit carries a request id: `run` generates one and retries a lost submit answer
+   with it. When you repeat a submit whose answer was lost yourself, pass the same
+   `--request-id ID`; the gateway returns the existing job instead of starting a second one.
 3. Wait for the result:
 
    ```bash

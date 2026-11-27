@@ -103,5 +103,6 @@ def decision_snapshot(job: Job, decision: Decision, at: datetime) -> dict:
         "chosen": None if chosen is None else entry(chosen),
         "candidates": [entry(choice) for choice in decision.chosen],
         "excluded": [{"route": item.route.id, "reason": item.reason} for item in decision.excluded],
+        "preferred": list(job.request.preferred_routes),
         "note": decision.note,
     }
