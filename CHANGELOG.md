@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A built-in `webhook` event sink posts gateway events to an HTTP endpoint — `format = "json"`
+  (default) sends the event payload, `format = "text"` a one-line message with a `Title` header
+  (for example an ntfy topic) — with an optional `events` filter (all events when absent), a
+  dashboard link from `base_url`, a positive `timeout_s` per attempt and one retry by default.
+  The URL is a secret read only from the environment variable named by `url_env`, never stored in
+  the config and never written to a log or an error; `doctor` warns when that variable is not set.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.

@@ -29,6 +29,7 @@ from agent_router.config import Config, ConfigError, home_dir
 from agent_router.diagnostics import (
     DoctorFinding,
     caller_findings,
+    sink_findings,
     spend_findings,
     task_findings,
     usage_findings,
@@ -559,6 +560,10 @@ def _doctor_usage(config: Config) -> None:
     _print_doctor_findings(usage_findings(config))
 
 
+def _doctor_sinks(config: Config) -> None:
+    _print_doctor_findings(sink_findings(config))
+
+
 def _doctor_usage_state(config: Config, client: GatewayClient) -> None:
     """Read health from the running gateway: read problems and stale usage data per pool."""
     if not any(pool.usage.source is not None for pool in config.pools):
@@ -714,6 +719,7 @@ def doctor(
     _doctor_classifier(config)
     _doctor_callers(config)
     _doctor_usage(config)
+    _doctor_sinks(config)
     _print_doctor_findings(task_findings(config))
     client = _gateway()
     stats = _request(lambda: client.get("/api/v1/events/stats"))

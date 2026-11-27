@@ -994,3 +994,91 @@ def test_doctor_hides_usage_drift_warnings_in_manual_mode(
     assert result.exit_code == 0, result.output
     assert not any("no longer reports" in line for line in _warnings(result))
     assert not any("response format may have changed" in line for line in _warnings(result))
+
+
+# --- webhook sinks: the environment variable that holds the URL -------------------------
+
+
+def _with_webhook_sink(text: str, body: str) -> str:
+    """Config text with a [[sinks]] webhook table appended to the full template."""
+    return text + f'\n[[sinks]]\ntype = "webhook"\n{body}\n'
+
+
+def test_doctor_warns_when_webhook_url_env_is_not_set(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    monkeypatch.delenv("AGENT_ROUTER_WEBHOOK_URL", raising=False)
+    body = 'url_env = "AGENT_ROUTER_WEBHOOK_URL"\nformat = "text"'
+    write_config(home, _with_webhook_sink(full_config_text(confirm=False), body))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        'Warning: sinks[0] "webhook": needs environment variable AGENT_ROUTER_WEBHOOK_URL, '
+        "which is not set" in _warnings(result)
+    )
+
+
+def test_doctor_quiet_when_webhook_url_env_is_set(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    # a fake value: the check looks at presence only and never prints what it finds
+    monkeypatch.setenv("AGENT_ROUTER_WEBHOOK_URL", "http://127.0.0.1:9/topic")
+    write_config(
+        home,
+        _with_webhook_sink(full_config_text(confirm=False), 'url_env = "AGENT_ROUTER_WEBHOOK_URL"'),
+    )
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert not any("webhook" in line for line in _warnings(result))
+
+
+def test_doctor_warns_when_webhook_url_env_is_invalid(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, home: Path
+) -> None:
+    write_config(home, _with_webhook_sink(full_config_text(confirm=False), 'url_env = ""'))
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert 'Warning: sinks[0] "webhook": url_env must be a non-empty string' in _warnings(result)
+
+
+def test_doctor_webhook_warning_names_each_sink_by_index(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+) -> None:
+    monkeypatch.delenv("AGENT_ROUTER_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("AGENT_ROUTER_SECOND_WEBHOOK_URL", raising=False)
+    text = full_config_text(confirm=False) + (
+        '\n[[sinks]]\ntype = "webhook"\nurl_env = "AGENT_ROUTER_WEBHOOK_URL"\n'
+        '\n[[sinks]]\ntype = "webhook"\nurl_env = "AGENT_ROUTER_SECOND_WEBHOOK_URL"\n'
+    )
+    write_config(home, text)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    warnings = _warnings(result)
+    assert (
+        'Warning: sinks[0] "webhook": needs environment variable AGENT_ROUTER_WEBHOOK_URL, '
+        "which is not set" in warnings
+    )
+    assert (
+        'Warning: sinks[1] "webhook": needs environment variable AGENT_ROUTER_SECOND_WEBHOOK_URL, '
+        "which is not set" in warnings
+    )

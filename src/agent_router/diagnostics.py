@@ -173,6 +173,35 @@ def usage_findings(config: Config) -> list[DoctorFinding]:
     return findings
 
 
+def sink_findings(config: Config) -> list[DoctorFinding]:
+    """Webhook sinks: the environment variable that holds the delivery URL."""
+    findings: list[DoctorFinding] = []
+    for index, sink in enumerate(config.sinks):
+        if sink.type != "webhook":
+            continue
+        label = f'sinks[{index}] "webhook"'
+        variable = sink.options.get("url_env")
+        if not isinstance(variable, str) or not variable:
+            findings.append(
+                DoctorFinding(
+                    "warning",
+                    f"{label}: url_env must be a non-empty string",
+                    "name the environment variable that holds the webhook URL",
+                )
+            )
+            continue
+        # presence only: the URL is a secret, so its value is never printed or logged
+        if not os.environ.get(variable):
+            findings.append(
+                DoctorFinding(
+                    "warning",
+                    f"{label}: needs environment variable {variable}, which is not set",
+                    "set the environment variable in the gateway environment",
+                )
+            )
+    return findings
+
+
 def task_findings(config: Config) -> list[DoctorFinding]:
     if config.tasks.allowed_roots:
         return []
@@ -192,5 +221,6 @@ def doctor_findings(config: Config) -> list[DoctorFinding]:
         *spend_findings(config),
         *caller_findings(config),
         *usage_findings(config),
+        *sink_findings(config),
         *task_findings(config),
     ]
