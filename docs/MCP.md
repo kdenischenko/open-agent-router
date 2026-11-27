@@ -14,7 +14,7 @@ The server exposes exactly these 8 tools:
 
 | Tool | Purpose |
 |---|---|
-| `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route, excluded pools, timeout and the reviewed job |
+| `submit_job` | Submit a job: prompt, working directory, mode, tier, kind, caller, route, excluded pools, timeout and the reviewed job |
 | `wait_job` | Wait up to 100 seconds for a job and return a compact result; `verbose=true` returns the full job record |
 | `job_result` | Get a compact job result without waiting; `verbose=true` returns the full job record |
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |

@@ -1008,3 +1008,11 @@ def test_run_rejects_another_kind_with_review_of(runner: CliRunner, gateway: Fak
     assert result.exit_code == 1
     assert "--review-of" in result.output
     assert gateway.calls == []
+
+
+def test_run_rejects_an_unknown_kind_locally(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--kind", "bogus", _RUN_PROMPT])
+
+    assert result.exit_code == 1
+    assert "bogus" in result.output
+    assert gateway.calls == []
