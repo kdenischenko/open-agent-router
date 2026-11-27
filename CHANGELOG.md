@@ -8,6 +8,7 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
 - A route whose harness reports its model as unavailable (OpenCode's
