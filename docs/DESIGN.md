@@ -328,7 +328,9 @@ duration (median and p90), tokens and cost; estimated costs are marked `~`. Rows
 `min_jobs` (default 5) jobs are ranked first, ordered by good share, and rows below the minimum
 follow in the same order as unranked. A row's `quality` and its `in_config` flag come from the
 config's `routes`: a route that no longer exists in the config keeps its row and is marked as no
-longer configured. The dashboard's Routes section runs the same build over the last 30 days.
+longer configured. The dashboard's Routes section runs the same build over the last 30 days. If
+the job store does not provide `route_samples_since`, the dashboard shows `not available for this
+store` instead of the scorecard.
 
 ## Runner and harness adapters
 

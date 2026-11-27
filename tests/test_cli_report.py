@@ -100,6 +100,25 @@ def test_report_routes_text_marks_unranked_row_and_shares(report_home: Path) -> 
     assert "(not in config)" not in result.output
 
 
+def test_report_routes_text_shows_quality_and_all_rating_counts(report_home: Path) -> None:
+    for index, rating in enumerate(("good", "good", "partial", "bad", "bad")):
+        seed(report_home, f"j_{index}", rating=rating)
+    result = CliRunner().invoke(cli.app, ["report", "routes"])
+    assert result.exit_code == 0, result.output
+    assert "quality 5" in result.output
+    assert "rated 5/5 (100%)" in result.output
+    assert "good 2/5 (40%)" in result.output
+    assert "partial 1/5 (20%)" in result.output
+    assert "bad 2/5 (40%)" in result.output
+
+
+def test_report_routes_text_shows_dash_for_unconfigured_quality(report_home: Path) -> None:
+    seed(report_home, "j_1", route="ghost/main")
+    result = CliRunner().invoke(cli.app, ["report", "routes"])
+    assert result.exit_code == 0, result.output
+    assert "quality -" in result.output
+
+
 def test_report_routes_since_after_the_job_filters_it_out(report_home: Path) -> None:
     seed(report_home, "j_1")
     result = CliRunner().invoke(cli.app, ["report", "routes", "--since", "2026-11-14"])

@@ -478,6 +478,8 @@ def web_router(deps: Gateway) -> APIRouter:
         """Per-route scorecard over the last 30 days; None without a job store."""
         if deps.jobs is None:
             return {"routes_report": None}
+        if not hasattr(deps.jobs, "route_samples_since"):
+            return {"routes_report": None, "routes_unavailable": True}
         since = deps.clock.now() - timedelta(days=30)
         jobs, attempts = deps.jobs.route_samples_since(since)
         quality = {route.id: route.quality for route in deps.config.routes}

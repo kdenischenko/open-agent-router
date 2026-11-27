@@ -399,6 +399,7 @@ def _report_row_line(row: dict[str, Any], min_jobs: int) -> str:
         markers += f" (fewer than {min_jobs} jobs)"
     if not row["in_config"]:
         markers += " (not in config)"
+    quality = "-" if row["quality"] is None else row["quality"]
     attempt_text = (
         f"attempts limit {attempts['limit']}/error {attempts['error']}"
         f"/timeout {attempts['timeout']}"
@@ -410,7 +411,10 @@ def _report_row_line(row: dict[str, Any], min_jobs: int) -> str:
         f"{attempt_text}, "
         f"duration median/p90 {duration_text}, tokens median "
         f"{'-' if tokens is None else f'{tokens:.0f}'}, cost {cost_text}, "
-        f"rated {_report_share(rated, jobs)}, good {_report_share(ratings['good'], rated)}{markers}"
+        f"quality {quality}, rated {_report_share(rated, jobs)}, "
+        f"good {_report_share(ratings['good'], rated)}, "
+        f"partial {_report_share(ratings['partial'], rated)}, "
+        f"bad {_report_share(ratings['bad'], rated)}{markers}"
     )
 
 

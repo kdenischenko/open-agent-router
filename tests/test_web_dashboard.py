@@ -221,13 +221,54 @@ def test_routes_section_without_history_shows_empty_line(client, tokens):
     assert "no finished jobs" in response.text
 
 
+def test_routes_section_notes_store_without_route_samples(app, store, tokens, monkeypatch):
+    jobs = SqliteJobStore(store)
+
+    class JobStoreWithoutRouteSamples:
+        def __getattr__(self, name: str):
+            if name == "route_samples_since":
+                raise AttributeError(name)
+            return getattr(jobs, name)
+
+    monkeypatch.setattr(app.state.gateway, "jobs", JobStoreWithoutRouteSamples())
+    with TestClient(app, base_url=BASE_URL, raise_server_exceptions=False) as client:
+        authenticated_client(client, tokens)
+        response = client.get("/")
+    assert response.status_code == 200
+    routes = response.text[response.text.index('<section id="routes">') :]
+    assert "not available for this store" in routes
+    assert "no finished jobs" not in routes
+
+
 def test_routes_section_shows_seeded_route(config, store, clock, tokens, home):
     jobs = SqliteJobStore(store)
     now = clock.now()
     route_id = "kimi-cli/k3.1-pro"
-    jobs.create(make_job("j_routes", route=route_id, finished_at=now))
-    jobs.add_attempt(make_attempt("j_routes", 1, route=route_id, finished_at=now, cost_usd=0.2))
-    rate(jobs, "j_routes", "good", at=now)
+    samples = (
+        ("completed", "good", "ok", 1.0, 10),
+        ("partial", "good", "limit", 2.0, 20),
+        ("failed", "partial", "error", 3.0, 30),
+        ("cancelled", "bad", "timeout", 4.0, 40),
+        ("completed", "bad", "ok", 50.0, 50),
+    )
+    for index, (status, rating, outcome, duration_s, token_count) in enumerate(samples):
+        job_id = f"j_routes_{index}"
+        jobs.create(make_job(job_id, status=status, route=route_id, finished_at=now))
+        jobs.add_attempt(
+            make_attempt(
+                job_id,
+                1,
+                route=route_id,
+                outcome=outcome,
+                finished_at=now,
+                duration_s=duration_s,
+                tokens_in=token_count,
+                tokens_out=0,
+                cost_usd=0.2,
+                cost_estimated=index == 4,
+            )
+        )
+        rate(jobs, job_id, rating, at=now)
     bus = EventBus(clock)
     dispatcher = build_dispatcher(config, store, jobs, bus, clock, home, UTC)
     app = create_app(
@@ -244,10 +285,24 @@ def test_routes_section_shows_seeded_route(config, store, clock, tokens, home):
         authenticated_client(client, tokens)
         response = client.get("/")
     assert response.status_code == 200
-    assert route_id in response.text
-    assert "good 1/1" in response.text
-    assert "fewer than 5 jobs" in response.text
-    assert "$0.20" in response.text
+    routes = response.text[response.text.index('<section id="routes">') :]
+    assert route_id in routes
+    assert "Outcomes (completed/partial/failed/cancelled)" in routes
+    assert '<td class="route-outcomes">2/1/1/1</td>' in routes
+    assert "Quality" in routes
+    assert '<td class="route-quality">4</td>' in routes
+    assert "rated 5/5 (100%)" in routes
+    assert "good 2/5 (40%)" in routes
+    assert "partial 1/5 (20%)" in routes
+    assert "bad 2/5 (40%)" in routes
+    assert "Attempts (limit/error/timeout)" in routes
+    assert '<td class="route-attempts">1/1/1</td>' in routes
+    assert "Duration (median/p90)" in routes
+    assert '<td class="route-duration">3 s / 50 s</td>' in routes
+    assert "Median tokens" in routes
+    assert '<td class="route-tokens">30</td>' in routes
+    assert "~$0.20" in routes
+    assert "<td>ranked</td>" in routes
 
 
 def test_calibration_form_offers_only_real_pairs(client, tokens):
