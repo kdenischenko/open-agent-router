@@ -6,6 +6,7 @@ import concurrent.futures
 import contextlib
 import hashlib
 import logging
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -45,6 +46,7 @@ from agent_router.jobs import (
     Status,
     WrongState,
     can_transition,
+    directory_key,
     new_job_id,
     validate_request_directory,
 )
@@ -302,6 +304,18 @@ class Dispatcher(RecoveryMixin):
     # --- calls from request threads --------------------------------------------------
 
     def submit(self, req: JobRequest) -> Job:
+        return self.submit_tracked(req)[0]
+
+    def submit_tracked(self, req: JobRequest) -> tuple[Job, bool]:
+        """Submit a job; returns the job and whether it was created by this call.
+
+        A request_id makes the submit idempotent: a repeated request with the same prompt,
+        directory and mode returns the existing job instead of creating a second one.
+        """
+        existing = self._request_replay(req)
+        if existing is not None:
+            # fast path: the insert below would fail on the same UNIQUE index anyway
+            return self._replayed(existing, req), False
         # filesystem and git checks run outside the lock
         checked = validate_request_directory(req, self.config)
         if req.review_of is not None and self.jobs.get(req.review_of) is None:
@@ -327,14 +341,40 @@ class Dispatcher(RecoveryMixin):
         with self._lock:
             if self.jobs.count_waiting() >= self.config.tasks.max_queued:
                 raise RequestRejected("queue_full", "queue is full, try again later")
-            self.jobs.create(job)
+            try:
+                self.jobs.create(job)
+            except sqlite3.IntegrityError:
+                # the constraint is the source of truth: a twin won the race to the insert
+                existing = self._request_replay(req)
+                if existing is None:
+                    raise
+                return self._replayed(existing, req), False
             self._checked_cwds[job.id] = checked.cwd
             self._announce(job, None)
             if self.classify_executor is not None and not self._stopped:
                 # a classifier queue failure must not reject the job
                 with contextlib.suppress(Exception):
                     self.classify_executor.submit(job.id, req.prompt, job.created_at)
-        return job
+        return job, True
+
+    def _request_replay(self, req: JobRequest) -> Job | None:
+        """The job stored with this request's idempotency key; None when there is none."""
+        if req.request_id is None:
+            return None
+        return self.jobs.by_request_id(req.caller or "", req.request_id)
+
+    def _replayed(self, existing: Job, req: JobRequest) -> Job:
+        """The existing job, or request_id_conflict when the same key names a different job."""
+        same = (
+            existing.request.mode == req.mode
+            and existing.prompt_sha256 == hashlib.sha256(req.prompt.encode("utf-8")).hexdigest()
+            and directory_key(existing.request.cwd) == directory_key(req.cwd)
+        )
+        if not same:
+            raise RequestRejected(
+                "request_id_conflict", "request_id is already used for a different job"
+            )
+        return existing
 
     def cancel(self, job_id: str) -> Job:
         with self._lock:

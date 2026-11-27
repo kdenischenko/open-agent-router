@@ -865,7 +865,7 @@ def test_prompts_since(jobstore) -> None:
     assert jobstore.prompts_since(T0) == [("j_new", "new")]
 
 
-def test_schema_9_database_opens_as_10(tmp_path: Path) -> None:
+def test_schema_9_database_opens_as_11(tmp_path: Path) -> None:
     store = SqliteStore(tmp_path / "agent-router.sqlite")
     try:
         store.migrate(2, jobstore_module._SCHEMA_V2)
@@ -884,12 +884,12 @@ def test_schema_9_database_opens_as_10(tmp_path: Path) -> None:
                 (job.id, job.status, to_us(job.created_at), jobstore_module._job_data(job)),
             )
         jobs = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         assert jobs.votes("j_a") == []
         jobs.add_vote("j_a", Vote("systemone", "m", "cheap", 0.5, 10, None), T0)
         assert len(jobs.votes("j_a")) == 1
         SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
