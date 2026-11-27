@@ -15,7 +15,7 @@ from agent_router.cli_common import _gateway
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
 from agent_router.clock import format_local
 from agent_router.config import home_dir
-from agent_router.jobs import TERMINAL
+from agent_router.jobs import KINDS, TERMINAL
 
 
 def _job_failure(exc: GatewayUnavailable | GatewayError) -> NoReturn:
@@ -139,6 +139,9 @@ def run(
     cwd: Path = typer.Option(Path("."), "--cwd", help="Working directory for the job"),
     mode: str = typer.Option("read", "--mode", help="Job mode: read or write"),
     tier: str | None = typer.Option(None, "--tier", help="Job tier: cheap, standard or strong"),
+    kind: str | None = typer.Option(
+        None, "--kind", help="Job kind: code, review, research or other"
+    ),
     caller: str | None = typer.Option(
         None, "--caller", help="Name of the calling agent, e.g. claude-code"
     ),
@@ -168,6 +171,12 @@ def run(
     ),
 ) -> None:
     """Submit a job and wait for its result."""
+    if kind is not None and kind not in KINDS:
+        typer.echo(f"unknown job kind: {kind}; choose code, review, research or other", err=True)
+        raise typer.Exit(1)
+    if review_of is not None and kind not in (None, "review"):
+        typer.echo("job kind must be review when --review-of is set", err=True)
+        raise typer.Exit(1)
     body: dict[str, Any] = {
         "prompt": _prompt(text, prompt_file),
         "cwd": str(cwd.resolve()),
@@ -175,6 +184,7 @@ def run(
     }
     for name, value in (
         ("tier", tier),
+        ("kind", kind),
         ("caller", caller),
         ("route", route),
         ("timeout_s", timeout),

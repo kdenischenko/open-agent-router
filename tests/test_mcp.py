@@ -592,3 +592,35 @@ def test_mcp_docs_cover_opencode_schema() -> None:
     opencode = text[text.index("### OpenCode") : text.index("### Cline")]
     assert '"servers": {' in opencode
     assert '"enabled"' not in opencode
+
+
+def test_submit_job_sends_the_kind() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "kind": "research"})
+
+    assert gateway.calls[0][2]["kind"] == "research"
+
+
+def test_submit_job_describes_the_kind() -> None:
+    tools = {tool.name: tool for tool in _tools(FakeGateway())}
+    description = tools["submit_job"].input_schema["properties"]["kind"]["description"]
+
+    for kind in ("code", "review", "research", "other"):
+        assert kind in description
+
+
+def test_submit_job_rejects_another_kind_with_review_of() -> None:
+    gateway = FakeGateway()
+
+    message = _error(
+        _call(
+            gateway,
+            "submit_job",
+            {"prompt": "p", "cwd": "C:/work/repo", "kind": "code", "review_of": "j_1"},
+        )
+    )
+
+    assert "review_of" in message
+
+    assert gateway.calls == []
