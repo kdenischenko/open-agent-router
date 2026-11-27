@@ -9,8 +9,8 @@ All notable changes are documented here. The format follows
 ### Added
 
 - `agent-router purge` applies `storage.retention_days` to old observations and counter samples,
-  reports their counts, always keeps the newest observation per pool window, and protects counter
-  samples for twice the longest configured pool window duration.
+  reports their counts, keeps the newest observation and usable reset per pool window, and protects
+  counter samples for twice the longest configured pool window duration.
 - A built-in `webhook` event sink posts gateway events to an HTTP endpoint — `format = "json"`
   (default) sends the event payload, `format = "text"` a one-line message with a `Title` header
   (for example an ntfy topic) — with an optional `events` filter (all events when absent), a

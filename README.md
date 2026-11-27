@@ -273,7 +273,7 @@ option.
 | `approve JOB_ID` / `deny JOB_ID` | Approve or deny a job that awaits confirmation (admin token) |
 | `doctor` | Check config, store, harnesses and gateway; warns when a route's `counter` spend is invisible: the pool counter cannot see its harness, or the pool has no counter; `--live` runs one read job per harness on routes without `confirm` |
 | `export --since DATE` | Export jobs, attempts, ratings, classifier votes and usage as JSON Lines or CSV; texts are replaced by hash and length, CSV cells that a spreadsheet would read as a formula get a leading `'` |
-| `purge` | Delete terminal jobs older than `storage.retention_days`, with their prompts, results and attempt logs; usage/spend records are kept; `--dry-run` only reports the count |
+| `purge` | Delete terminal jobs and old usage history under `storage.retention_days`, with job prompts, results and attempt logs; spend records are kept; `--dry-run` only reports the counts |
 | `backup [PATH]` | Copy the gateway database consistently while it is being written; without a path writes `<home>/backups/agent-router-<UTC timestamp>.sqlite`, `--keep N` keeps the newest N timestamp-named backups in the target directory |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
 | `classifier eval --models ID,...` | Replay past prompts through offline classifier models |
@@ -282,8 +282,10 @@ option.
 Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
 then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and
 awaiting-approval jobs are never purged, and `serve` does not purge automatically. Purge also
-removes leftover job directories from earlier failed removals or crashes. Check the count first
-with `agent-router purge --dry-run`.
+removes leftover job directories from earlier failed removals or crashes. Old observations and
+counter samples are removed under the same retention period; the newest observation and newest
+usable reset for each pool window are kept, and samples remain for twice the longest configured
+window duration. Check all counts first with `agent-router purge --dry-run`.
 
 `doctor --statusline-snippet` prints the settings for the Claude Code status line, which reports
 Claude usage to the gateway; see [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).

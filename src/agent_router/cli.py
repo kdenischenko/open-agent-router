@@ -222,21 +222,28 @@ def purge(
         if durations:
             longest = max(durations, key=approx_length)
             counter_samples_before = min(before, shift(now, longest, -2))
-        purge_usage = getattr(jobs, "purge_usage", None)
-        observation_count = 0
-        counter_sample_count = 0
-        if callable(purge_usage):
-            observation_count, counter_sample_count = purge_usage(
-                before, counter_samples_before, dry_run=True
+        supports_usage = callable(getattr(jobs, "purge_usage", None))
+        if dry_run and supports_usage:
+            result = jobs.purge(
+                before,
+                home / "jobs",
+                dry_run=True,
+                counter_samples_before=counter_samples_before,
             )
-        purged, failed_dirs = jobs.purge(before, home / "jobs", dry_run=True)
+        else:
+            result = jobs.purge(before, home / "jobs", dry_run=True)
+        purged, failed_dirs = result[:2]
+        observation_count, counter_sample_count = result[2:] or (0, 0)
         row_ids = {job_id for job_id in purged if jobs.get(job_id) is not None}
         if not dry_run:
-            purged, failed_dirs = jobs.purge(before, home / "jobs")
-            if callable(purge_usage):
-                observation_count, counter_sample_count = purge_usage(
-                    before, counter_samples_before
+            if supports_usage:
+                result = jobs.purge(
+                    before, home / "jobs", counter_samples_before=counter_samples_before
                 )
+            else:
+                result = jobs.purge(before, home / "jobs")
+            purged, failed_dirs = result[:2]
+            observation_count, counter_sample_count = result[2:] or (0, 0)
     except (ConfigError, OSError, sqlite3.Error) as exc:
         typer.echo(f"purge failed: {exc}", err=True)
         raise typer.Exit(1) from exc

@@ -281,11 +281,12 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    from job rows in its counts but deletes nothing.
 
    Old observations are removed under the same retention cutoff, except that the newest
-   observation for every pool and window pair is always kept, regardless of age. Counter samples
-   use the earlier of the retention cutoff and twice the longest configured window duration before
-   now, preserving the current window and one more window for pace calculation; monthly durations use
-   calendar arithmetic. Spend records are kept for pool window accounting. Purge never runs
-   automatically when the gateway starts.
+   observation and the newest observation with a usable reset time for every pool and window pair
+   are always kept, regardless of age, so fixed-window reset schedules survive retention. Counter
+   samples use the earlier of the retention cutoff and twice the longest configured window duration
+   before now, preserving the current window and one more window for pace calculation; monthly
+   durations use calendar arithmetic. Spend records are kept for pool window accounting. Purge never
+   runs automatically when the gateway starts.
 
 10. **Usage sources (optional).** A usage source reads the used share of a plan's windows from
     the vendor (for example a usage endpoint) instead of manual calibration. The root table sets
