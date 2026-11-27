@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -98,6 +98,49 @@ class HostCheck:
                 await response(scope, receive, send)
                 return
         await self.app(scope, receive, send)
+
+
+SECURITY_HEADERS = (
+    (b"cache-control", b"no-store"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"no-referrer"),
+    (b"x-frame-options", b"DENY"),
+)
+
+
+class SecurityHeaders:
+    """Security headers on every HTTP response.
+
+    A static file actually served (2xx or 304 under `/static/`) keeps its normal caching
+    headers; every other response (dashboard pages, fragments, API responses, errors on any
+    path, including the 400/413 responses of HostCheck and BodyLimit) is marked as
+    non-cacheable. Pure ASGI for the same reason as HostCheck: it must wrap every response,
+    including the ones produced before the router is reached.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        static = scope["path"].startswith("/static/")
+
+        async def secured_send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                served_file = static and (
+                    200 <= message["status"] < 300 or message["status"] == 304
+                )
+                extra = SECURITY_HEADERS[1:] if served_file else SECURITY_HEADERS
+                headers = list(message.get("headers", []))
+                if not served_file:
+                    headers = [pair for pair in headers if pair[0].lower() != b"cache-control"]
+                headers.extend(extra)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, secured_send)
 
 
 # a JSON string spends at most twelve bytes on one character: a surrogate pair escaped as two \uXXXX
@@ -320,7 +363,9 @@ class JobBody(BaseModel):
     route: StrictStr | None = None
     timeout_s: Any = None  # fractional, boolean, etc. — error code bad_timeout, not bad_request
     exclude_pools: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
+    prefer_routes: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
     review_of: Annotated[StrictStr, Field(min_length=1)] | None = None
+    request_id: StrictStr | None = None  # format checked later: bad_request_id, not bad_request
 
 
 class RatingBody(BaseModel):
@@ -360,6 +405,11 @@ def require_dispatcher(gateway: Gateway) -> Any:
 
 def submit_job(gateway: Gateway, body: JobBody) -> Job:
     """Validate and submit a job through the dispatcher used by the API and dashboard."""
+    return submit_job_created(gateway, body)[0]
+
+
+def submit_job_created(gateway: Gateway, body: JobBody) -> tuple[Job, bool]:
+    """Submit a job; the flag tells a new job (201) apart from a replayed one (200)."""
     dispatcher = require_dispatcher(gateway)
     request = JobRequest(
         prompt=body.prompt,
@@ -371,10 +421,12 @@ def submit_job(gateway: Gateway, body: JobBody) -> Job:
         route=body.route,
         timeout_s=body.timeout_s,
         excluded_pools=frozenset(body.exclude_pools or []),
+        preferred_routes=tuple(body.prefer_routes or []),
         review_of=body.review_of,
+        request_id=body.request_id,
     )
     try:
-        return dispatcher.submit(request)
+        return dispatcher.submit_tracked(request)
     except RequestRejected as exc:
         status = 429 if exc.code == "queue_full" else 422
         raise ApiError(status, exc.code, exc.message) from exc
@@ -528,6 +580,7 @@ def api_router(gateway: Gateway) -> APIRouter:
         caller: str | None = None,
         mode: str | None = None,
         exclude_pools: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
+        prefer_routes: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
         review_of: str | None = None,
         role: Role = client,
     ) -> dict[str, Any]:
@@ -539,14 +592,19 @@ def api_router(gateway: Gateway) -> APIRouter:
         for pool in sorted(excluded):
             if gateway.pool(pool) is None:
                 raise ApiError(422, "bad_request", f"unknown pool: {pool}")
+        preferred = tuple(prefer_routes or [])
+        route_ids = {route.id for route in gateway.config.routes}
+        for route_id in preferred:
+            if route_id not in route_ids:
+                raise ApiError(422, "bad_route", f"unknown route: {route_id}")
         reviewed_route: str | None = None
         if review_of is not None:
             reviewed = None if gateway.jobs is None else gateway.jobs.get(review_of)
             if reviewed is None:
                 raise ApiError(422, "bad_request", f"unknown job: {review_of}")
             reviewed_route = reviewed.route
-        decision = gateway.advise(tier, caller, mode, excluded, reviewed_route)  # type: ignore[arg-type]
-        return decision_json(tier, decision, mode)  # type: ignore[arg-type]
+        decision = gateway.advise(tier, caller, mode, excluded, reviewed_route, preferred)  # type: ignore[arg-type]
+        return decision_json(tier, decision, mode, preferred)  # type: ignore[arg-type]
 
     @router.get("/events/stats")
     def get_event_stats(role: Role = client) -> dict[str, Any]:
@@ -571,8 +629,10 @@ def api_router(gateway: Gateway) -> APIRouter:
         return job_json(job, dispatcher.jobs.attempts(job.id), dispatcher.jobs.last_rating(job.id))
 
     @router.post("/jobs", status_code=201)
-    def post_job(body: JobBody, role: Role = client) -> dict[str, Any]:
-        job = submit_job(gateway, body)
+    def post_job(body: JobBody, response: Response, role: Role = client) -> dict[str, Any]:
+        job, created = submit_job_created(gateway, body)
+        if not created:
+            response.status_code = 200
         return {"job_id": job.id, "status": job.status}
 
     @router.get("/jobs")
@@ -767,6 +827,7 @@ def create_app(
 
     app.add_middleware(BodyLimit, api_limit=api_body_limit(config))
     app.add_middleware(HostCheck)
+    app.add_middleware(SecurityHeaders)
 
     @app.exception_handler(ApiError)
     async def on_api_error(request: Request, exc: ApiError) -> JSONResponse:

@@ -1,4 +1,4 @@
-"""Job store: the JobStore protocol and a SQLite implementation (schema version 8)."""
+"""Job store: the JobStore protocol and a SQLite implementation (schema version 11)."""
 
 from __future__ import annotations
 
@@ -49,6 +49,10 @@ class JobStore(Protocol):
     def create(self, job: Job) -> None: ...
 
     def get(self, job_id: str) -> Job | None: ...
+
+    def by_request_id(self, caller: str, request_id: str) -> Job | None:
+        """The job stored with this idempotency key; None when there is none."""
+        ...
 
     def update(self, job: Job) -> None: ...
 
@@ -145,7 +149,7 @@ class JobStore(Protocol):
 
     def route_errors_in_row(self, route: str) -> tuple[int, datetime | None]:
         """Error attempts finished after the route's last successful attempt, and the last one's
-        finish time; None when the count is 0."""
+        finish time; None when the count is 0. Content-rejected attempts are not counted."""
         ...
 
 
@@ -260,6 +264,14 @@ _SCHEMA_V10 = (
     "CREATE INDEX classifier_votes_job ON classifier_votes (job_id)",
 )
 
+# (request_caller, request_id) is the idempotency key of a submit; a NULL request_id never
+# collides because SQLite treats NULLs as distinct in a UNIQUE index
+_SCHEMA_V11 = (
+    "ALTER TABLE jobs ADD COLUMN request_caller TEXT",
+    "ALTER TABLE jobs ADD COLUMN request_id TEXT",
+    "CREATE UNIQUE INDEX jobs_request ON jobs (request_caller, request_id)",
+)
+
 
 def migrate_jobs_schema(store: Store) -> None:
     """Migrates the SQLite schema to the latest version; called by both the job store and the
@@ -273,6 +285,7 @@ def migrate_jobs_schema(store: Store) -> None:
     store.migrate(8, _SCHEMA_V8)
     store.migrate(9, _SCHEMA_V9)
     store.migrate(10, _SCHEMA_V10)
+    store.migrate(11, _SCHEMA_V11)
 
 
 _ATTEMPT_COLUMNS = (
@@ -309,6 +322,7 @@ def _result_data(result: AttemptResult | None) -> str | None:
             "changes_unknown": result.changes_unknown,
             "survived": result.survived,
             "model_unavailable": result.model_unavailable,
+            "content_rejected": result.content_rejected,
         },
         ensure_ascii=False,
     )
@@ -336,7 +350,8 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
         if not all(isinstance(flag, bool) for flag in flags):
             return None
         unavailable = data.get("model_unavailable", False)
-        if not isinstance(unavailable, bool):
+        rejected = data.get("content_rejected", False)
+        if not isinstance(unavailable, bool) or not isinstance(rejected, bool):
             return None
         if not all(isinstance(data[key], (str, type(None))) for key in ("text", "error")):
             return None
@@ -350,6 +365,7 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
             changes_unknown=data["changes_unknown"],
             survived=data["survived"],
             model_unavailable=unavailable,
+            content_rejected=rejected,
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError):
         return None
@@ -384,7 +400,9 @@ def _job_data(job: Job) -> str:
             "route": request.route,
             "timeout_s": request.timeout_s,
             "excluded_pools": sorted(request.excluded_pools),
+            "preferred_routes": list(request.preferred_routes),
             "review_of": request.review_of,
+            "request_id": request.request_id,
         },
         "tier": job.tier,
         "tier_source": job.tier_source,
@@ -430,7 +448,9 @@ def _job(row: Sequence[Any]) -> Job:
             route=request["route"],
             timeout_s=request["timeout_s"],
             excluded_pools=frozenset(request.get("excluded_pools", [])),
+            preferred_routes=tuple(request.get("preferred_routes", [])),
             review_of=request.get("review_of"),
+            request_id=request.get("request_id"),
         ),
         status=status,
         tier=data["tier"],
@@ -597,14 +617,34 @@ class SqliteJobStore:
     def create(self, job: Job) -> None:
         with self._store.transaction() as conn:
             conn.execute(
-                f"INSERT INTO jobs ({self._JOB_COLUMNS}) VALUES (?, ?, ?, ?, ?)",
-                (job.id, job.status, to_us(job.created_at), _us(job.finished_at), _job_data(job)),
+                f"INSERT INTO jobs ({self._JOB_COLUMNS}, request_caller, request_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job.id,
+                    job.status,
+                    to_us(job.created_at),
+                    _us(job.finished_at),
+                    _job_data(job),
+                    job.request.caller or "",
+                    job.request.request_id,
+                ),
             )
 
     def get(self, job_id: str) -> Job | None:
         row = (
             self._store.connection()
             .execute(f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE id = ?", (job_id,))
+            .fetchone()
+        )
+        return None if row is None else _job(row)
+
+    def by_request_id(self, caller: str, request_id: str) -> Job | None:
+        row = (
+            self._store.connection()
+            .execute(
+                f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE request_caller = ? AND request_id = ?",
+                (caller, request_id),
+            )
             .fetchone()
         )
         return None if row is None else _job(row)
@@ -1080,6 +1120,9 @@ class SqliteJobStore:
         query = (
             "SELECT COUNT(*), MAX(finished_at) FROM attempts"
             " WHERE route = ? AND outcome = 'error' AND finished_at IS NOT NULL"
+            # a content rejection is the provider's refusal, not the route's failure: it
+            # neither extends nor resets the streak
+            " AND COALESCE(json_extract(result, '$.content_rejected'), 0) = 0"
         )
         if last_ok is None:
             row = conn.execute(query, (route,)).fetchone()

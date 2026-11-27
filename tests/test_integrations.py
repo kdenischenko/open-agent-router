@@ -98,3 +98,11 @@ def test_install_bash_block_targets_all_harnesses() -> None:
     assert "mkdir -p" in block[1]
     assert "read -r" in block[1]
     assert 'cp -R "integrations/$harness/agent-router-delegate" "$dir"' in block[1]
+
+
+@pytest.mark.parametrize("path", SKILLS, ids=lambda path: path.parts[-3])
+def test_orchestrator_skill_passes_the_job_kind(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+
+    assert "--kind research" in text
+    assert "--review-of" in text

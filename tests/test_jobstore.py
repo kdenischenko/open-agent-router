@@ -48,10 +48,10 @@ def test_migration_from_1_keeps_observations(tmp_path: Path) -> None:
         obs = Observation("claude-pro", "5h", 0.42, T0, T0 + timedelta(hours=3), "manual")
         store.add_observation(obs)
         SqliteJobStore(store)  # a fresh database runs all migrations up to the latest version
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         assert store.last_observation("claude-pro", "5h") == obs
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
@@ -62,7 +62,7 @@ def test_open_jobstore_sqlite(tmp_path: Path) -> None:
         jobstore = open_jobstore(StorageSettings(), tmp_path, store)
         assert isinstance(jobstore, SqliteJobStore)
         jobstore.close()  # connections belong to SqliteStore
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         with pytest.raises(ConfigError):
             open_jobstore(StorageSettings(), tmp_path, object())  # type: ignore[arg-type]
     finally:
@@ -104,6 +104,7 @@ def test_job_roundtrip_with_all_fields(jobstore) -> None:
             route="kimi/k3",
             timeout_s=900,
             excluded_pools=frozenset({"claude-pro"}),
+            preferred_routes=("kimi/k3", "opencode/big"),
             review_of="j_author",
         ),
         status="awaiting_approval",
@@ -347,7 +348,7 @@ def test_schema_v2_database_migrates(tmp_path: Path) -> None:
                 (to_us(T0),),
             )
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         stored = jobstore.get("j_a")
         assert stored is not None and stored.status == "running"
         (attempt,) = jobstore.attempts("j_a")
@@ -559,7 +560,7 @@ def test_schema_3_database_opens_as_4(tmp_path: Path) -> None:
                 (to_us(T0),),
             )
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         (attempt,) = jobstore.attempts("j_a")
         assert (attempt.pid, attempt.exe_name, attempt.proc_started) == (4321, "kimi.exe", None)
         assert attempt.started_at == T0 and attempt.finished_at is None and attempt.result is None
@@ -567,12 +568,12 @@ def test_schema_3_database_opens_as_4(tmp_path: Path) -> None:
         jobstore.update_attempt(attempt)
         assert jobstore.attempts("j_a")[0].proc_started == 1731000000.25
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
 
-def test_schema_5_database_opens_as_10(tmp_path: Path) -> None:
+def test_schema_5_database_opens_as_11(tmp_path: Path) -> None:
     store = SqliteStore(tmp_path / "agent-router.sqlite")
     try:
         store.migrate(2, jobstore_module._SCHEMA_V2)
@@ -581,7 +582,7 @@ def test_schema_5_database_opens_as_10(tmp_path: Path) -> None:
         store.migrate(5, jobstore_module._SCHEMA_V5)
         assert store.schema_version() == 5
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         tables = {
             row[0]
             for row in store.connection().execute(
@@ -591,12 +592,12 @@ def test_schema_5_database_opens_as_10(tmp_path: Path) -> None:
         assert "settings" in tables
         jobstore.close()
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
 
-def test_schema_6_database_opens_as_10(tmp_path: Path) -> None:
+def test_schema_6_database_opens_as_11(tmp_path: Path) -> None:
     store = SqliteStore(tmp_path / "agent-router.sqlite")
     try:
         store.migrate(2, jobstore_module._SCHEMA_V2)
@@ -618,17 +619,17 @@ def test_schema_6_database_opens_as_10(tmp_path: Path) -> None:
                 (to_us(T0),),
             )
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         (attempt,) = jobstore.attempts("j_a")
         assert attempt.decision is None and attempt.outcome == "ok"
         jobstore.close()
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
 
-def test_schema_7_database_opens_as_10(tmp_path: Path) -> None:
+def test_schema_7_database_opens_as_11(tmp_path: Path) -> None:
     """A version-7 database opens at 10: the ratings table appears."""
     store = SqliteStore(tmp_path / "agent-router.sqlite")
     try:
@@ -647,7 +648,7 @@ def test_schema_7_database_opens_as_10(tmp_path: Path) -> None:
                 (job.id, job.status, to_us(job.created_at), jobstore_module._job_data(job)),
             )
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         tables = {
             row[0]
             for row in store.connection().execute(
@@ -658,13 +659,13 @@ def test_schema_7_database_opens_as_10(tmp_path: Path) -> None:
         assert jobstore.last_rating("j_a") is None
         jobstore.close()
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 
 
-def test_schema_8_database_opens_as_10(tmp_path: Path) -> None:
-    """A version-8 database opens at version 10: old attempts and observations
+def test_schema_8_database_opens_as_11(tmp_path: Path) -> None:
+    """A version-8 database opens at version 11: old attempts and observations
     can be read with empty new fields."""
     store = SqliteStore(tmp_path / "agent-router.sqlite")
     try:
@@ -690,7 +691,7 @@ def test_schema_8_database_opens_as_10(tmp_path: Path) -> None:
                 (to_us(T0),),
             )
         jobstore = SqliteJobStore(store)
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
         (attempt,) = jobstore.attempts("j_a")
         assert attempt.cost_usd == 0.25 and attempt.cost_estimated is False
         sample = store.last_counter("opencode-go")
@@ -701,7 +702,7 @@ def test_schema_8_database_opens_as_10(tmp_path: Path) -> None:
         jobstore.update_attempt(attempt)
         assert jobstore.attempts("j_a")[0].cost_estimated is True
         SqliteJobStore(store)  # reopening does not touch the schema
-        assert store.schema_version() == 10
+        assert store.schema_version() == 11
     finally:
         store.close()
 

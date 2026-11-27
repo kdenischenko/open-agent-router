@@ -85,8 +85,16 @@ executable is missing. A write attempt that changed files and then failed ends a
 automatic retry); a clean failure that is not moved to another route (a timeout, a pinned
 route, no route left) ends as `failed`.
 
+A provider content rejection (the adapter reports `content_rejected`, e.g. OpenCode's
+`provider.invalid-request` with a moderation marker) on a clean attempt — nothing changed, no
+surviving process — does not count as an executor error for routing: a pinned job fails with
+code `content_rejected`; an unpinned job excludes the route and every enabled route with the
+same `model_key` for this job only and is requeued, and when no route is left it fails with
+code `content_rejected` (not `no_route`).
+
 Route health: a route with `ROUTE_ERROR_STREAK` (2) error attempts in a row — errors finished
-after the route's last `ok` attempt, a later `ok` resets the streak — is marked unavailable for
+after the route's last `ok` attempt, a later `ok` resets the streak, a content-rejected attempt
+neither extends nor resets the streak — is marked unavailable for
 `ROUTE_ERROR_COOLDOWN_S` (1800 s). The policy excludes such a route and `advice` shows
 `harness unavailable: N errors in a row, retry after <local time>`; after the cooldown the route
 is available again. A route the caller pinned still runs, and a job already approved for a route
@@ -158,8 +166,16 @@ windows (the window closest to exhaustion dominates), so a pool whose reset is n
 allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
 function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
 the same tier, mode, caller and pool exclusions would get. `GET /advice` accepts `exclude_pools`
-as a repeated query parameter and `review_of` as a job id; `POST /jobs` accepts the same names
-as a JSON list of strings and a JSON string.
+as a repeated query parameter, `prefer_routes` likewise, and `review_of` as a job id; `POST
+/jobs` accepts the same names as a JSON list of strings and a JSON string.
+
+A caller can also name routes it prefers without pinning one: `POST /jobs` takes
+`prefer_routes` (CLI `--prefer-route`, repeatable), and so does advice. After the exclusion
+pass, eligible preferred routes move to the front of the choice in the given order; the rest
+keep their normal order, and ineligible preferred routes stay in the excluded list with their
+usual reason. An error on a preferred route falls back like any other route error — unlike a
+pinned `route`, which leaves the job without alternatives. Unknown route ids are rejected at
+intake and by advice (`bad_route`).
 
 ## Usage tracking
 
@@ -394,9 +410,13 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
 snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
-Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with no `jobs` row)
-older than the cutoff — preferred over a deletion-marker schema because it needs no schema change
-and also cleans directories left behind by crashes or older versions.
+The `jobs` table also carries the idempotency key of a submit in the columns `request_caller` and
+`request_id`, with a UNIQUE index on the pair: a second job with the same key cannot be inserted,
+and a NULL `request_id` never collides because SQLite treats NULLs as distinct. The key lives as
+long as its job does — `purge` forgets it with the job row, so a purged `request_id` starts a
+new job again. Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with
+no `jobs` row) older than the cutoff — preferred over a deletion-marker schema because it needs
+no schema change and also cleans directories left behind by crashes or older versions.
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
@@ -427,11 +447,27 @@ the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64
 `Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
 both answer `413` with the code `body_too_large`.
 
+Every response carries security headers — `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` —
+set by the outermost middleware, so the 400 and 413 responses of the Host and body-limit checks
+carry them too. A static file that is actually served keeps its normal caching and gets only the
+other three; errors under `/static/` are marked `no-store` like any other response.
+
 Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
 rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,
 `bad_caller` and the other field codes, and a `review_of` without `kind=review` or naming an
 unknown job with `bad_review_of`. `GET /advice` reports invalid query values — an unknown tier,
 mode, pool or reviewed job — as `bad_request`.
+
+`POST /jobs` takes an optional `request_id`: 1–128 characters of `[A-Za-z0-9._:-]`; any other
+value is rejected `422 bad_request_id`. The pair (caller or empty string, `request_id`) is the
+idempotency key of the submit, enforced by the UNIQUE index on the `jobs` table — the constraint
+is the source of truth, so two concurrent submits with one key still create one job. A repeated
+submit with a known key and the same prompt hash, working directory and mode returns the existing
+job with `200` (same `{"job_id", "status"}` body, no new job, no announce, no classifier submit),
+while a new job answers `201`. A key reused with a different prompt, directory or mode is rejected
+`422 request_id_conflict`. The key is remembered only while the job is kept: after `purge` the
+same `request_id` creates a new job again.
 
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
