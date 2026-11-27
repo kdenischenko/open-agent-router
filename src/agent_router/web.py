@@ -319,6 +319,7 @@ def web_router(deps: Gateway) -> APIRouter:
             "sorts": JOB_SORTS,
             "status_kind": STATUS_KIND,
             "local": local,
+            "now": deps.clock.now(),
         }
         template = "_jobs.html" if fragment else "jobs.html"
         return render_page(request, template, context, sid=sid, nav=None if fragment else "jobs")

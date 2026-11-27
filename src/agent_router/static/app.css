@@ -864,6 +864,13 @@ a[data-confirm-action]:hover {
   color: var(--color-warn) !important;
 }
 
+/* stacked frames keep a rhythm without a grid wrapper */
+
+#limits .limit-card + .limit-card,
+#advice .panel + .panel {
+  margin-top: var(--space-3);
+}
+
 /* Job list: filters, rows and pages */
 
 .job-filters {

@@ -27,7 +27,7 @@
         <span>{{ job.approval_route or job.route or 'not chosen yet' }}</span>
         <span>{{ job.tier or '—' }}</span>
         {% if job.request.caller %}<span>{{ job.request.caller }}</span>{% endif %}
-        <time datetime="{{ job.created_at.isoformat() }}">{{ local(job.created_at) }}</time>
+        <time datetime="{{ job.created_at.isoformat() }}" title="{{ local(job.created_at) }}">{{ (now - job.created_at).total_seconds()|age }} ago</time>
         {% if job.finished_at %}<span>{{ (job.finished_at - job.created_at).total_seconds()|age }}</span>{% endif %}
       </span>
       {% if job.reason %}<span class="job-row__reason">Reason: {{ job.reason }}</span>{% endif %}
