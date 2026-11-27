@@ -695,6 +695,35 @@ def test_failed_run_with_answer_about_limits_is_error_not_limit() -> None:
     assert outcome.status == "error" and outcome.error == "boom"
 
 
+def test_opencode_content_rejection_is_reported() -> None:
+    outcome = opencode.parse(sample("opencode_content_rejected.jsonl"), "", 1)
+
+    assert outcome.status == "error"
+    assert outcome.content_rejected
+    assert not outcome.model_unavailable
+    assert "security_audit_fail" in (outcome.error or "")
+
+
+def test_opencode_other_invalid_request_is_not_a_content_rejection() -> None:
+    line = json.dumps(
+        {
+            "type": "error",
+            "error": {"type": "provider.invalid-request", "message": "max_tokens is too large"},
+        }
+    )
+
+    outcome = opencode.parse(line + chr(10), "", 1)
+
+    assert outcome.status == "error"
+    assert not outcome.content_rejected
+
+
+def test_opencode_ordinary_error_is_not_a_content_rejection() -> None:
+    outcome = opencode.parse(sample("opencode_error.jsonl"), "", 1)
+
+    assert not outcome.content_rejected
+
+
 @pytest.mark.parametrize(
     ("code", "name"),
     [

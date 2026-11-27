@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Provider content rejections (e.g. OpenCode's `security_audit_fail` behind
+  `provider.invalid-request`) are reported by the adapter as `content_rejected`: a clean
+  attempt fails a pinned job with code `content_rejected`, moves an unpinned job off all routes
+  of the same model (the job is requeued and fails with `content_rejected` when no route is
+  left), and no longer harms route health.
 - Dashboard and API responses (including rejected-host and body-limit errors) carry security
   headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; static assets keep normal caching.
