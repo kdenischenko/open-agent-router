@@ -17,7 +17,7 @@ been checked live there.
 | Harness | Executable | Authentication | Pool in config |
 |---|---|---|---|
 | Kimi Code | `kimi` | `kimi login` | `kimi-code` |
-| OpenCode | `opencode` | `opencode auth login`, OpenCode Go provider | `opencode-go` |
+| OpenCode 2.2.6 or newer | `opencode` | `opencode auth login`, OpenCode Go provider | `opencode-go` |
 | Cline CLI | `cline` or `cline-cli` | `cline auth <provider>` sets the provider (OpenCode Go here), key and model; see the [official Cline CLI documentation](https://docs.cline.bot/usage/cli-overview) | `opencode-go` |
 | Claude Code | `claude` | Sign in with a subscription | `claude-pro` |
 
@@ -530,7 +530,9 @@ The warning “route …: counter … does not see harness …” means the pool
 that route's spending, so the pool's `usd` window stays invisible; set `spend = "journal"` on the
 route to record its jobs in the journal. The warning “route …: pool … has no counter, so its spend
 is invisible; set `spend = "journal"`” means the route inherits the `counter` source on a pool that
-has no counter at all.
+has no counter at all. The warning “harness … is older than …, which jobs need” means the harness CLI
+lacks a flag the gateway passes, so every job on its routes fails at once: update the harness, or
+point `[backends.<name>] executable` to a newer copy.
 
 `--live` runs one short read job per harness in the first directory from `allowed_roots` and uses
 a small amount of the limit. It probes only enabled routes that allow `read` and have no

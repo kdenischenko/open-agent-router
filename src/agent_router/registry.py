@@ -29,6 +29,7 @@ class HarnessSpec:
     executables: tuple[str, ...]
     spend: SpendSource
     proxy_capable: bool = False
+    min_version: str | None = None  # oldest harness release whose CLI accepts the adapter's flags
 
 
 class Counter(Protocol):

@@ -374,7 +374,8 @@ Adapters (`adapters/`) build argv/stdin and parse output:
   `usage` (including cache tokens) and `total_cost_usd`; spend source `journal`.
 - **opencode** — `opencode run --format json --archived --standalone --model <m>`, prompt via
   stdin; read maps to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens
-  and cost; spend source `counter`.
+  and cost; spend source `counter`. `--archived` first shipped in OpenCode 2.2.6, the harness's
+  `min_version`: `doctor` warns about an older CLI, which rejects every job.
 - **cline** — `cline --json -P <provider> -m <model> [--plan | --auto-approve true] -- <prompt>`;
   read maps to `--plan`, write to `--auto-approve`; the `run_result` event carries tokens and
   cost; spend source `journal`.
