@@ -191,6 +191,95 @@ def test_sqlite_settings(tmp_path):
     store.close()  # closing twice does not raise
 
 
+def test_sqlite_connections_from_finished_threads_are_closed(tmp_path):
+    store = SqliteStore(tmp_path / "a.sqlite")
+    finished_connections: list[sqlite3.Connection] = []
+    errors: list[BaseException] = []
+
+    def open_and_finish() -> None:
+        try:
+            conn = store.connection()
+            conn.execute("select 1").fetchone()
+            finished_connections.append(conn)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=open_and_finish) for _ in range(50)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert all(not thread.is_alive() for thread in threads)
+        assert errors == []
+        assert len(finished_connections) == 50
+
+        ready = threading.Event()
+        release = threading.Event()
+
+        def open_and_wait() -> None:
+            try:
+                store.connection().execute("select 1").fetchone()
+                ready.set()
+                release.wait(timeout=10)
+            except BaseException as exc:
+                errors.append(exc)
+
+        keeper = threading.Thread(target=open_and_wait)
+        keeper.start()
+        assert ready.wait(timeout=10)
+        try:
+            assert len(store._connections) <= 2
+            for conn in finished_connections:
+                with pytest.raises(sqlite3.ProgrammingError):
+                    conn.execute("select 1")
+        finally:
+            release.set()
+            keeper.join(timeout=10)
+        assert not keeper.is_alive()
+        assert errors == []
+    finally:
+        store.close()
+
+
+def test_sqlite_cleanup_keeps_live_thread_connection(tmp_path):
+    store = SqliteStore(tmp_path / "a.sqlite")
+    ready = threading.Event()
+    release = threading.Event()
+    live_connections: list[sqlite3.Connection] = []
+    errors: list[BaseException] = []
+
+    def open_and_wait() -> None:
+        try:
+            live_connections.append(store.connection())
+            ready.set()
+            release.wait(timeout=10)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def open_and_finish() -> None:
+        try:
+            store.connection().execute("select 1").fetchone()
+        except BaseException as exc:
+            errors.append(exc)
+
+    live_thread = threading.Thread(target=open_and_wait)
+    live_thread.start()
+    try:
+        assert ready.wait(timeout=10)
+        other_thread = threading.Thread(target=open_and_finish)
+        other_thread.start()
+        other_thread.join(timeout=10)
+        assert not other_thread.is_alive()
+        assert live_connections[0].execute("select 1").fetchone() == (1,)
+        assert errors == []
+    finally:
+        release.set()
+        live_thread.join(timeout=10)
+        store.close()
+    assert not live_thread.is_alive()
+
+
 def test_sqlite_migrate_is_ordered_and_idempotent(tmp_path):
     store = SqliteStore(tmp_path / "a.sqlite")
     try:
