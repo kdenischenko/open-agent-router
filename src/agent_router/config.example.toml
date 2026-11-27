@@ -69,6 +69,16 @@ backend = "sqlite"
 # type = "jsonl"
 # path = "events.jsonl"
 
+# webhook notifications, e.g. an ntfy topic; the URL is a secret and comes only from
+# the environment variable named by url_env, never from this file
+# [[sinks]]
+# type = "webhook"
+# url_env = "AGENT_ROUTER_WEBHOOK_URL"  # e.g. https://ntfy.sh/<your-topic>
+# format = "text"  # "json" (default) posts the event payload; "text" posts one line
+# events = ["job.completed", "job.failed"]  # optional; without it every event is posted
+# base_url = "http://127.0.0.1:8787"  # optional: adds a dashboard link to each message
+# timeout_s = 5  # a positive number of seconds per attempt
+
 [[pools]]
 id = "claude-pro"
 title = "Claude Pro"

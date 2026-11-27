@@ -11,6 +11,7 @@ from typing import Protocol, TextIO
 from agent_router import plugins
 from agent_router.config import Config, ConfigError, SinkSettings
 from agent_router.events import Event, EventBus
+from agent_router.sinks_webhook import open_webhook_sink
 
 SINK_GROUP = "agent_router.sinks"
 
@@ -86,6 +87,8 @@ class JsonlSink:
 
 
 def open_sink(settings: SinkSettings, home: Path) -> EventSink:
+    if settings.type == "webhook":
+        return open_webhook_sink(settings.options)
     if settings.type == "jsonl":
         raw_path = settings.options.get("path")
         if not isinstance(raw_path, str) or not raw_path:

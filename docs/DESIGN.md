@@ -420,8 +420,16 @@ no schema change and also cleans directories left behind by crashes or older ver
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
-blacklist (no prompts, paths, tokens). Sinks are file/plugin based — a built-in rotating JSONL
-sink; events are not stored in SQLite.
+blacklist (no prompts, paths, tokens). Sinks: a built-in rotating JSONL file, a built-in webhook
+sink and entry-point plugins; events are not stored in SQLite. The webhook sink POSTs each event
+to an HTTP endpoint — `format = "json"` (default) sends the event payload, optionally with a
+dashboard link from `base_url`, and `format = "text"` sends a one-line message with a `Title`
+header for services like ntfy; an optional `events` list restricts the types, all events when it
+is absent. The URL is read only from the environment variable named by `url_env` and never appears
+in a log, an error or doctor output; an unset variable is a config error, so the gateway does
+not start without it. Delivery bypasses proxies from the environment. A failed delivery is retried once under a positive
+`timeout_s`; an event that still cannot be delivered is counted on the sink and dropped without
+raising, so a dead endpoint never blocks the bus.
 
 HTTP API under `/api/v1` (token in `Authorization: Bearer`; the admin token satisfies client
 routes; only `127.0.0.1`/`localhost` Host headers are accepted):
@@ -524,6 +532,7 @@ scripting is available.
 | `service.py` | Gateway composition: snapshot cache, waiters, background loops |
 | `settings_store.py` | Atomic key-value flags over the `settings` table |
 | `sinks.py` | Event sink protocol and the rotating JSONL sink |
+| `sinks_webhook.py` | Webhook event sink: JSON or text POST with retries, env-only URL |
 | `spend.py` | Spend records and attempt cost estimation |
 | `statusline.py` | Claude Code status line script (posts rate limits to the gateway) |
 | `store.py` | SQLite storage for observations and counter samples |

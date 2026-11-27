@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A built-in `webhook` event sink posts gateway events to an HTTP endpoint — `format = "json"`
+  (default) sends the event payload, `format = "text"` a one-line message with a `Title` header
+  (for example an ntfy topic) — with an optional `events` filter (all events when absent), a
+  dashboard link from `base_url`, a positive `timeout_s` per attempt and one retry by default.
+  The URL is a secret read only from the environment variable named by `url_env`, never stored in
+  the config and never written to a log or an error; `doctor` warns when that variable is not set.
 - Job submission is idempotent: an optional `request_id` (CLI `--request-id`, generated when
   omitted; an MCP `submit_job` parameter) is unique per caller in the job store. A repeated
   submit with the same key and the same prompt, working directory and mode returns the existing

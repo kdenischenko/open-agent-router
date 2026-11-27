@@ -387,6 +387,30 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     pool to `mode = "manual"` in `[pools.usage]` and calibrate its windows by hand until then. See
     [TROUBLESHOOTING.md](TROUBLESHOOTING.md#usage-sources-do-not-refresh) for the fixes.
 
+11. **Notifications (optional).** The `webhook` event sink posts gateway events to an HTTP
+    endpoint, for example an [ntfy](https://ntfy.sh) topic:
+
+    ```toml
+    [[sinks]]
+    type = "webhook"
+    url_env = "AGENT_ROUTER_WEBHOOK_URL"
+    format = "text"
+    ```
+
+    Set `AGENT_ROUTER_WEBHOOK_URL=https://ntfy.sh/<your-topic>` in the environment of the user
+    that runs the gateway, so the process started with `agent-router serve` sees it. The URL is a
+    secret — anyone who knows an ntfy topic can post to it — so it must come from the environment
+    and never from the config file; the sink never writes it to a log, an error message or doctor
+    output. When that variable is not set, `agent-router serve` refuses to start with a config
+    error, like any other invalid sink; `agent-router doctor` names the missing variable.
+
+    Options: `format` is `"json"` (the default) or `"text"` — JSON posts the event payload,
+    `text` posts a one-line message with a `Title` header, which suits ntfy. `events` limits
+    delivery to the listed event types; without it every event is posted. `base_url` adds a link
+    to the job in the dashboard to each message. `timeout_s` is a positive number of seconds per
+    attempt; after a failed attempt, delivery is retried once before the event is
+    dropped.
+
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or
 harness” in [README](../README.md).
 
