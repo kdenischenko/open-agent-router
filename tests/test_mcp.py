@@ -121,7 +121,11 @@ def test_submit_job_parameters_say_what_to_pass() -> None:
     assert "seconds" in submit["timeout_s"]["description"]
     assert "capped at 100" in wait["timeout_s"]["description"]
     assert "pool" in submit["exclude_pools"]["description"]
-    assert "pool" in tools["advice"].input_schema["properties"]["exclude_pools"]["description"]
+    advice = tools["advice"].input_schema["properties"]
+    advice_pools = advice["exclude_pools"]["description"].lower()
+    assert "pool" in advice_pools
+    assert "recommendation" in advice_pools
+    assert "job" not in advice_pools
 
 
 def test_submit_job_posts_the_job() -> None:

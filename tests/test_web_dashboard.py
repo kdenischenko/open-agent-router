@@ -54,6 +54,14 @@ def test_login_page_is_public(client):
     assert 'name="token"' in response.text
 
 
+def test_pages_link_a_public_favicon(client):
+    page = client.get("/login")
+    assert '<link rel="icon" href="/static/favicon.svg' in page.text
+    icon = client.get("/static/favicon.svg")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"].startswith("image/svg+xml")
+
+
 def test_invalid_token_is_rejected_without_cookie(client):
     response = login(client, "wrong token")
     assert response.status_code == 401
@@ -462,6 +470,9 @@ def test_pool_title_is_escaped(config, store, clock, tokens, home):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
 
 
+SVG_NAMESPACE = 'xmlns="http://www.w3.org/2000/svg"'
+
+
 @pytest.mark.parametrize("directory", ["templates", "static"])
 def test_assets_have_no_external_urls(directory):
     root = PACKAGE / directory
@@ -484,12 +495,13 @@ def test_assets_have_no_external_urls(directory):
             "submit.html",
         }
         if directory == "templates"
-        else {"app.css", "app.js"}
+        else {"app.css", "app.js", "favicon.svg"}
     )
     assert {path.name for path in root.iterdir() if path.is_file()} == expected
     for path in root.iterdir():
         if path.is_file():
-            text = path.read_text(encoding="utf-8")
+            # the SVG namespace is an identifier, not a resource the browser fetches
+            text = path.read_text(encoding="utf-8").replace(SVG_NAMESPACE, "")
             assert "http://" not in text
             assert "https://" not in text
 
