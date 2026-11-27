@@ -592,3 +592,31 @@ def test_mcp_docs_cover_opencode_schema() -> None:
     opencode = text[text.index("### OpenCode") : text.index("### Cline")]
     assert '"servers": {' in opencode
     assert '"enabled"' not in opencode
+
+
+def test_submit_job_sends_prefer_routes() -> None:
+    gateway = FakeGateway()
+
+    _call(
+        gateway,
+        "submit_job",
+        {"prompt": "p", "cwd": "C:/work/repo", "prefer_routes": ["opencode-cli/glm-5.3"]},
+    )
+
+    assert gateway.calls[0][2]["prefer_routes"] == ["opencode-cli/glm-5.3"]
+
+
+def test_submit_job_describes_preference_versus_pin() -> None:
+    tools = {tool.name: tool for tool in _tools(FakeGateway())}
+    description = tools["submit_job"].input_schema["properties"]["prefer_routes"]["description"]
+
+    assert "route" in description.lower()
+    assert "fall" in description.lower()
+
+
+def test_advice_sends_prefer_routes() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "advice", {"prefer_routes": ["opencode-cli/glm-5.3"]})
+
+    assert gateway.calls[0][2]["prefer_routes"] == ["opencode-cli/glm-5.3"]

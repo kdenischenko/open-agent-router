@@ -158,8 +158,16 @@ windows (the window closest to exhaustion dominates), so a pool whose reset is n
 allowance is still unspent outranks a pool with the same lag but weeks of time left. The same
 function backs the `advice` API and CLI, so the shown recommendation is exactly what a job with
 the same tier, mode, caller and pool exclusions would get. `GET /advice` accepts `exclude_pools`
-as a repeated query parameter and `review_of` as a job id; `POST /jobs` accepts the same names
-as a JSON list of strings and a JSON string.
+as a repeated query parameter, `prefer_routes` likewise, and `review_of` as a job id; `POST
+/jobs` accepts the same names as a JSON list of strings and a JSON string.
+
+A caller can also name routes it prefers without pinning one: `POST /jobs` takes
+`prefer_routes` (CLI `--prefer-route`, repeatable), and so does advice. After the exclusion
+pass, eligible preferred routes move to the front of the choice in the given order; the rest
+keep their normal order, and ineligible preferred routes stay in the excluded list with their
+usual reason. An error on a preferred route falls back like any other route error — unlike a
+pinned `route`, which leaves the job without alternatives. Unknown route ids are rejected at
+intake and by advice (`bad_route`).
 
 ## Usage tracking
 

@@ -982,3 +982,24 @@ def test_cli_deny_names_denied_route(runner: CliRunner, gateway: FakeGateway) ->
 
     assert result.exit_code == 0
     assert "denied route fake/main: the job looks for another route" in result.stderr
+
+
+def test_run_sends_prefer_routes_as_a_list(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(
+        cli.app,
+        ["run", "--no-wait", "--prefer-route", "b/main", "--prefer-route", "a/main", _RUN_PROMPT],
+    )
+
+    assert result.exit_code == 0
+    body = gateway.calls[0][2]
+    assert body["prefer_routes"] == ["b/main", "a/main"]
+    assert "route" not in body
+
+
+def test_run_omits_prefer_routes_without_the_option(
+    runner: CliRunner, gateway: FakeGateway
+) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    assert "prefer_routes" not in gateway.calls[0][2]

@@ -11,6 +11,9 @@ All notable changes are documented here. The format follows
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
+- Job submission and advice accept `prefer_routes` (repeatable `--prefer-route` in the CLI and
+  MCP): eligible preferred routes run first in the given order, and the gateway still falls
+  back to the other routes, unlike `--route` which pins the job to one route.
 - A route whose harness reports its model as unavailable (OpenCode's
   `provider.no-route: Model unavailable: <provider>/<model>`) is taken out of rotation after a
   single failure for `tasks.model_unavailable_cooldown_s` (default 1800 s, new config key);

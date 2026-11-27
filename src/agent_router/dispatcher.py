@@ -596,6 +596,7 @@ class Dispatcher(RecoveryMixin):
             excluded_routes=job.excluded_routes,
             excluded_pools=job.excluded_pools,
             request_excluded_pools=job.request.excluded_pools,
+            preferred_routes=job.request.preferred_routes,
             explicit=explicit,
             kind="harness",
             reviewed_model_group=model_group,

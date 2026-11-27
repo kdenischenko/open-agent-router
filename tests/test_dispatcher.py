@@ -1042,6 +1042,7 @@ def test_each_attempt_has_own_decision(make_rig) -> None:
             "chosen",
             "candidates",
             "excluded",
+            "preferred",
             "note",
         }
         assert attempt.decision["tier"] == "standard"
@@ -4073,3 +4074,49 @@ def test_advice_shows_model_unavailable_reason(make_rig) -> None:
     excluded = {item.route.id: item.reason for item in decision.excluded}
     assert excluded["a/main"].startswith("harness unavailable: model unavailable, retry after ")
     assert [choice.route.id for choice in decision.chosen] == ["b/main"]
+
+
+# --- preferred routes ------------------------------------------------------------------------
+
+
+@requires_git
+def test_preferred_route_runs_first(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    job = rig.submit(rig.plain(), preferred_routes=("b/main",))
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "b/main")
+    (attempt,) = rig.attempts(job)
+    assert attempt.decision is not None
+    assert attempt.decision["preferred"] == ["b/main"]
+
+
+@requires_git
+def test_preferred_route_error_falls_back_to_another_route(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    rig.runner.add(Step("error:boom", exit_code=2))
+    job = rig.submit(rig.plain(), preferred_routes=("b/main",))
+    rig.tick(4)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "a/main")
+    first, second = rig.attempts(job)
+    assert (first.route, first.outcome) == ("b/main", "error")
+    assert second.route == "a/main"
+
+
+@requires_git
+def test_ineligible_preferred_route_shows_in_the_decision_snapshot(make_rig) -> None:
+    rig = make_rig(routes=TWO_ROUTES)
+    job = rig.submit(
+        rig.plain(), preferred_routes=("b/main",), excluded_pools=frozenset({"pool-b"})
+    )
+    rig.tick(2)
+
+    done = rig.job(job)
+    assert (done.status, done.route) == ("completed", "a/main")
+    (attempt,) = rig.attempts(job)
+    assert attempt.decision is not None
+    assert attempt.decision["preferred"] == ["b/main"]
+    assert {"route": "b/main", "reason": "excluded by request"} in attempt.decision["excluded"]

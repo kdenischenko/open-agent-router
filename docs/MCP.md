@@ -20,7 +20,7 @@ The server exposes exactly these 8 tools:
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
 | `cancel_job` | Cancel a queued or running job |
 | `rate_job` | Rate a result: `good`, `bad` or `partial`, with an optional tier hint; returns only `id`, `status` and `rating` |
-| `advice` | Ask which route a tier, mode or caller would take, optionally excluding pools |
+| `advice` | Ask which route a tier, mode or caller would take, optionally excluding pools or preferring routes |
 | `status` | Gateway snapshot: pool limits, spend and blocks (job state is in `list_jobs`) |
 
 ## Compact job results
@@ -45,6 +45,10 @@ full `log_tail`, attempts and timestamps.
 - `route` is a route id from `advice`, for example `opencode-cli/glm-5.3`; it pins the job
   to that route instead of letting the gateway choose, and the job is still rejected
   if the route cannot serve it.
+- `prefer_routes` is an optional list of route ids that `submit_job` and `advice` put first,
+  in the given order. It is a preference, not a pin: an error on a preferred route falls
+  back to the other routes, and an ineligible one shows in the excluded list with its usual
+  reason. Route ids must be known and non-empty.
 - `exclude_pools` is an optional list of pool ids that `submit_job` and `advice` leave out of
   the route choice. Advice marks their routes `excluded by request`; a pinned route on an
   excluded pool is rejected. Pool ids must be known and non-empty.
