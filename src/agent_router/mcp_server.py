@@ -89,6 +89,7 @@ _REVIEW_OF = Field(
     "kind=review, and the gateway keeps the review off the model group and pool that wrote "
     "the code"
 )
+_KIND = Field(description="Job kind: code, review, research or other; review_of sets kind=review")
 _ADVICE_EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, excluded from the recommendation; their routes "
     "show as excluded by request"
@@ -122,8 +123,11 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         route: Annotated[str | None, _ROUTE] = None,
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
         exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
+        kind: Annotated[str | None, _KIND] = None,
         review_of: Annotated[str | None, _REVIEW_OF] = None,
     ) -> dict[str, Any]:
+        if review_of is not None and kind not in (None, "review"):
+            raise ToolError("review_of requires kind=review")
         body: dict[str, Any] = {"prompt": prompt, "cwd": cwd, "mode": mode}
         if tier is not None:
             body["tier"] = tier
@@ -135,6 +139,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["timeout_s"] = timeout_s
         if exclude_pools is not None:
             body["exclude_pools"] = exclude_pools
+        if kind is not None:
+            body["kind"] = kind
         if review_of is not None:
             body["kind"] = "review"
             body["review_of"] = review_of

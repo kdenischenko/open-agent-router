@@ -35,6 +35,8 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- `agent-router run --kind` and the MCP `submit_job` tool set the job kind (`code`, `review`,
+  `research` or `other`); `--review-of` and `review_of` set `review`.
 
 ### Changed
 

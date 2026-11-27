@@ -48,6 +48,8 @@ full `log_tail`, attempts and timestamps.
 - `exclude_pools` is an optional list of pool ids that `submit_job` and `advice` leave out of
   the route choice. Advice marks their routes `excluded by request`; a pinned route on an
   excluded pool is rejected. Pool ids must be known and non-empty.
+- `kind` marks what the job is for: `code`, `review`, `research` or `other`. A review does
+  not need it set by hand: `review_of` sets `kind=review` itself.
 - `review_of` is the id of a job whose result the new job reviews; `submit_job` then sends
   `kind=review`. The review never runs on the model group or pool that wrote the code — advice
   marks those routes `author of reviewed job`. When nothing else is eligible, the review runs
