@@ -81,6 +81,12 @@ class JobStore(Protocol):
         """Delete old terminal jobs and orphan directories; return ids and removal failures."""
         ...
 
+    def purge_usage(
+        self, before: datetime, counter_samples_before: datetime, dry_run: bool = False
+    ) -> tuple[int, int]:
+        """Delete old usage history; return observation and counter-sample counts."""
+        return 0, 0
+
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
         """Queued jobs in creation order; `after` is the id of the last one seen."""
         ...
@@ -796,6 +802,38 @@ class SqliteJobStore:
                 except OSError:
                     failed_dirs.append(directory)
         return job_ids, failed_dirs
+
+    def purge_usage(
+        self, before: datetime, counter_samples_before: datetime, dry_run: bool = False
+    ) -> tuple[int, int]:
+        moment = to_us(before)
+        counter_moment = to_us(counter_samples_before)
+        observation_ids = (
+            "SELECT id FROM observations AS candidate WHERE candidate.observed_at < ? AND EXISTS ("
+            "SELECT 1 FROM observations AS newer"
+            " WHERE newer.pool = candidate.pool AND newer.window = candidate.window"
+            " AND (newer.observed_at > candidate.observed_at OR"
+            " (newer.observed_at = candidate.observed_at AND newer.id > candidate.id)))"
+        )
+        sample_condition = "sampled_at < ?"
+        if dry_run:
+            conn = self._store.connection()
+            observations = conn.execute(
+                f"SELECT COUNT(*) FROM observations WHERE id IN ({observation_ids})", (moment,)
+            ).fetchone()[0]
+            samples = conn.execute(
+                f"SELECT COUNT(*) FROM counter_samples WHERE {sample_condition}",
+                (counter_moment,),
+            ).fetchone()[0]
+            return int(observations), int(samples)
+        with self._store.transaction() as conn:
+            observations = conn.execute(
+                f"DELETE FROM observations WHERE id IN ({observation_ids})", (moment,)
+            ).rowcount
+            samples = conn.execute(
+                f"DELETE FROM counter_samples WHERE {sample_condition}", (counter_moment,)
+            ).rowcount
+        return observations, samples
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
         conn = self._store.connection()

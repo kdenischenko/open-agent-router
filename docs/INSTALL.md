@@ -271,15 +271,21 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    retention_days = 30
    ```
 
-   Run `agent-router purge --dry-run` to see how many job rows and leftover directories would be
-   removed, then `agent-router purge` to delete their database records and `jobs/<job-id>/`
-   directories. Only terminal jobs whose finish time is older than the limit are removed; queued,
-   running and awaiting-approval jobs are always kept. Purge also removes orphaned
-   `jobs/<job-id>/` directories left by crashes or older versions once none of their files has
-   been modified for longer than the retention period, and it retries directory removals that
-   failed during an earlier purge. `--dry-run` reports these orphans and retries separately from
-   job rows in its counts but deletes nothing. Usage and spend records are kept for pool window
-   accounting. Purge never runs automatically when the gateway starts.
+   Run `agent-router purge --dry-run` to see how many job rows, usage rows and leftover
+   directories would be removed, then `agent-router purge` to delete their database records and
+   `jobs/<job-id>/` directories. Only terminal jobs whose finish time is older than the limit are
+   removed; queued, running and awaiting-approval jobs are always kept. Purge also removes
+   orphaned `jobs/<job-id>/` directories left by crashes or older versions once none of their
+   files has been modified for longer than the retention period, and it retries directory removals
+   that failed during an earlier purge. `--dry-run` reports these orphans and retries separately
+   from job rows in its counts but deletes nothing.
+
+   Old observations are removed under the same retention cutoff, except that the newest
+   observation for every pool and window pair is always kept, regardless of age. Counter samples
+   use the earlier of the retention cutoff and twice the longest configured window duration before
+   now, preserving the current window and one more window for pace calculation; monthly durations use
+   calendar arithmetic. Spend records are kept for pool window accounting. Purge never runs
+   automatically when the gateway starts.
 
 10. **Usage sources (optional).** A usage source reads the used share of a plan's windows from
     the vendor (for example a usage endpoint) instead of manual calibration. The root table sets

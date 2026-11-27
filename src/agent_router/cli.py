@@ -40,7 +40,7 @@ from agent_router.export import ExportError
 from agent_router.export import export as export_journal
 from agent_router.jobs import TERMINAL
 from agent_router.jobstore import open_jobstore
-from agent_router.periods import parse_moment
+from agent_router.periods import approx_length, parse_moment, shift
 from agent_router.registry import HARNESS_GROUP, harnesses, load_harness, resolve_backend
 from agent_router.runner import ResolvedExecutable, resolve_executable
 from agent_router.settings_store import SqliteSettings
@@ -204,7 +204,7 @@ def purge(
         False, "--dry-run", help="Show what would be deleted without deleting it"
     ),
 ) -> None:
-    """Delete terminal jobs older than storage.retention_days and their local files."""
+    """Delete old terminal jobs and usage history governed by storage.retention_days."""
     home = home_dir()
     config = _config(home)
     retention_days = config.storage.retention_days
@@ -215,11 +215,28 @@ def purge(
     try:
         store = open_store(config.storage, home)
         jobs = open_jobstore(config.storage, home, store)
-        before = SystemClock().now() - timedelta(days=retention_days)
+        now = SystemClock().now()
+        before = now - timedelta(days=retention_days)
+        durations = [window.duration for pool in config.pools for window in pool.windows]
+        counter_samples_before = before
+        if durations:
+            longest = max(durations, key=approx_length)
+            counter_samples_before = min(before, shift(now, longest, -2))
+        purge_usage = getattr(jobs, "purge_usage", None)
+        observation_count = 0
+        counter_sample_count = 0
+        if callable(purge_usage):
+            observation_count, counter_sample_count = purge_usage(
+                before, counter_samples_before, dry_run=True
+            )
         purged, failed_dirs = jobs.purge(before, home / "jobs", dry_run=True)
         row_ids = {job_id for job_id in purged if jobs.get(job_id) is not None}
         if not dry_run:
             purged, failed_dirs = jobs.purge(before, home / "jobs")
+            if callable(purge_usage):
+                observation_count, counter_sample_count = purge_usage(
+                    before, counter_samples_before
+                )
     except (ConfigError, OSError, sqlite3.Error) as exc:
         typer.echo(f"purge failed: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -228,14 +245,19 @@ def purge(
             store.close()
     row_count = sum(job_id in row_ids for job_id in purged)
     entry_count = len(purged) - row_count
+    action = "would purge" if dry_run else "purged"
     messages = []
     if row_count or not entry_count:
         noun = "job" if row_count == 1 else "jobs"
-        messages.append(f"{'would purge' if dry_run else 'purged'} {row_count} {noun}")
+        messages.append(f"{action} {row_count} {noun}")
     if entry_count:
         noun = "entry" if entry_count == 1 else "entries"
         messages.append(f"{'would remove' if dry_run else 'removed'} {entry_count} job {noun}")
     typer.echo(" and ".join(messages))
+    noun = "observation" if observation_count == 1 else "observations"
+    typer.echo(f"{action} {observation_count} {noun}")
+    noun = "counter sample" if counter_sample_count == 1 else "counter samples"
+    typer.echo(f"{action} {counter_sample_count} {noun}")
     for directory in failed_dirs:
         typer.echo(f"warning: could not remove {directory}", err=True)
     if failed_dirs:
