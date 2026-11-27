@@ -20,8 +20,6 @@ from agent_router.worktree import (
 )
 from helpers import break_index, git, make_empty_git_repo, make_git_repo, requires_git
 
-pytestmark = requires_git
-
 _BACKSLASH = chr(92)
 _NAME = "someone"
 _WINDOWS_USER_PATH = (
@@ -300,6 +298,7 @@ def test_http_route_with_home_path_is_masked(known_roots) -> None:
     assert without_paths(text, known_roots["cwd"]) == "GET ~" + os.sep + "x"
 
 
+@requires_git
 def test_new_file_with_spaces_and_cyrillic(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "репозиторий с пробелом")  # non-ascii on purpose
     before: TreeSnapshot = tree_snapshot(repo)
@@ -314,6 +313,7 @@ def test_new_file_with_spaces_and_cyrillic(tmp_path: Path) -> None:
     assert changed_files(before, after) == [name]
 
 
+@requires_git
 def test_modified_tracked_file(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     before = tree_snapshot(repo)
@@ -326,6 +326,7 @@ def test_modified_tracked_file(tmp_path: Path) -> None:
     assert changed_files(before, after) == ["README.md"]
 
 
+@requires_git
 def test_deleted_file_has_missing_metadata(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     before = tree_snapshot(repo)
@@ -337,6 +338,7 @@ def test_deleted_file_has_missing_metadata(tmp_path: Path) -> None:
     assert changed_files(before, after) == ["README.md"]
 
 
+@requires_git
 def test_already_dirty_file_changed_again(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     path = repo / "README.md"
@@ -350,6 +352,7 @@ def test_already_dirty_file_changed_again(tmp_path: Path) -> None:
     assert changed_files(before, after) == ["README.md"]
 
 
+@requires_git
 def test_unchanged_tree_has_no_changed_files(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
 
@@ -361,6 +364,7 @@ def test_unchanged_tree_has_no_changed_files(tmp_path: Path) -> None:
     assert changed_files(before, after) == []
 
 
+@requires_git
 def test_commit_changes_head_and_reports_committed_file(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     head_before = head(repo)
@@ -377,6 +381,7 @@ def test_commit_changes_head_and_reports_committed_file(tmp_path: Path) -> None:
     assert committed_files(repo, head_before, head_after) == ["README.md"]
 
 
+@requires_git
 def test_subdirectory_uses_repository_relative_paths(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     cwd = repo / "nested" / "inner"
@@ -389,6 +394,7 @@ def test_subdirectory_uses_repository_relative_paths(tmp_path: Path) -> None:
     assert set(snapshot) == {"nested/inner/new.txt"}
 
 
+@requires_git
 def test_rename_contains_both_paths(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
 
@@ -413,6 +419,7 @@ def test_changed_files_is_sorted_and_includes_disappeared_paths() -> None:
     assert changed_files(before, after) == ["a.txt", "b.txt", "c.txt"]
 
 
+@requires_git
 def test_outside_git_has_no_repo_root(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -424,6 +431,7 @@ def test_nonexistent_directory_has_no_repo_root(tmp_path: Path) -> None:
     assert repo_root(tmp_path / "missing") is None
 
 
+@requires_git
 def test_repository_without_commits_has_no_head(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -452,6 +460,7 @@ def _break_branch(repo: Path, kind: str) -> None:
 
 
 @pytest.mark.parametrize("kind", ["garbage", "missing-object", "packed-missing-object"])
+@requires_git
 def test_head_broken_ref_is_error(tmp_path: Path, kind: str) -> None:
     repo = make_git_repo(tmp_path / "repo")
     _break_branch(repo, kind)
@@ -479,6 +488,7 @@ def _warn_on_rev_parse(monkeypatch) -> None:
     monkeypatch.setattr(worktree, "_run", fake_run)
 
 
+@requires_git
 def test_head_empty_repo_with_git_warning_is_none(tmp_path: Path, monkeypatch) -> None:
     repo = make_empty_git_repo(tmp_path / "repo")
     _warn_on_rev_parse(monkeypatch)
@@ -486,6 +496,7 @@ def test_head_empty_repo_with_git_warning_is_none(tmp_path: Path, monkeypatch) -
     assert head(repo) is None
 
 
+@requires_git
 def test_head_empty_repo_with_real_git_warning_is_none(tmp_path: Path) -> None:
     """Real warning: unknown `core.fsync` component (git 2.56: exit code 1, `warning:`)."""
     repo = make_empty_git_repo(tmp_path / "repo")
@@ -495,6 +506,7 @@ def test_head_empty_repo_with_real_git_warning_is_none(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("kind", ["garbage", "missing-object", "packed-missing-object"])
+@requires_git
 def test_head_broken_ref_with_git_warning_is_error(tmp_path: Path, kind: str, monkeypatch) -> None:
     """Control: a warning on stderr must not turn a broken branch into "no commits"."""
     repo = make_git_repo(tmp_path / "repo")
@@ -505,6 +517,7 @@ def test_head_broken_ref_with_git_warning_is_error(tmp_path: Path, kind: str, mo
         head(repo)
 
 
+@requires_git
 def test_head_of_normal_repo_is_hash(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
 
@@ -577,6 +590,7 @@ def test_repo_root_unexpected_failure_raises(tmp_path: Path, monkeypatch) -> Non
     _all_raise(tmp_path)
 
 
+@requires_git
 def test_head_outside_git_raises(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -585,6 +599,7 @@ def test_head_outside_git_raises(tmp_path: Path) -> None:
         head(outside)
 
 
+@requires_git
 def test_snapshot_outside_git_raises(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -593,6 +608,7 @@ def test_snapshot_outside_git_raises(tmp_path: Path) -> None:
         tree_snapshot(outside)
 
 
+@requires_git
 def test_snapshot_with_broken_index_raises(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     break_index(repo)
@@ -603,6 +619,7 @@ def test_snapshot_with_broken_index_raises(tmp_path: Path) -> None:
         tree_snapshot(repo)
 
 
+@requires_git
 def test_committed_files_from_empty_history(tmp_path: Path) -> None:
     repo = tmp_path / "репозиторий без коммитов"  # non-ascii on purpose
     cwd = repo / "подкаталог с пробелом"  # non-ascii on purpose
@@ -621,6 +638,7 @@ def test_committed_files_from_empty_history(tmp_path: Path) -> None:
     assert committed_files(cwd, None, first) == ["a.txt", committed]
 
 
+@requires_git
 def test_committed_files_unknown_hash_raises(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
     current = head(repo)
@@ -653,6 +671,7 @@ def test_error_text_has_no_job_path(tmp_path: Path, monkeypatch) -> None:
     assert "second line" not in message
 
 
+@requires_git
 def test_cwd_inside_git_dir_has_no_repo_root(tmp_path: Path) -> None:
     repo = make_git_repo(tmp_path / "repo")
 

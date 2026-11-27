@@ -22,8 +22,6 @@ from helpers import full_config_text, requires_git, write_config
 from test_dispatcher import ROUTES, ImmediateExecutor, ScriptAdapter
 from test_spend import MeteredAdapter, SpendRig, spend_config
 
-pytestmark = requires_git
-
 NOW = datetime(2026, 11, 12, 12, tzinfo=UTC)
 TOL = timedelta(minutes=15)
 NOTE_SCALE = "model weights changed — recalibrate the pool"
@@ -402,6 +400,7 @@ def spend_versions(rig: SpendRig) -> list[str | None]:
     return [row[0] for row in rows]
 
 
+@requires_git
 def test_opencode_attempt_cost_estimated(weighted_rig) -> None:
     rig = weighted_rig(
         MeteredAdapter(cost=None, tokens=TOKENS), backend="opencode", spend="counter", counter=True
@@ -417,6 +416,7 @@ def test_opencode_attempt_cost_estimated(weighted_rig) -> None:
     assert rig.bus.data("spend.recorded") == []
 
 
+@requires_git
 def test_journal_spend_scaled_once(weighted_rig) -> None:
     rig = weighted_rig(MeteredAdapter(cost=None, tokens=TOKENS))
     job = rig.submit(rig.plain())
@@ -433,6 +433,7 @@ def test_journal_spend_scaled_once(weighted_rig) -> None:
     assert event["cost_usd"] == pytest.approx(RAW * 3) and event["estimated"] is True
 
 
+@requires_git
 def test_harness_cost_not_scaled(weighted_rig) -> None:
     rig = weighted_rig(MeteredAdapter(cost=0.12, tokens=TOKENS))
     job = rig.submit(rig.plain())
@@ -445,6 +446,7 @@ def test_harness_cost_not_scaled(weighted_rig) -> None:
     assert spend_versions(rig) == [None]
 
 
+@requires_git
 def test_no_price_keeps_cost_none(weighted_rig) -> None:
     rig = weighted_rig(MeteredAdapter(cost=None, tokens=TOKENS), prices='"other" = [1.0, 1.0]\n')
     job = rig.submit(rig.plain())
@@ -455,6 +457,7 @@ def test_no_price_keeps_cost_none(weighted_rig) -> None:
     assert row["cost_usd"] is None and row["estimated"] == 0
 
 
+@requires_git
 def test_no_tokens_keeps_cost_none(weighted_rig) -> None:
     rig = weighted_rig(MeteredAdapter(cost=None, tokens=(None, None)))
     job = rig.submit(rig.plain())
@@ -463,6 +466,7 @@ def test_no_tokens_keeps_cost_none(weighted_rig) -> None:
     assert attempt.cost_usd is None and attempt.cost_estimated is False
 
 
+@requires_git
 def test_cost_survives_final_write_retry(weighted_rig, monkeypatch) -> None:
     rig = weighted_rig(MeteredAdapter(cost=None, tokens=TOKENS))
     job = rig.submit(rig.plain())
@@ -494,6 +498,7 @@ def test_cost_survives_final_write_retry(weighted_rig, monkeypatch) -> None:
     ],
     ids=["route-model", "group-fallback", "weight-by-model"],
 )
+@requires_git
 def test_price_key_uses_route_model(weighted_rig, prices: str, limits: str, expected: float):
     rig = weighted_rig(
         MeteredAdapter(cost=None, tokens=TOKENS), prices=prices, limits=limits, group="glm-group"

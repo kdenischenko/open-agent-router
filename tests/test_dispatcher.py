@@ -34,8 +34,6 @@ from agent_router.runner import Invocation, ProcessQueryError, ProcessResult, Re
 from agent_router.store import Observation
 from helpers import break_index, git, make_empty_git_repo, make_git_repo, requires_git, write_config
 
-pytestmark = requires_git
-
 # --- fakes ----------------------------------------------------------------------------
 
 
@@ -511,6 +509,7 @@ class FakeVotes:
         pass
 
 
+@requires_git
 def test_classifier_result_is_stored_on_next_tick(make_rig) -> None:
     votes = FakeVotes()
     rig = make_rig(votes=votes)
@@ -544,6 +543,7 @@ def test_classifier_result_is_stored_on_next_tick(make_rig) -> None:
     assert rig.bus.types("job.") == baseline.bus.types("job.")
 
 
+@requires_git
 def test_classifier_does_not_delay_or_change_route(make_rig) -> None:
     votes = FakeVotes(tier="strong", confidence=0.9)
     rig = make_rig(votes=votes)
@@ -566,6 +566,7 @@ def test_classifier_does_not_delay_or_change_route(make_rig) -> None:
     assert current.classifier_tier == "strong" and current.classifier_confidence == 0.9
 
 
+@requires_git
 def test_classifier_failure_leaves_fields_empty_and_keeps_vote(make_rig) -> None:
     votes = FakeVotes(tier=None, confidence=None)
     votes.error = "timeout"
@@ -578,6 +579,7 @@ def test_classifier_failure_leaves_fields_empty_and_keeps_vote(make_rig) -> None
     assert rig.jobs.votes(job.id)[0].error == "timeout"
 
 
+@requires_git
 def test_secondary_vote_does_not_touch_job_fields(make_rig) -> None:
     votes = FakeVotes()
     rig = make_rig(votes=votes)
@@ -590,6 +592,7 @@ def test_secondary_vote_does_not_touch_job_fields(make_rig) -> None:
     assert [v.classifier_id for v in rig.jobs.votes(job.id)] == ["lfm3"]
 
 
+@requires_git
 def test_classifier_result_for_finished_job_keeps_status(make_rig) -> None:
     votes = FakeVotes()
     rig = make_rig(votes=votes)
@@ -607,6 +610,7 @@ def test_classifier_result_for_finished_job_keeps_status(make_rig) -> None:
     assert rig.bus.types("job.") == events
 
 
+@requires_git
 def test_classifier_store_failure_does_not_break_tick(make_rig, monkeypatch) -> None:
     votes = FakeVotes()
     rig = make_rig(votes=votes, max_parallel=1)
@@ -631,6 +635,7 @@ def test_classifier_store_failure_does_not_break_tick(make_rig, monkeypatch) -> 
     assert rig.status(second) == "running"
 
 
+@requires_git
 def test_classifier_off_by_default(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain())
@@ -639,6 +644,7 @@ def test_classifier_off_by_default(make_rig) -> None:
     assert rig.dispatcher.classify_executor is None
 
 
+@requires_git
 def test_classifier_submit_failure_does_not_reject_job(make_rig) -> None:
     class Broken(FakeVotes):
         def submit(self, job_id: str, prompt: str, created_at) -> None:
@@ -662,6 +668,7 @@ def active_rig(make_rig, votes, *, routes=ROUTES, mode: str = "active", **classi
     return rig
 
 
+@requires_git
 def test_active_uses_classifier_tier(make_rig) -> None:
     votes = FakeVotes(tier="cheap", confidence=0.8)
     rig = active_rig(make_rig, votes)
@@ -686,6 +693,7 @@ def test_active_uses_classifier_tier(make_rig) -> None:
     assert (attempt.decision["tier"], attempt.decision["tier_source"]) == ("cheap", "classifier")
 
 
+@requires_git
 def test_active_keeps_caller_tier(make_rig) -> None:
     votes = FakeVotes(tier="cheap", confidence=0.95)
     rig = active_rig(make_rig, votes)
@@ -705,6 +713,7 @@ def test_active_keeps_caller_tier(make_rig) -> None:
     assert current.classifier_tier == "cheap"
 
 
+@requires_git
 def test_active_low_confidence_default(make_rig) -> None:
     votes = FakeVotes(tier="cheap", confidence=0.59)  # secondary lfm3 is confident, not decisive
     rig = active_rig(make_rig, votes)
@@ -718,6 +727,7 @@ def test_active_low_confidence_default(make_rig) -> None:
     assert current.classifier_tier == "cheap" and current.classifier_confidence == 0.59
 
 
+@requires_git
 def test_active_primary_error_starts_at_once_default(make_rig) -> None:
     votes = FakeVotes(tier=None, confidence=None)
     votes.error = "timeout"
@@ -733,6 +743,7 @@ def test_active_primary_error_starts_at_once_default(make_rig) -> None:
     assert current.tier_pending is False
 
 
+@requires_git
 def test_active_model_threshold_overrides_global(make_rig) -> None:
     votes = FakeVotes(tier="cheap", confidence=0.8)
     model = ClassifierModel(
@@ -755,6 +766,7 @@ def test_active_model_threshold_overrides_global(make_rig) -> None:
     assert current.tier_pending is False
 
 
+@requires_git
 def test_active_write_floor(make_rig) -> None:
     votes = FakeVotes(tier="cheap", confidence=0.9)
     rig = active_rig(make_rig, votes)
@@ -766,6 +778,7 @@ def test_active_write_floor(make_rig) -> None:
     assert (current.tier, current.tier_source) == ("standard", "classifier")
 
 
+@requires_git
 def test_active_ollama_down_starts_after_wait_s(make_rig) -> None:
     votes = FakeVotes()  # votes never arrive: run_all is not called
     rig = active_rig(make_rig, votes)
@@ -795,6 +808,7 @@ def test_active_ollama_down_starts_after_wait_s(make_rig) -> None:
     assert current.classifier_tier == "strong"
 
 
+@requires_git
 def test_active_explicit_wait_s(make_rig) -> None:
     rig = active_rig(make_rig, FakeVotes(), wait_s=10)
     job = rig.submit(rig.plain())
@@ -806,6 +820,7 @@ def test_active_explicit_wait_s(make_rig) -> None:
     assert rig.status(job) == "running"
 
 
+@requires_git
 def test_active_pending_does_not_block_on_future(make_rig, monkeypatch) -> None:
     """Vote waiting is a loop-pass check: tick neither waits nor sleeps."""
     votes = FakeVotes()
@@ -822,6 +837,7 @@ def test_active_pending_does_not_block_on_future(make_rig, monkeypatch) -> None:
     assert rig.status(job) == "queued"
 
 
+@requires_git
 def test_retry_after_limit_keeps_tier(make_rig) -> None:
     routes = (
         route("a/main", "pool-a", 5, tiers=("strong",)),
@@ -849,6 +865,7 @@ def test_retry_after_limit_keeps_tier(make_rig) -> None:
         assert attempt.decision["tier_source"] == "classifier"
 
 
+@requires_git
 def test_pending_tier_after_restart_resolved(make_rig) -> None:
     rig = active_rig(make_rig, FakeVotes())
     job = rig.submit(rig.plain())
@@ -870,6 +887,7 @@ def test_pending_tier_after_restart_resolved(make_rig) -> None:
     assert current.tier_pending is False
 
 
+@requires_git
 def test_shadow_mode_unchanged(make_rig) -> None:
     votes = FakeVotes(tier="strong", confidence=0.99)
     rig = active_rig(make_rig, votes, mode="shadow")
@@ -906,6 +924,7 @@ def commit_file(name: str = "закоммичен.txt") -> Callable[[Path], None
 # --- simple path ------------------------------------------------------------------------
 
 
+@requires_git
 def test_queued_running_completed(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain())
@@ -936,6 +955,7 @@ def test_queued_running_completed(make_rig) -> None:
     assert call.inv.argv == (str(Path("/opt/harness/fake")), "read", "model-x")
 
 
+@requires_git
 def test_timeout_comes_from_request(make_rig) -> None:
     rig = make_rig()
     rig.submit(rig.plain(), timeout_s=90)
@@ -943,6 +963,7 @@ def test_timeout_comes_from_request(make_rig) -> None:
     assert rig.runner.calls[0].timeout_s == 90
 
 
+@requires_git
 def test_runner_gets_idle_limit(make_rig) -> None:
     rig = make_rig()
     rig.submit(rig.plain())
@@ -950,6 +971,7 @@ def test_runner_gets_idle_limit(make_rig) -> None:
     assert rig.runner.calls[0].idle_timeout_s == 600
 
 
+@requires_git
 def test_claude_route_has_idle_limit(make_rig) -> None:
     from agent_router.adapters.claude import ClaudeAdapter
 
@@ -962,6 +984,7 @@ def test_claude_route_has_idle_limit(make_rig) -> None:
     assert rig.runner.calls[0].idle_timeout_s == 600
 
 
+@requires_git
 def test_idle_zero_disables(make_rig) -> None:
     rig = make_rig(idle_timeout_s=0)
     rig.submit(rig.plain())
@@ -969,6 +992,7 @@ def test_idle_zero_disables(make_rig) -> None:
     assert rig.runner.calls[0].idle_timeout_s is None
 
 
+@requires_git
 def test_explicit_timeout_keeps_idle(make_rig) -> None:
     rig = make_rig()
     rig.submit(rig.plain(), timeout_s=90)
@@ -980,6 +1004,7 @@ def test_explicit_timeout_keeps_idle(make_rig) -> None:
 # --- event log: prompt hash and decision snapshot ---------------------------------------
 
 
+@requires_git
 def test_submit_records_prompt_hash_and_length(make_rig) -> None:
     rig = make_rig()
     prompt = "привет «мир»"  # non-ascii on purpose
@@ -992,6 +1017,7 @@ def test_submit_records_prompt_hash_and_length(make_rig) -> None:
     assert stored.prompt_sha256 == digest
 
 
+@requires_git
 def test_each_attempt_has_own_decision(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"))
@@ -1029,6 +1055,7 @@ def test_each_attempt_has_own_decision(make_rig) -> None:
 # --- route choice ------------------------------------------------------------------------
 
 
+@requires_git
 def test_stale_fixed_observation_is_noted_in_stored_decision(make_rig) -> None:
     rig = make_rig()
     now = rig.clock.now()
@@ -1051,6 +1078,7 @@ def test_stale_fixed_observation_is_noted_in_stored_decision(make_rig) -> None:
     assert candidates["b/main"]["note"] is None
 
 
+@requires_git
 def test_explicit_route_skips_tier_reserve_and_caller_pool(make_rig) -> None:
     rig = make_rig()
     now = rig.clock.now()
@@ -1065,6 +1093,7 @@ def test_explicit_route_skips_tier_reserve_and_caller_pool(make_rig) -> None:
     assert (done.status, done.route) == ("completed", "a/main")
 
 
+@requires_git
 def test_explicit_route_reason(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain(), route="b/main")
@@ -1074,6 +1103,7 @@ def test_explicit_route_reason(make_rig) -> None:
     assert done.reason == "route set by caller"
 
 
+@requires_git
 def test_explicit_route_without_mode_or_with_blocked_pool_fails(make_rig) -> None:
     rig = make_rig()
     rig.jobs.add_block(PoolBlock("pool-b", rig.clock.now() + timedelta(hours=1), "test"), None)
@@ -1087,6 +1117,7 @@ def test_explicit_route_without_mode_or_with_blocked_pool_fails(make_rig) -> Non
         assert rig.attempts(job) == []
 
 
+@requires_git
 def test_no_routes_fails_with_reasons(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain(), tier="cheap", caller="agent-b")
@@ -1098,6 +1129,7 @@ def test_no_routes_fails_with_reasons(make_rig) -> None:
     assert "a/main: does not serve tier cheap" in message
 
 
+@requires_git
 def test_caller_pool_excluded_and_default_tier(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain(), caller="agent-a")
@@ -1109,6 +1141,7 @@ def test_caller_pool_excluded_and_default_tier(make_rig) -> None:
     assert rig.job(hinted).route == "a/main"
 
 
+@requires_git
 def test_missing_executable_excludes_route(make_rig) -> None:
     routes = (route("a/main", "pool-a", 5, backend="fake2"), route("b/main", "pool-b", 4))
     rig = make_rig(routes=routes)
@@ -1127,6 +1160,7 @@ def test_missing_executable_excludes_route(make_rig) -> None:
 # --- writers and parallelism -------------------------------------------------------------
 
 
+@requires_git
 def test_writers_of_one_repo_run_in_turn(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1143,6 +1177,7 @@ def test_writers_of_one_repo_run_in_turn(make_rig) -> None:
     assert rig.status(first) == "completed" and rig.status(second) == "running"
 
 
+@requires_git
 def test_writers_of_one_repo_in_other_case_run_in_turn(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1156,6 +1191,7 @@ def test_writers_of_one_repo_in_other_case_run_in_turn(make_rig) -> None:
     assert [rig.status(job) for job in (first, second)] == ["running", "queued"]
 
 
+@requires_git
 def test_max_parallel_is_respected(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor, max_parallel=2)
@@ -1168,6 +1204,7 @@ def test_max_parallel_is_respected(make_rig) -> None:
     assert [rig.status(job) for job in jobs] == ["completed"] * 2 + ["running"] * 2 + ["queued"]
 
 
+@requires_git
 def test_reader_behind_sixty_blocked_writers_starts_same_tick(make_rig) -> None:
     rig = make_rig(ManualExecutor())
     repo = rig.repo()
@@ -1183,6 +1220,7 @@ def test_reader_behind_sixty_blocked_writers_starts_same_tick(make_rig) -> None:
 # --- confirmation -------------------------------------------------------------------------
 
 
+@requires_git
 def test_confirm_then_approve_runs_on_approved_route(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     job = rig.submit(rig.plain())
@@ -1202,6 +1240,7 @@ def test_confirm_then_approve_runs_on_approved_route(make_rig) -> None:
     assert (done.status, done.route) == ("completed", "a/main")
 
 
+@requires_git
 def test_approved_route_with_blocked_pool_is_dropped(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     job = rig.submit(rig.plain())
@@ -1214,6 +1253,7 @@ def test_approved_route_with_blocked_pool_is_dropped(make_rig) -> None:
     assert current.approved_route is None and "a/main" in current.excluded_routes
 
 
+@requires_git
 def test_deny_goes_to_next_route(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     denied = rig.submit(rig.plain())
@@ -1232,6 +1272,7 @@ BOTH_CONFIRM = (
 )
 
 
+@requires_git
 def test_expired_approval_declines_with_approval_expired(make_rig) -> None:
     rig = make_rig(routes=BOTH_CONFIRM)
     job = rig.submit(rig.plain())
@@ -1249,6 +1290,7 @@ def test_expired_approval_declines_with_approval_expired(make_rig) -> None:
     assert rig.attempts(job) == []
 
 
+@requires_git
 def test_approve_at_deadline_declines_at_once(make_rig) -> None:
     rig = make_rig(routes=BOTH_CONFIRM)
     job = rig.submit(rig.plain())
@@ -1260,6 +1302,7 @@ def test_approve_at_deadline_declines_at_once(make_rig) -> None:
     assert current.status == "declined" and current.error_code == "approval_expired"
 
 
+@requires_git
 def test_approve_after_expiry_says_expired(make_rig) -> None:
     rig = make_rig(routes=BOTH_CONFIRM)
     job = rig.submit(rig.plain())
@@ -1271,6 +1314,7 @@ def test_approve_after_expiry_says_expired(make_rig) -> None:
             action(job.id)
 
 
+@requires_git
 def test_deny_still_rotates(make_rig) -> None:
     rig = make_rig(routes=BOTH_CONFIRM)
     job = rig.submit(rig.plain())
@@ -1284,6 +1328,7 @@ def test_deny_still_rotates(make_rig) -> None:
     assert current.approval_deadline == rig.clock.now() + timedelta(seconds=600)
 
 
+@requires_git
 def test_deny_without_alternatives_declines(make_rig) -> None:
     rig = make_rig(routes=(route("a/main", "pool-a", 5, confirm=True),))
     job = rig.submit(rig.plain())
@@ -1300,6 +1345,7 @@ def test_deny_without_alternatives_declines(make_rig) -> None:
 # --- limits -------------------------------------------------------------------------------
 
 
+@requires_git
 def test_limit_blocks_pool_and_reader_retries_elsewhere(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"))
@@ -1317,6 +1363,7 @@ def test_limit_blocks_pool_and_reader_retries_elsewhere(make_rig) -> None:
     ]
 
 
+@requires_git
 def test_limit_with_recognized_reset(make_rig) -> None:
     rig = make_rig()
     reset = rig.clock.now() + timedelta(minutes=47)
@@ -1326,6 +1373,7 @@ def test_limit_with_recognized_reset(make_rig) -> None:
     assert rig.block_until("pool-a") == reset
 
 
+@requires_git
 def test_limit_backoff_doubles_until_success(make_rig) -> None:
     rig = make_rig(limit_backoff_s=1000, limit_backoff_max_s=3500)
 
@@ -1345,6 +1393,7 @@ def test_limit_backoff_doubles_until_success(make_rig) -> None:
     assert rig.block_until("pool-a") == rig.clock.now() + timedelta(seconds=1000)
 
 
+@requires_git
 def test_backoff_does_not_shorten_recognized_reset(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor, max_parallel=2)
@@ -1360,6 +1409,7 @@ def test_backoff_does_not_shorten_recognized_reset(make_rig) -> None:
     assert rig.bus.data("pool.blocked")[-1] == {"pool": "pool-a", "until": reset.isoformat()}
 
 
+@requires_git
 def test_limit_in_write_mode(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit", action=new_file()), Step("limit"))
@@ -1377,6 +1427,7 @@ def test_limit_in_write_mode(make_rig) -> None:
     assert rig.status(clean) == "completed" and rig.job(clean).changed_files == ()
 
 
+@requires_git
 def test_three_limits_exhaust_attempts(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"), Step("limit"), Step("limit"))
@@ -1398,6 +1449,7 @@ def test_three_limits_exhaust_attempts(make_rig) -> None:
     ],
     ids=["timeout", "error"],
 )
+@requires_git
 def test_emergency_outcomes(make_rig, step: Step, code: str) -> None:
     rig = make_rig()
     cases = {
@@ -1423,6 +1475,7 @@ def test_emergency_outcomes(make_rig, step: Step, code: str) -> None:
         assert rig.attempts(job)[0].outcome == ("timeout" if code == "timeout" else "error")
 
 
+@requires_git
 def test_timeout_keeps_tokens(make_rig) -> None:
     # the harness printed its final line with tokens and then hung: usage is still recorded
     rig = make_rig()
@@ -1438,6 +1491,7 @@ def test_timeout_keeps_tokens(make_rig) -> None:
     assert attempt.log_tail == "ok:готово"  # non-ascii on purpose
 
 
+@requires_git
 def test_idle_stop_names_the_last_activity_signal(make_rig) -> None:
     step = Step(
         "ok:done",
@@ -1457,6 +1511,7 @@ def test_idle_stop_names_the_last_activity_signal(make_rig) -> None:
     )
 
 
+@requires_git
 def test_idle_stop_without_a_signal_keeps_the_plain_message(make_rig) -> None:
     step = Step("ok:done", exit_code=None, timed_out=True, idle=True)
     rig = make_rig()
@@ -1467,6 +1522,7 @@ def test_idle_stop_without_a_signal_keeps_the_plain_message(make_rig) -> None:
     assert done.error_message == "executor showed no progress for 600 s"
 
 
+@requires_git
 def test_kimi_route_asks_for_the_quiet_signals(make_rig) -> None:
     from agent_router.adapters.kimi import KimiAdapter
 
@@ -1478,6 +1534,7 @@ def test_kimi_route_asks_for_the_quiet_signals(make_rig) -> None:
 
 
 @pytest.mark.parametrize("backend", ["opencode", "claude"])
+@requires_git
 def test_streaming_routes_do_not_use_the_quiet_signals(make_rig, backend: str) -> None:
     from agent_router.adapters.claude import ClaudeAdapter
     from agent_router.adapters.opencode import OpenCodeAdapter
@@ -1490,6 +1547,7 @@ def test_streaming_routes_do_not_use_the_quiet_signals(make_rig, backend: str) -
     assert rig.runner.calls[0].quiet_while_working is False
 
 
+@requires_git
 def test_a_route_without_the_flag_keeps_the_old_behavior(make_rig) -> None:
     rig = make_rig()
     rig.submit(rig.plain())
@@ -1497,6 +1555,7 @@ def test_a_route_without_the_flag_keeps_the_old_behavior(make_rig) -> None:
     assert rig.runner.calls[0].quiet_while_working is False
 
 
+@requires_git
 def test_idle_stop_reports_no_progress(make_rig) -> None:
     # the harness printed its usage line and then went silent: idle stop, usage is still recorded
     rig = make_rig()
@@ -1513,6 +1572,7 @@ def test_idle_stop_reports_no_progress(make_rig) -> None:
     assert attempt.log_tail == "ok:готово"  # non-ascii on purpose
 
 
+@requires_git
 def test_timeout_with_truncated_output_keeps_timeout(make_rig) -> None:
     # truncated output the adapter cannot parse: the timeout outcome stands, tokens stay None
     rig = make_rig()
@@ -1526,6 +1586,7 @@ def test_timeout_with_truncated_output_keeps_timeout(make_rig) -> None:
     assert (attempt.tokens_in, attempt.tokens_out, attempt.cost_usd) == (None, None, None)
 
 
+@requires_git
 def test_runner_exception_is_executor_error(make_rig) -> None:
     from agent_router.runner import ShimUnsafeArgs
 
@@ -1542,6 +1603,7 @@ def test_runner_exception_is_executor_error(make_rig) -> None:
     assert rig.attempts(other)[0].outcome == "error"
 
 
+@requires_git
 def test_survivor_adds_orphan_violation(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("", exit_code=None, timed_out=True, survived=True))
@@ -1554,6 +1616,7 @@ def test_survivor_adds_orphan_violation(make_rig) -> None:
 
 
 @pytest.mark.parametrize(("mode", "status"), [("read", "failed"), ("write", "partial")])
+@requires_git
 def test_survivor_is_never_completed(make_rig, mode: str, status: str) -> None:
     rig = make_rig()
     rig.runner.add(Step("ok:ответ", survived=True))  # non-ascii on purpose
@@ -1567,6 +1630,7 @@ def test_survivor_is_never_completed(make_rig, mode: str, status: str) -> None:
 
 
 @pytest.mark.parametrize("reaped", [False, True], ids=["survivor", "reaped"])
+@requires_git
 def test_runner_failure_with_live_pid_adds_orphan_violation(make_rig, reaped: bool) -> None:
     rig = make_rig()
     rig.dispatcher.orphan_wait_s = 0.2
@@ -1586,6 +1650,7 @@ def test_runner_failure_with_live_pid_adds_orphan_violation(make_rig, reaped: bo
 # --- cancel and violations ---------------------------------------------------------------
 
 
+@requires_git
 def test_cancel_queued_and_running(make_rig) -> None:
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     rig = make_rig(executor, max_parallel=1)
@@ -1617,6 +1682,7 @@ def test_cancel_queued_and_running(make_rig) -> None:
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+@requires_git
 def test_violations_do_not_change_completed(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step(action=commit_file()), Step(action=new_file()))
@@ -1635,6 +1701,7 @@ def test_violations_do_not_change_completed(make_rig) -> None:
 # --- tree measurement on failures -------------------------------------------------------
 
 
+@requires_git
 def test_parse_failure_still_measures_tree(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("crash", action=new_file()))
@@ -1646,6 +1713,7 @@ def test_parse_failure_still_measures_tree(make_rig) -> None:
     assert (done.error_message or "").startswith("attempt failed: ValueError")
 
 
+@requires_git
 def test_runner_failure_after_start_still_measures_tree(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step(raises_after=RuntimeError("crash"), action=new_file()))
@@ -1657,6 +1725,7 @@ def test_runner_failure_after_start_still_measures_tree(make_rig) -> None:
     assert rig.attempts(job)[0].outcome == "error"
 
 
+@requires_git
 def test_before_snapshot_failure_does_not_launch(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -1671,6 +1740,7 @@ def test_before_snapshot_failure_does_not_launch(make_rig) -> None:
     assert done.changed_files is None and done.violations == ()
 
 
+@requires_git
 def test_after_snapshot_failure_marks_changes_unknown(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step(action=break_index))
@@ -1682,6 +1752,7 @@ def test_after_snapshot_failure_marks_changes_unknown(make_rig) -> None:
     assert done.changed_files == ()
 
 
+@requires_git
 def test_limit_with_unknown_changes_is_not_retried(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit", action=break_index))
@@ -1693,6 +1764,7 @@ def test_limit_with_unknown_changes_is_not_retried(make_rig) -> None:
     assert len(rig.attempts(job)) == 1
 
 
+@requires_git
 def test_first_commit_in_empty_repo_is_reported(make_rig) -> None:
     rig = make_rig()
     repo = make_empty_git_repo(rig.root / "без коммитов")  # non-ascii on purpose
@@ -1745,6 +1817,7 @@ def orphan(
     return job
 
 
+@requires_git
 def test_recover_marks_running_jobs(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     clean = orphan(rig, rig.repo("первый"), "read")  # non-ascii on purpose
@@ -1766,6 +1839,7 @@ def test_recover_marks_running_jobs(make_rig) -> None:
     assert rig.killed == []
 
 
+@requires_git
 def test_recover_kills_orphan_before_snapshot(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -1785,6 +1859,7 @@ def test_recover_kills_orphan_before_snapshot(make_rig) -> None:
     assert done.violations == ()
 
 
+@requires_git
 def test_recover_leaves_foreign_pid_and_reports_survivor(make_rig) -> None:
     rig = make_rig()
     rig.dispatcher.orphan_wait_s = 0.2
@@ -1801,6 +1876,7 @@ def test_recover_leaves_foreign_pid_and_reports_survivor(make_rig) -> None:
     assert (done.status, done.error_code) == ("failed", "gateway_restarted")
 
 
+@requires_git
 def test_recover_survivor_makes_writer_partial(make_rig) -> None:
     # process has not exited: working tree is clean, but a writing job is not "untouched"
     rig = make_rig()
@@ -1814,6 +1890,7 @@ def test_recover_survivor_makes_writer_partial(make_rig) -> None:
     assert done.changed_files == ()
 
 
+@requires_git
 def test_recover_ignores_waiting_jobs(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     waiting = rig.submit(rig.plain())
@@ -1823,6 +1900,7 @@ def test_recover_ignores_waiting_jobs(make_rig) -> None:
     assert rig.status(waiting) == "awaiting_approval" and rig.status(queued) == "queued"
 
 
+@requires_git
 def test_recover_snapshot_failure_marks_changes_unknown(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -1858,6 +1936,7 @@ def fail_once(monkeypatch, store, name: str) -> None:
     monkeypatch.setattr(store, name, wrapper)
 
 
+@requires_git
 def test_worker_stores_result(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1874,6 +1953,7 @@ def test_worker_stores_result(make_rig) -> None:
     assert rig.status(job) == "running"  # only the dispatcher step changes the status
 
 
+@requires_git
 def test_attempt_and_running_status_are_one_write(make_rig, monkeypatch) -> None:
     rig = make_rig()
 
@@ -1900,6 +1980,7 @@ def test_attempt_and_running_status_are_one_write(make_rig, monkeypatch) -> None
     assert calls == [1, 1] and len(rig.runner.calls) == 1
 
 
+@requires_git
 def test_recover_applies_recorded_ok(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1912,6 +1993,7 @@ def test_recover_applies_recorded_ok(make_rig) -> None:
     assert rig.bus.types("job.") == ["job.queued", "job.running", "job.completed"]
 
 
+@requires_git
 def test_recover_applies_recorded_ok_with_changes(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1925,6 +2007,7 @@ def test_recover_applies_recorded_ok_with_changes(make_rig) -> None:
     assert done.violations == ()
 
 
+@requires_git
 def test_recover_applies_recorded_limit(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1939,6 +2022,7 @@ def test_recover_applies_recorded_limit(make_rig) -> None:
     assert rig.bus.data("pool.blocked") == [{"pool": "pool-a", "until": reset.isoformat()}]
 
 
+@requires_git
 def test_recover_recorded_error_in_write_mode_is_partial(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1951,6 +2035,7 @@ def test_recover_recorded_error_in_write_mode_is_partial(make_rig) -> None:
     assert done.changed_files == ("новый файл.txt",)  # non-ascii on purpose
 
 
+@requires_git
 def test_recover_recorded_cancel_without_request_is_gateway_restart(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1964,6 +2049,7 @@ def test_recover_recorded_cancel_without_request_is_gateway_restart(make_rig) ->
     assert (done.status, done.error_code) == ("failed", "gateway_restarted")
 
 
+@requires_git
 def test_recover_cancel_requested_wins(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -1976,6 +2062,7 @@ def test_recover_cancel_requested_wins(make_rig) -> None:
     assert (done.status, done.error_code) == ("cancelled", None)
 
 
+@requires_git
 def test_recover_finished_without_result_recomputes_changes(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -2017,6 +2104,7 @@ def test_recover_running_job_without_attempts(make_rig) -> None:
         ("error:broke", ("failed", frozenset())),
     ],
 )
+@requires_git
 def test_recover_interrupted_then_repeated(
     make_rig, monkeypatch, stdout: str, expected: tuple
 ) -> None:
@@ -2054,6 +2142,7 @@ def test_recover_interrupted_then_repeated(
     assert types[len(interrupted_types) :] == clean_events
 
 
+@requires_git
 def test_recover_interrupted_after_attempt_mark(make_rig, monkeypatch) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -2072,6 +2161,7 @@ def test_recover_interrupted_after_attempt_mark(make_rig, monkeypatch) -> None:
     assert len(rig.attempts(job)) == 1
 
 
+@requires_git
 def test_recover_interrupted_after_pool_block(make_rig, monkeypatch) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2095,6 +2185,7 @@ def test_recover_interrupted_after_pool_block(make_rig, monkeypatch) -> None:
 # --- pool closures ------------------------------------------------------------------------
 
 
+@requires_git
 def test_pool_block_events_and_fresh_snapshot(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"))
@@ -2112,6 +2203,7 @@ def test_pool_block_events_and_fresh_snapshot(make_rig) -> None:
     assert rig.job(job).route == "a/main"  # the pool is chosen again
 
 
+@requires_git
 def test_expired_block_reopens_pool(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"))
@@ -2130,6 +2222,7 @@ def test_expired_block_reopens_pool(make_rig) -> None:
 # --- races --------------------------------------------------------------------------------
 
 
+@requires_git
 def test_concurrent_ticks_start_one_attempt(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2153,6 +2246,7 @@ def test_concurrent_ticks_start_one_attempt(make_rig) -> None:
     assert len(rig.attempts(job)) == 1 and len(executor.pending) == 1
 
 
+@requires_git
 def test_cancel_after_completion_keeps_terminal_status(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain())
@@ -2167,6 +2261,7 @@ def test_cancel_after_completion_keeps_terminal_status(make_rig) -> None:
 # --- vanished directory and shutdown ------------------------------------------------------
 
 
+@requires_git
 def test_vanished_cwd_fails_without_attempt(make_rig) -> None:
     rig = make_rig()
     cwd = rig.plain("временный")  # non-ascii on purpose
@@ -2187,6 +2282,7 @@ def git_times_out(monkeypatch) -> None:
     monkeypatch.setattr("agent_router.worktree.subprocess.run", fail)
 
 
+@requires_git
 def test_requeue_git_failure_fails_without_launch(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = rig.submit(rig.repo())
@@ -2200,6 +2296,7 @@ def test_requeue_git_failure_fails_without_launch(make_rig, monkeypatch) -> None
     assert rig.runner.calls == [] and rig.attempts(job) == []
 
 
+@requires_git
 def test_requeue_check_keeps_reject_code(make_rig) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain(), route="b/main")
@@ -2213,6 +2310,7 @@ def test_requeue_check_keeps_reject_code(make_rig) -> None:
     assert rig.runner.calls == []
 
 
+@requires_git
 def test_shutdown_cancels_running_attempts(make_rig) -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         rig = make_rig(executor)
@@ -2233,6 +2331,7 @@ def test_shutdown_cancels_running_attempts(make_rig) -> None:
         assert rig.status(late) == "queued" and len(rig.runner.calls) == 2
 
 
+@requires_git
 def test_shutdown_deadline_seals_store(make_rig) -> None:
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     release = threading.Event()
@@ -2263,6 +2362,7 @@ def test_shutdown_deadline_seals_store(make_rig) -> None:
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+@requires_git
 def test_no_launch_after_shutdown(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2285,6 +2385,7 @@ def test_no_launch_after_shutdown(make_rig) -> None:
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+@requires_git
 def test_shutdown_records_outcome_of_failed_worker(make_rig, monkeypatch) -> None:
     # sealing affects only worker threads: the main thread records the failure outcome on collect
     executor = ManualExecutor()
@@ -2310,6 +2411,7 @@ def test_shutdown_records_outcome_of_failed_worker(make_rig, monkeypatch) -> Non
     assert attempt.result is not None and attempt.result.outcome == "error"
 
 
+@requires_git
 def test_failed_final_write_keeps_measured_changes(make_rig, monkeypatch) -> None:
     # outcome measured but attempt write failed: the writing job's changes are not lost
     rig = make_rig()
@@ -2336,6 +2438,7 @@ def test_failed_final_write_keeps_measured_changes(make_rig, monkeypatch) -> Non
     assert attempt.result.changed == ("новый файл.txt",)  # non-ascii on purpose
 
 
+@requires_git
 def test_worker_finishing_right_after_seal_stays_running(make_rig) -> None:
     # worker finished right after sealing: write skipped, collection left to recover()
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -2381,6 +2484,7 @@ def test_worker_finishing_right_after_seal_stays_running(make_rig) -> None:
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+@requires_git
 def test_failed_apply_is_retried_and_keeps_writer_lock(make_rig, monkeypatch) -> None:
     # status write failure: slot and writer lock stay with the job; outcome applied again
     executor = ManualExecutor()
@@ -2411,6 +2515,7 @@ def attempt_writes_fail(monkeypatch, rig: Rig, job_ids: set[str]) -> list[bool]:
     return broken
 
 
+@requires_git
 def test_unrecorded_attempt_keeps_job_running(make_rig, monkeypatch) -> None:
     # neither the worker thread nor the step recorded the attempt outcome: no terminal status
     rig = make_rig()
@@ -2428,6 +2533,7 @@ def test_unrecorded_attempt_keeps_job_running(make_rig, monkeypatch) -> None:
     assert rig.attempts(job)[0].finished_at is not None
 
 
+@requires_git
 def test_shutdown_leaves_unrecorded_attempt_to_recover(make_rig, monkeypatch) -> None:
     # on shutdown one failed attempt write must not block collecting the others
     executor = ManualExecutor()
@@ -2444,6 +2550,7 @@ def test_shutdown_leaves_unrecorded_attempt_to_recover(make_rig, monkeypatch) ->
     assert rig.status(second) == "completed"
 
 
+@requires_git
 def test_shutdown_signals_stop_while_tick_is_busy(make_rig, monkeypatch) -> None:
     # the step is stuck on directory validation; the running attempt's cancel does not wait
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -2486,6 +2593,7 @@ def test_shutdown_signals_stop_while_tick_is_busy(make_rig, monkeypatch) -> None
 # --- events --------------------------------------------------------------------------------
 
 
+@requires_git
 def test_event_order_and_no_private_data(make_rig) -> None:
     rig = make_rig()
     cwd = rig.plain("приватный каталог")  # non-ascii on purpose
@@ -2507,6 +2615,7 @@ def test_event_order_and_no_private_data(make_rig) -> None:
     assert "приватный каталог" not in dump  # non-ascii on purpose
 
 
+@requires_git
 def test_attempt_is_recorded_before_exit_event(make_rig) -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         rig = make_rig(executor)
@@ -2531,6 +2640,7 @@ def test_attempt_is_recorded_before_exit_event(make_rig) -> None:
 # --- queue ---------------------------------------------------------------------------------
 
 
+@requires_git
 def test_queue_limit(make_rig) -> None:
     rig = make_rig(ManualExecutor(), max_queued=2, max_parallel=1)
     rig.submit(rig.plain())
@@ -2577,6 +2687,7 @@ def busy_rig(make_rig) -> tuple[Rig, list[int]]:
     return rig, calls
 
 
+@requires_git
 def test_full_slots_do_not_read_queue(make_rig) -> None:
     rig, calls = busy_rig(make_rig)
     rig.tick(20)
@@ -2584,6 +2695,7 @@ def test_full_slots_do_not_read_queue(make_rig) -> None:
 
 
 @pytest.mark.bench
+@requires_git
 def test_bench_tick_with_full_slots(make_rig) -> None:
     rig, _ = busy_rig(make_rig)
     rounds = 200
@@ -2622,6 +2734,7 @@ def _swap_link(link: Path, target: Path) -> None:
     _link_dir(link, target)
 
 
+@requires_git
 def test_linked_cwd_swap_before_tick_fails_without_launch(make_rig) -> None:
     rig = make_rig()
     first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
@@ -2638,6 +2751,7 @@ def test_linked_cwd_swap_before_tick_fails_without_launch(make_rig) -> None:
     assert rig.runner.calls == [] and rig.attempts(job) == []
 
 
+@requires_git
 def test_linked_cwd_swap_before_worker_does_not_launch(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2658,6 +2772,7 @@ def test_linked_cwd_swap_before_worker_does_not_launch(make_rig) -> None:
     assert [attempt.outcome for attempt in rig.attempts(job)] == ["error"]
 
 
+@requires_git
 def test_linked_cwd_swap_before_measurement_marks_changes_unknown(make_rig) -> None:
     rig = make_rig()
     first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
@@ -2675,6 +2790,7 @@ def test_linked_cwd_swap_before_measurement_marks_changes_unknown(make_rig) -> N
     assert [call.cwd for call in rig.runner.calls] == [first.resolve()]
 
 
+@requires_git
 def test_writer_lock_rejects_repo_change_after_intake(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2692,6 +2808,7 @@ def test_writer_lock_rejects_repo_change_after_intake(make_rig) -> None:
     assert rig.job(first).repo_root == outer.resolve()
 
 
+@requires_git
 def test_changed_files_accumulate_across_attempts(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -2705,6 +2822,7 @@ def test_changed_files_accumulate_across_attempts(make_rig) -> None:
     assert "read_mode_files_changed" in done.violations
 
 
+@requires_git
 def test_recover_linked_cwd_swap_marks_changes_unknown(make_rig) -> None:
     rig = make_rig()
     first, second = rig.repo("первый"), rig.repo("второй")  # non-ascii on purpose
@@ -2721,6 +2839,7 @@ def test_recover_linked_cwd_swap_marks_changes_unknown(make_rig) -> None:
     assert done.violations == ("changes_unknown",) and done.changed_files == ()
 
 
+@requires_git
 def test_recover_dirty_reader_gets_read_violation(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -2736,6 +2855,7 @@ def test_recover_dirty_reader_gets_read_violation(make_rig) -> None:
 # --- cancel vs completion race ----------------------------------------------------------
 
 
+@requires_git
 def test_cancel_between_exit_and_collect(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2767,6 +2887,7 @@ def dispatcher_errors(caplog) -> list[logging.LogRecord]:
     ]
 
 
+@requires_git
 def test_tick_applies_other_results_when_one_write_fails(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor, max_parallel=2)
@@ -2793,6 +2914,7 @@ def test_tick_applies_other_results_when_one_write_fails(make_rig) -> None:
     assert len(rig.attempts(first)) == 1
 
 
+@requires_git
 def test_tick_starts_next_job_when_consider_raises(make_rig, monkeypatch) -> None:
     rig = make_rig()
     first = rig.submit(rig.plain("первая"))  # non-ascii on purpose
@@ -2813,6 +2935,7 @@ def test_tick_starts_next_job_when_consider_raises(make_rig, monkeypatch) -> Non
     assert rig.status(first) == "running"
 
 
+@requires_git
 def test_tick_unblocks_pools_when_collect_fails(make_rig) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -2830,6 +2953,7 @@ def test_tick_unblocks_pools_when_collect_fails(make_rig) -> None:
     assert "pool-b" not in rig.jobs.active_blocks(rig.clock.now())
 
 
+@requires_git
 def test_tick_expires_other_approvals_when_one_write_fails(make_rig) -> None:
     rig = make_rig(routes=CONFIRM_ROUTES)
     flaky = flaky_jobs(rig)
@@ -2851,6 +2975,7 @@ def test_tick_expires_other_approvals_when_one_write_fails(make_rig) -> None:
     assert (current.status, current.error_code) == ("declined", "approval_expired")
 
 
+@requires_git
 def test_retry_after_partial_apply_keeps_attempts_and_block(make_rig) -> None:
     # Limit hit: pool closure recorded, job status write failed. Re-applying the outcome on
     # the next tick matches an unbroken step: one attempt in pool-a, a second in pool-b.
@@ -2879,6 +3004,7 @@ def test_retry_after_partial_apply_keeps_attempts_and_block(make_rig) -> None:
     assert rig.bus.types("job.").count("job.queued") == 2  # job admission and requeue
 
 
+@requires_git
 def test_repeated_failure_is_logged_once(make_rig, monkeypatch, caplog) -> None:
     caplog.set_level(logging.ERROR, logger="agent_router.dispatcher")
     rig = make_rig(routes=CONFIRM_ROUTES)
@@ -2906,6 +3032,7 @@ def test_repeated_failure_is_logged_once(make_rig, monkeypatch, caplog) -> None:
     assert len(dispatcher_errors(caplog)) == 2  # new failure after success — a new record
 
 
+@requires_git
 def test_recover_processes_every_job_then_fails(make_rig, caplog) -> None:
     rig = make_rig()
     flaky = flaky_jobs(rig)
@@ -2969,6 +3096,7 @@ class HeldStep:
         assert not self.thread.is_alive()
 
 
+@requires_git
 def test_shutdown_returns_while_step_waits_for_git(make_rig, monkeypatch, caplog) -> None:
     caplog.set_level(logging.ERROR, logger="agent_router.dispatcher")
     rig = make_rig()
@@ -2989,6 +3117,7 @@ def test_shutdown_returns_while_step_waits_for_git(make_rig, monkeypatch, caplog
         held.thread.join(10)
 
 
+@requires_git
 def test_released_step_does_not_touch_store_after_shutdown(make_rig, monkeypatch) -> None:
     rig = make_rig()
     flaky = flaky_jobs(rig)
@@ -3010,6 +3139,7 @@ def test_released_step_does_not_touch_store_after_shutdown(make_rig, monkeypatch
         held.thread.join(10)
 
 
+@requires_git
 def test_shutdown_leaves_finished_attempt_to_recover_when_lock_is_held(
     make_rig, monkeypatch
 ) -> None:
@@ -3041,6 +3171,7 @@ def test_shutdown_leaves_finished_attempt_to_recover_when_lock_is_held(
 # --- supervision: query deadline and `_reap` --------------------------------------------
 
 
+@requires_git
 def test_reap_deadline_starts_before_first_query(make_rig, monkeypatch) -> None:
     rig = make_rig()
     rig.dispatcher.orphan_wait_s = 2.0
@@ -3063,6 +3194,7 @@ def test_reap_deadline_starts_before_first_query(make_rig, monkeypatch) -> None:
     assert rig.killed == [4242]
 
 
+@requires_git
 def test_reap_checks_once_after_kill_past_deadline(make_rig, monkeypatch) -> None:
     rig = make_rig()
     rig.dispatcher.orphan_wait_s = 1.0
@@ -3115,6 +3247,7 @@ def _reap_answers(rig: Rig, monkeypatch, answers: deque, now: list[float] | None
     return queries
 
 
+@requires_git
 def test_reap_retries_failed_first_query(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3128,6 +3261,7 @@ def test_reap_retries_failed_first_query(make_rig, monkeypatch) -> None:
     assert queries == [4242, 4242, 4242] and not answers
 
 
+@requires_git
 def test_reap_two_failed_queries_give_up(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3142,6 +3276,7 @@ def test_reap_two_failed_queries_give_up(make_rig, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(("now_start", "clean"), [(2000.0, True), (1000.0, False)])
+@requires_git
 def test_reap_without_exe_name_checks_start(make_rig, now_start: float, clean: bool) -> None:
     """No image recorded: foreign start time means a foreign PID; a match leaves it unconfirmed."""
     rig = make_rig()
@@ -3154,6 +3289,7 @@ def test_reap_without_exe_name_checks_start(make_rig, now_start: float, clean: b
     assert rig.killed == []
 
 
+@requires_git
 def test_reap_worst_path_fits_stop_budget(make_rig, monkeypatch) -> None:
     from agent_router.runner import KILL_WAIT_S, STOP_BUDGET_S
 
@@ -3202,6 +3338,7 @@ def _stop_from_other_thread(rig: Rig, errors: list[BaseException]) -> threading.
     return thread
 
 
+@requires_git
 def test_shutdown_during_start_cancels_new_attempt(make_rig, monkeypatch) -> None:
     executor = ManualExecutor()
     rig = make_rig(executor)
@@ -3223,6 +3360,7 @@ def test_shutdown_during_start_cancels_new_attempt(make_rig, monkeypatch) -> Non
     assert rig.runner.calls == []
 
 
+@requires_git
 def test_shutdown_before_running_keeps_job_queued(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain())
@@ -3247,6 +3385,7 @@ def test_shutdown_before_running_keeps_job_queued(make_rig, monkeypatch) -> None
 # --- process identity during recovery -----------------------------------------------------
 
 
+@requires_git
 def test_reap_spares_foreign_process_with_same_image(make_rig) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3258,6 +3397,7 @@ def test_reap_spares_foreign_process_with_same_image(make_rig) -> None:
     assert rig.killed == [] and done.violations == ()
 
 
+@requires_git
 def test_reap_kills_same_process(make_rig) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3271,6 +3411,7 @@ def test_reap_kills_same_process(make_rig) -> None:
 
 
 @pytest.mark.parametrize("case", ["no_recorded_start", "start_unknown_now", "no_exe_name"])
+@requires_git
 def test_reap_unconfirmed_identity_does_not_kill(make_rig, case: str) -> None:
     rig = make_rig()
     exe = None if case == "no_exe_name" else "node.exe"
@@ -3290,6 +3431,7 @@ def test_reap_unconfirmed_identity_does_not_kill(make_rig, case: str) -> None:
     assert done.violations == ("orphan_process",)
 
 
+@requires_git
 def test_reap_unconfirmed_identity_and_dead_pid_is_clean(make_rig) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=None)
@@ -3302,6 +3444,7 @@ def test_reap_unconfirmed_identity_and_dead_pid_is_clean(make_rig) -> None:
 # --- a process query failure is not "process gone" ----------------------------------------
 
 
+@requires_git
 def test_reap_query_failure_does_not_count_as_clean(make_rig) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3313,6 +3456,7 @@ def test_reap_query_failure_does_not_count_as_clean(make_rig) -> None:
     assert rig.killed == []
 
 
+@requires_git
 def test_recover_with_failed_query_records_orphan(make_rig) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3325,6 +3469,7 @@ def test_recover_with_failed_query_records_orphan(make_rig) -> None:
     assert rig.killed == []
 
 
+@requires_git
 def test_reap_query_failure_after_kill_keeps_waiting(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = orphan(rig, rig.repo(), "read", pid=4242, exe="node.exe", started=1000.0)
@@ -3343,6 +3488,7 @@ def test_reap_query_failure_after_kill_keeps_waiting(make_rig, monkeypatch) -> N
     assert not answers
 
 
+@requires_git
 def test_start_query_failure_leaves_exe_name_empty(make_rig) -> None:
     rig = make_rig()
     rig.image_failures = {4242}
@@ -3353,6 +3499,7 @@ def test_start_query_failure_leaves_exe_name_empty(make_rig) -> None:
     assert (attempt.pid, attempt.exe_name) == (4242, None)
 
 
+@requires_git
 def test_on_start_records_process_start(make_rig) -> None:
     rig = make_rig()
     rig.images[4242] = "harness.exe"
@@ -3366,6 +3513,7 @@ def test_on_start_records_process_start(make_rig) -> None:
 # --- limit with a surviving process; reason for unmeasured tree ---------------------------
 
 
+@requires_git
 def test_limit_with_surviving_process_does_not_retry(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit", survived=True))
@@ -3380,6 +3528,7 @@ def test_limit_with_surviving_process_does_not_retry(make_rig) -> None:
     assert rig.block_until("pool-a") == rig.clock.now() + timedelta(seconds=1800)
 
 
+@requires_git
 def test_limit_without_survivor_still_retries(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("limit"))
@@ -3394,6 +3543,7 @@ def test_limit_without_survivor_still_retries(make_rig) -> None:
     assert rig.status(job) == "completed"
 
 
+@requires_git
 def test_changes_unknown_keeps_reason_in_log_tail(make_rig) -> None:
     rig = make_rig()
     output = "ok:" + "x" * (dispatcher_module.LOG_TAIL_CHARS + 100)
@@ -3412,6 +3562,7 @@ def test_changes_unknown_keeps_reason_in_log_tail(make_rig) -> None:
     assert "git status" in reason and reason.endswith("]")
 
 
+@requires_git
 def test_recover_changes_unknown_keeps_reason(make_rig) -> None:
     rig = make_rig()
     repo = rig.repo()
@@ -3437,6 +3588,7 @@ def test_recover_changes_unknown_keeps_reason(make_rig) -> None:
 # --- error texts without paths ------------------------------------------------------------
 
 
+@requires_git
 def test_adapter_error_loses_task_directory(make_rig) -> None:
     rig = make_rig()
     cwd = rig.plain()
@@ -3451,6 +3603,7 @@ def test_adapter_error_loses_task_directory(make_rig) -> None:
     assert "<dir>" in message
 
 
+@requires_git
 def test_long_adapter_error_is_cut(make_rig) -> None:
     rig = make_rig()
     rig.runner.add(Step("error:" + "x" * 2000, exit_code=2))
@@ -3463,6 +3616,7 @@ def test_long_adapter_error_is_cut(make_rig) -> None:
     assert message.endswith("…")
 
 
+@requires_git
 def test_attempt_exception_text_loses_task_directory(make_rig) -> None:
     rig = make_rig()
     cwd = rig.plain()
@@ -3478,6 +3632,7 @@ def test_attempt_exception_text_loses_task_directory(make_rig) -> None:
     assert "<dir>" in message
 
 
+@requires_git
 def test_prompt_file_failure_has_no_path(make_rig, monkeypatch) -> None:
     rig = make_rig()
     job = rig.submit(rig.plain())
@@ -3496,6 +3651,7 @@ def test_prompt_file_failure_has_no_path(make_rig, monkeypatch) -> None:
     assert rig.home.as_posix() not in message
 
 
+@requires_git
 def test_no_route_explains_caller_pool(make_rig) -> None:
     rig = make_rig(routes=(route("a/main", "pool-a", 5),))
     job = rig.submit(rig.plain(), caller="agent-a")
@@ -3511,6 +3667,7 @@ def test_no_route_explains_caller_pool(make_rig) -> None:
     ) in message
 
 
+@requires_git
 def test_no_route_without_caller_pool_has_no_hint(make_rig) -> None:
     rig = make_rig(routes=(route("a/main", "pool-a", 5, modes=("read",)),))
     job = rig.submit(rig.repo(), mode="write")
@@ -3525,6 +3682,7 @@ def test_no_route_without_caller_pool_has_no_hint(make_rig) -> None:
 TWO_ROUTES = (route("a/main", "pool-a", 5), route("b/main", "pool-b", 4))
 
 
+@requires_git
 def test_request_excluded_pool_uses_another_pool_without_job_exclusion(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     job = rig.submit(rig.plain(), excluded_pools=frozenset({"pool-a"}))
@@ -3539,6 +3697,7 @@ def test_request_excluded_pool_uses_another_pool_without_job_exclusion(make_rig)
     assert {"route": "a/main", "reason": "excluded by request"} in attempt.decision["excluded"]
 
 
+@requires_git
 def test_request_excluded_pool_no_route_names_request_reason(make_rig) -> None:
     rig = make_rig(routes=(route("a/main", "pool-a", 5),))
     job = rig.submit(rig.plain(), excluded_pools=frozenset({"pool-a"}))
@@ -3550,6 +3709,7 @@ def test_request_excluded_pool_no_route_names_request_reason(make_rig) -> None:
     assert "a/main: excluded by request" in (done.error_message or "")
 
 
+@requires_git
 def test_read_job_error_falls_back_to_next_route(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:harness crashed", exit_code=2))
@@ -3565,6 +3725,7 @@ def test_read_job_error_falls_back_to_next_route(make_rig) -> None:
     assert "a/main" in done.excluded_routes
 
 
+@requires_git
 def test_write_job_error_without_changes_falls_back(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:harness crashed", exit_code=2))
@@ -3575,6 +3736,7 @@ def test_write_job_error_without_changes_falls_back(make_rig) -> None:
     assert (done.status, done.route) == ("completed", "b/main")
 
 
+@requires_git
 def test_write_job_error_with_changes_is_partial(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:harness crashed", exit_code=2, action=new_file()))
@@ -3586,6 +3748,7 @@ def test_write_job_error_with_changes_is_partial(make_rig) -> None:
     assert len(rig.attempts(job)) == 1
 
 
+@requires_git
 def test_error_with_pinned_route_fails(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:harness crashed", exit_code=2))
@@ -3598,6 +3761,7 @@ def test_error_with_pinned_route_fails(make_rig) -> None:
     assert len(rig.attempts(job)) == 1
 
 
+@requires_git
 def test_error_fallback_to_confirm_route_awaits_approval(make_rig) -> None:
     routes = (route("a/main", "pool-a", 5), route("b/main", "pool-b", 4, confirm=True))
     rig = make_rig(routes=routes)
@@ -3610,6 +3774,7 @@ def test_error_fallback_to_confirm_route_awaits_approval(make_rig) -> None:
     assert done.error_code is None
 
 
+@requires_git
 def test_error_fallback_exhausts_attempts(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES, max_attempts=2)
     rig.runner.add(Step("error:first", exit_code=2), Step("error:second", exit_code=2))
@@ -3625,6 +3790,7 @@ def views_of(rig) -> dict:
     return {view.route.id: view for view in rig.dispatcher.views()}
 
 
+@requires_git
 def test_route_with_error_streak_is_unavailable_until_cooldown(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:one", exit_code=2), Step("error:two", exit_code=2))
@@ -3647,6 +3813,7 @@ def test_route_with_error_streak_is_unavailable_until_cooldown(make_rig) -> None
     assert views_of(rig)["a/main"].available
 
 
+@requires_git
 def test_pinned_route_runs_despite_error_streak(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("error:one", exit_code=2), Step("error:two", exit_code=2))
@@ -3660,6 +3827,7 @@ def test_pinned_route_runs_despite_error_streak(make_rig) -> None:
     assert (done.status, done.route) == ("completed", "a/main")
 
 
+@requires_git
 def test_ok_between_errors_resets_streak(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(
@@ -3679,6 +3847,7 @@ def test_error_streak_constants() -> None:
     assert dispatcher_module.ROUTE_ERROR_COOLDOWN_S == 1800
 
 
+@requires_git
 def test_model_unavailable_excludes_route_until_cooldown(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES, model_unavailable_cooldown_s=600)
     rig.runner.add(Step("nomodel", exit_code=2))
@@ -3702,6 +3871,7 @@ def test_model_unavailable_excludes_route_until_cooldown(make_rig) -> None:
     assert views_of(rig)["a/main"].available
 
 
+@requires_git
 def test_model_unavailable_before_timeout_excludes_route_until_cooldown(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES, model_unavailable_cooldown_s=600)
     rig.runner.add(Step("nomodel", exit_code=None, timed_out=True))
@@ -3727,6 +3897,7 @@ def test_model_unavailable_before_timeout_excludes_route_until_cooldown(make_rig
     assert views_of(rig)["a/main"].available
 
 
+@requires_git
 def test_model_unavailable_retries_on_next_route(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("nomodel", exit_code=2))
@@ -3742,6 +3913,7 @@ def test_model_unavailable_retries_on_next_route(make_rig) -> None:
     assert second.result is not None and not second.result.model_unavailable
 
 
+@requires_git
 def test_model_unavailable_pinned_route_fails_without_retry(make_rig) -> None:
     rig = make_rig(routes=TWO_ROUTES)
     rig.runner.add(Step("nomodel", exit_code=2))
@@ -3754,6 +3926,7 @@ def test_model_unavailable_pinned_route_fails_without_retry(make_rig) -> None:
     assert len(rig.attempts(job)) == 1
 
 
+@requires_git
 def test_advice_shows_model_unavailable_reason(make_rig) -> None:
     from agent_router.service import advise
 
