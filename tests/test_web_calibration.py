@@ -210,7 +210,8 @@ def test_calibration_styles_use_existing_tokens(client):
     assert "border-color: var(--color-danger)" in invalid.group(1)
     recorded = re.search(r"^\.limit-card--recorded\s*\{([^}]*)\}", css, re.MULTILINE)
     assert recorded is not None
-    assert "outline: 2px solid var(--color-accent)" in recorded.group(1)
+    assert "outline: var(--focus-ring)" in recorded.group(1)
+    assert "outline-offset: 1px" in recorded.group(1)
     assert ".calibration-preview" in css
 
 
