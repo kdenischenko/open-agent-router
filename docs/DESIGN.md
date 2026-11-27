@@ -98,7 +98,8 @@ prints `provider.no-route: Model unavailable: <provider>/<model>`; the outcome c
 `tasks.model_unavailable_cooldown_s` (default 1800 s). The exclusion is per route, held in
 memory by the dispatcher (a restart clears it); the pool and its other routes are not affected,
 and the failure is otherwise an ordinary `error` outcome — a gateway-chosen job is retried on
-the next route, a pinned one fails. The policy and `advice` show
+the next route, a pinned one fails. A report printed before the harness hangs is honored when
+the attempt times out, while the attempt remains a `timeout`. The policy and `advice` show
 `harness unavailable: model unavailable, retry after <local time>` until the cooldown ends.
 
 Limit detection is adapter-side (error patterns and reset times parsed from CLI output). The
