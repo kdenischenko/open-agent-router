@@ -50,7 +50,10 @@ class WebhookSink:
         self.retries = retries
         self.sleep = sleep
         self.failures = 0
-        self._opener = urllib.request.build_opener(_NoRedirectHandler())
+        # the URL may carry a secret: never hand it to a proxy from the environment
+        self._opener = urllib.request.build_opener(
+            _NoRedirectHandler(), urllib.request.ProxyHandler({})
+        )
 
     def handle(self, event: Event) -> None:
         if self.events is not None and event.type not in self.events:

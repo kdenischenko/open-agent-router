@@ -401,13 +401,14 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     that runs the gateway, so the process started with `agent-router serve` sees it. The URL is a
     secret — anyone who knows an ntfy topic can post to it — so it must come from the environment
     and never from the config file; the sink never writes it to a log, an error message or doctor
-    output. `agent-router doctor` warns when the variable named by `url_env` is not set.
+    output. When that variable is not set, `agent-router serve` refuses to start with a config
+    error, like any other invalid sink; `agent-router doctor` names the missing variable.
 
     Options: `format` is `"json"` (the default) or `"text"` — JSON posts the event payload,
     `text` posts a one-line message with a `Title` header, which suits ntfy. `events` limits
     delivery to the listed event types; without it every event is posted. `base_url` adds a link
     to the job in the dashboard to each message. `timeout_s` is a positive number of seconds per
-    attempt; after a failed attempt, delivery is retried once by default before the event is
+    attempt; after a failed attempt, delivery is retried once before the event is
     dropped.
 
 For more about pools, model groups, `priority`, and `weight`, see “How to add a subscription or

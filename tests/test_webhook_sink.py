@@ -256,3 +256,18 @@ def test_failure_log_does_not_reveal_the_url(caplog: pytest.LogCaptureFixture) -
     sink.handle(event())
 
     assert "secret-token-topic" not in caplog.text
+
+
+def test_delivery_ignores_proxy_settings(
+    receiver: FakeReceiver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    sink = sink_for(receiver, retries=0)
+
+    sink.handle(event())
+
+    assert len(receiver.requests) == 1
+    assert sink.failures == 0

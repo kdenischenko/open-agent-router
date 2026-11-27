@@ -406,7 +406,8 @@ to an HTTP endpoint — `format = "json"` (default) sends the event payload, opt
 dashboard link from `base_url`, and `format = "text"` sends a one-line message with a `Title`
 header for services like ntfy; an optional `events` list restricts the types, all events when it
 is absent. The URL is read only from the environment variable named by `url_env` and never appears
-in a log, an error or doctor output. A failed delivery is retried once by default under a positive
+in a log, an error or doctor output; an unset variable is a config error, so the gateway does
+not start without it. Delivery bypasses proxies from the environment. A failed delivery is retried once under a positive
 `timeout_s`; an event that still cannot be delivered is counted on the sink and dropped without
 raising, so a dead endpoint never blocks the bus.
 
