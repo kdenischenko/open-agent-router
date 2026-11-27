@@ -1,0 +1,42 @@
+<section id="routes">
+  <h2>Routes</h2>
+  {% if routes_report and routes_report.rows %}
+  <table>
+    <caption>Route scorecard, last 30 days</caption>
+    <thead>
+      <tr>
+        <th scope="col">Route</th>
+        <th scope="col">Tier</th>
+        <th scope="col">Mode</th>
+        <th scope="col">Jobs</th>
+        <th scope="col">Ratings</th>
+        <th scope="col">Attempt limit</th>
+        <th scope="col">Attempt error</th>
+        <th scope="col">Attempt timeout</th>
+        <th scope="col">Median duration</th>
+        <th scope="col">Median cost</th>
+        <th scope="col">Rank</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in routes_report.rows %}
+      <tr>
+        <th scope="row">{{ row.route }}{% if not row.in_config %} <span class="route-missing">(not in config)</span>{% endif %}</th>
+        <td>{{ row.tier }}</td>
+        <td>{{ row.mode }}</td>
+        <td>{{ row.jobs }}</td>
+        <td>{% if row.rated %}good {{ row.ratings.good }}/{{ row.rated }} · partial {{ row.ratings.partial }} · bad {{ row.ratings.bad }}{% else %}not rated{% endif %}</td>
+        <td>{{ row.attempts.limit }}</td>
+        <td>{{ row.attempts.error }}</td>
+        <td>{{ row.attempts.timeout }}</td>
+        <td>{{ row.duration_s.median|age }}</td>
+        <td>{% if row.cost_median is none %}—{% else %}{% if row.cost_estimated %}~{% endif %}${{ '%.2f'|format(row.cost_median) }}{% endif %}</td>
+        <td>{% if row.ranked %}ranked{% else %}fewer than {{ routes_report.min_jobs }} jobs{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">no finished jobs</p>
+  {% endif %}
+</section>

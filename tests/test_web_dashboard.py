@@ -14,6 +14,7 @@ from agent_router.jobstore import SqliteJobStore
 from agent_router.service import build_dispatcher
 from agent_router.store import SqliteStore
 from helpers import BASE_URL
+from test_jobstore_route_samples import make_attempt, make_job, rate
 
 PACKAGE = Path(__file__).resolve().parent.parent / "src" / "agent_router"
 CALIBRATION = {
@@ -210,6 +211,43 @@ def test_index_includes_advice_block(client, tokens):
     response = client.get("/")
     assert response.status_code == 200
     assert response.text.count('id="advice"') == 1
+
+
+def test_routes_section_without_history_shows_empty_line(client, tokens):
+    authenticated_client(client, tokens)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="routes"' in response.text
+    assert "no finished jobs" in response.text
+
+
+def test_routes_section_shows_seeded_route(config, store, clock, tokens, home):
+    jobs = SqliteJobStore(store)
+    now = clock.now()
+    route_id = "kimi-cli/k3.1-pro"
+    jobs.create(make_job("j_routes", route=route_id, finished_at=now))
+    jobs.add_attempt(make_attempt("j_routes", 1, route=route_id, finished_at=now, cost_usd=0.2))
+    rate(jobs, "j_routes", "good", at=now)
+    bus = EventBus(clock)
+    dispatcher = build_dispatcher(config, store, jobs, bus, clock, home, UTC)
+    app = create_app(
+        config,
+        store,
+        clock,
+        tokens,
+        home=home,
+        bus=bus,
+        dispatcher=dispatcher,
+        background=False,
+    )
+    with TestClient(app, base_url=BASE_URL) as client:
+        authenticated_client(client, tokens)
+        response = client.get("/")
+    assert response.status_code == 200
+    assert route_id in response.text
+    assert "good 1/1" in response.text
+    assert "fewer than 5 jobs" in response.text
+    assert "$0.20" in response.text
 
 
 def test_calibration_form_offers_only_real_pairs(client, tokens):
@@ -484,6 +522,7 @@ def test_assets_have_no_external_urls(directory):
             "_limits.html",
             "_advice.html",
             "_approvals.html",
+            "_routes.html",
             "calibrate.html",
             "jobs.html",
             "job.html",

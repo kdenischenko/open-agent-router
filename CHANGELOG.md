@@ -35,6 +35,13 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- `agent-router report routes [--since DATE] [--json]` prints a route scorecard with one row
+  per route, tier and mode from jobs, attempts and ratings: job and attempt outcomes, rating
+  shares, duration/token/cost medians; rows with at least 5 jobs are ranked by good share, rows
+  below the minimum are listed separately as unranked, and rows for routes no longer in the
+  config are marked.
+- The main dashboard page gains a Routes section showing the same scorecard for the last
+  30 days.
 
 ### Changed
 

@@ -314,6 +314,22 @@ live/offline: accuracy against ground truth (manual `should_tier` ratings, then 
 jobs rated `good`), the tier confusion matrix, the underestimation rate, latency p50/p95, error
 rate, and a before/after split around the last `mode` change.
 
+## Route report
+
+The route scorecard — `agent-router report routes` and the dashboard's Routes section — is a
+pure report: `route_report.build(jobs, attempts, quality, min_jobs=5)` takes job samples, attempt
+samples and the config's route qualities and returns the rows, and the caller supplies the
+samples from `JobStore.route_samples_since(since)`, which folds finished jobs since a date
+together with their latest rating and per-attempt totals (duration, tokens, cost with the
+`estimated` flag) and every attempt's outcome. Each row is keyed by route id, tier and mode and
+carries job counts per outcome (completed/partial/failed/cancelled), attempt counts per outcome
+(limit/error/timeout), rating counts with the rated share and the good share, and medians for
+duration (median and p90), tokens and cost; estimated costs are marked `~`. Rows with at least
+`min_jobs` (default 5) jobs are ranked first, ordered by good share, and rows below the minimum
+follow in the same order as unranked. A row's `quality` and its `in_config` flag come from the
+config's `routes`: a route that no longer exists in the config keeps its row and is marked as no
+longer configured. The dashboard's Routes section runs the same build over the last 30 days.
+
 ## Runner and harness adapters
 
 The runner starts the harness without a shell: `Popen(argv, cwd, env, stdout/stderr to pipes)`.
@@ -484,6 +500,7 @@ scripting is available.
 | `policy.py` | Deterministic route filters and ordering |
 | `prices.py` | Price-file parsing and token-based cost estimation |
 | `registry.py` | Harness/counter specs, backend resolution, config validation |
+| `route_report.py` | Route scorecard core: rows per route, tier and mode from jobs, attempts, ratings and config quality |
 | `runner.py` | Child-process execution, log capture, timeouts, process-tree kill |
 | `service.py` | Gateway composition: snapshot cache, waiters, background loops |
 | `settings_store.py` | Atomic key-value flags over the `settings` table |

@@ -15,7 +15,7 @@ from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, PlainTextResponse, Response
 from starlette.templating import Jinja2Templates
 
-from agent_router import __version__, api
+from agent_router import __version__, api, route_report
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
 from agent_router.diagnostics import doctor_findings
@@ -474,6 +474,15 @@ def web_router(deps: Gateway) -> APIRouter:
             "local": local,
         }
 
+    def routes_context() -> dict:
+        """Per-route scorecard over the last 30 days; None without a job store."""
+        if deps.jobs is None:
+            return {"routes_report": None}
+        since = deps.clock.now() - timedelta(days=30)
+        jobs, attempts = deps.jobs.route_samples_since(since)
+        quality = {route.id: route.quality for route in deps.config.routes}
+        return {"routes_report": route_report.build(jobs, attempts, quality)}
+
     def recorded_pool(request: Request) -> str | None:
         """The pool of the recorded pair in the query, or None unless the pair is configured."""
         pool_id = request.query_params.get("recorded_pool")
@@ -530,6 +539,7 @@ def web_router(deps: Gateway) -> APIRouter:
             }
             | limits_context(request, snapshot)
             | advice_context(snapshot)
+            | routes_context()
         )
         return render_page(request, "index.html", context, sid=sid, nav="limits")
 
