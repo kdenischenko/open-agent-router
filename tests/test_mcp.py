@@ -222,6 +222,70 @@ def test_wait_job_rejects_a_negative_timeout_without_a_request() -> None:
     assert gateway.calls == []
 
 
+def _job_answer() -> dict[str, Any]:
+    return {
+        "id": "j_1",
+        "status": "completed",
+        "route": "opencode-cli/glm-5.3",
+        "reason": "most capacity",
+        "text": "A long result",
+        "changed_files": ["src/example.py"],
+        "error": None,
+        "log_tail": "executor output",
+        "attempts": [{"route": "opencode-cli/glm-5.3"}],
+        "created_at": "2026-11-25T12:00:00+00:00",
+        "finished_at": "2026-11-25T12:01:00+00:00",
+    }
+
+
+@pytest.mark.parametrize("name", ["wait_job", "job_result"])
+def test_job_tools_return_compact_results_by_default(name: str) -> None:
+    gateway = FakeGateway()
+    gateway.answer = _job_answer()
+
+    payload = _payload(_call(gateway, name, {"job_id": "j_1"}))
+
+    assert payload == {
+        "id": "j_1",
+        "status": "completed",
+        "route": "opencode-cli/glm-5.3",
+        "text": "A long result",
+        "changed_files": ["src/example.py"],
+        "error": None,
+    }
+
+
+@pytest.mark.parametrize("name", ["wait_job", "job_result"])
+def test_job_tools_return_the_last_20_log_lines_for_failed_jobs(name: str) -> None:
+    gateway = FakeGateway()
+    gateway.answer = {
+        **_job_answer(),
+        "status": "failed",
+        "text": None,
+        "changed_files": None,
+        "error": {"code": "executor_failed", "message": "executor exited"},
+        "log_tail": "\n".join(f"line {line}" for line in range(30)),
+    }
+
+    payload = _payload(_call(gateway, name, {"job_id": "j_1"}))
+
+    assert payload["log_tail"] == "\n".join(f"line {line}" for line in range(10, 30))
+    assert payload["error"] == {"code": "executor_failed", "message": "executor exited"}
+    assert "attempts" not in payload
+
+
+@pytest.mark.parametrize("name", ["wait_job", "job_result"])
+def test_job_tools_verbose_returns_full_results(name: str) -> None:
+    gateway = FakeGateway()
+    gateway.answer = _job_answer()
+    tools = {tool.name: tool for tool in _tools(gateway)}
+
+    assert "verbose" in tools[name].input_schema["properties"]
+    payload = _payload(_call(gateway, name, {"job_id": "j_1", "verbose": True}))
+
+    assert payload == _job_answer()
+
+
 def _list_answer() -> dict[str, Any]:
     return {
         "jobs": [
