@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 import contextlib
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -30,8 +31,8 @@ SHIM_SUFFIXES = (".cmd", ".bat")
 _SHIM_SAFE = frozenset(" ._:/\\=@+-")
 _TRUNCATED_MARK = b"\n[agent-router: output truncated]\n"
 # Two queries in on_start (image and creation time), tree termination, waits,
-# and two reader threads.
-STOP_BUDGET_S = 35.0
+# two rounds of reader joins, and one stdin join.
+STOP_BUDGET_S = 50.0
 PROC_START_TOLERANCE_S = 1.0
 _POLL_S = 0.05
 QUERY_WAIT_S = 5.0
@@ -357,7 +358,21 @@ class _Pump(threading.Thread):
         self._on_line = on_line
         self._on_activity = on_activity
         self._is_progress_line = is_progress_line
+        self._stop_event = threading.Event()
         self.truncated = False
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    def _read(self) -> bytes:
+        if sys.platform == "win32" or not hasattr(self._stream, "fileno"):
+            return self._stream.read1(65536)  # type: ignore[attr-defined]
+        # Closing a POSIX descriptor does not wake a read already blocked in another thread.
+        while not self._stop_event.is_set():
+            readable, _, _ = select.select([self._stream], [], [], _POLL_S)
+            if readable:
+                return self._stream.read1(65536)  # type: ignore[attr-defined]
+        return b""
 
     def run(self) -> None:
         written = 0
@@ -379,7 +394,7 @@ class _Pump(threading.Thread):
 
         with contextlib.suppress(OSError, ValueError), self._path.open("wb", buffering=0) as out:
             while True:
-                chunk = self._stream.read1(65536)  # type: ignore[attr-defined]
+                chunk = self._read()
                 if not chunk:
                     break
                 if self._on_activity is not None and self._is_progress_line is None:
@@ -424,12 +439,62 @@ class _Pump(threading.Thread):
             self._stream.close()
 
 
-def _feed(stream: IO[bytes], text: str) -> None:
+def _feed(stream: IO[bytes], text: str, stop: threading.Event | None = None) -> None:
     """Write the prompt to the process stdin and close the stream right away."""
     with contextlib.suppress(OSError, ValueError):
-        stream.write(text.encode("utf-8"))
+        if stop is None or sys.platform == "win32" or not hasattr(stream, "fileno"):
+            stream.write(text.encode("utf-8"))
+        else:
+            remaining = text.encode("utf-8")
+            os.set_blocking(stream.fileno(), False)
+            while remaining and not stop.is_set():
+                _, writable, _ = select.select([], [stream], [], _POLL_S)
+                if not writable:
+                    continue
+                try:
+                    written = os.write(stream.fileno(), remaining)
+                except BlockingIOError:
+                    continue
+                remaining = remaining[written:]
     with contextlib.suppress(OSError, ValueError):
         stream.close()
+
+
+def _close_pipe(stream: IO[bytes]) -> None:
+    """Close the underlying pipe without flushing or waiting for its buffered wrapper."""
+    if sys.platform == "win32":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        with contextlib.suppress(OSError, ValueError, AttributeError):
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            cancel_io_ex = kernel32.CancelIoEx
+            cancel_io_ex.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+            cancel_io_ex.restype = wintypes.BOOL
+            cancel_io_ex(msvcrt.get_osfhandle(stream.fileno()), None)
+    raw = getattr(stream, "raw", stream)
+    with contextlib.suppress(OSError, ValueError):
+        raw.close()
+
+
+def _close_process_pipes(
+    proc: subprocess.Popen[bytes],
+    out_pump: _Pump | None,
+    err_pump: _Pump | None,
+    stdin_feeder: threading.Thread | None,
+    stdin_stop: threading.Event,
+) -> None:
+    for pump in (out_pump, err_pump):
+        if pump is not None:
+            pump.stop()
+    stdin_stop.set()
+    for stream in (proc.stdout, proc.stderr, proc.stdin):
+        if stream is not None:
+            _close_pipe(stream)
+    for thread in (out_pump, err_pump, stdin_feeder):
+        if thread is not None and thread.ident is not None:
+            thread.join(_READER_WAIT_S)
 
 
 class LocalRunner:
@@ -511,6 +576,8 @@ class LocalRunner:
             raise
         out_pump: _Pump | None = None
         err_pump: _Pump | None = None
+        stdin_feeder: threading.Thread | None = None
+        stdin_stop = threading.Event()
         try:
             if job is not None and not job.assign(proc.pid):
                 job.close()  # the tree stays outside the job: the taskkill fallback applies
@@ -543,12 +610,13 @@ class LocalRunner:
             err_pump.start()
             if inv.stdin_text is not None:
                 assert proc.stdin is not None
-                threading.Thread(
+                stdin_feeder = threading.Thread(
                     target=_feed,
-                    args=(proc.stdin, inv.stdin_text),
+                    args=(proc.stdin, inv.stdin_text, stdin_stop),
                     daemon=True,
                     name="runner-stdin",
-                ).start()
+                )
+                stdin_feeder.start()
 
             timed_out = cancelled = forced = idle = False
             sampler = self._sampler(cwd, log_dir, job, proc.pid, quiet_while_working)
@@ -580,6 +648,14 @@ class LocalRunner:
                 job.terminate()  # a descendant that outlived the harness stops with the attempt
             out_pump.join(_READER_WAIT_S)
             err_pump.join(_READER_WAIT_S)
+            if (
+                out_pump.is_alive()
+                or err_pump.is_alive()
+                or (stdin_feeder is not None and stdin_feeder.is_alive())
+            ):
+                # A descendant can hold the inherited ends open; the parent's ends must close
+                # before the reader and feeder threads can release their log files.
+                _close_process_pipes(proc, out_pump, err_pump, stdin_feeder, stdin_stop)
             parent_alive = proc.poll() is None
             survived = _survived(proc.pid, parent_alive, job)
             exit_code = None if parent_alive else proc.returncode
@@ -607,18 +683,7 @@ class LocalRunner:
                 self._kill(proc, job)
             with contextlib.suppress(Exception):
                 proc.wait(timeout=KILL_WAIT_S)
-            if proc.stdin is not None:
-                with contextlib.suppress(OSError, ValueError):
-                    proc.stdin.close()
-            # A started reader closes its own pipe; closing a pipe that is still being read
-            # would wait for a process that survived the stop — only pipes without a reader close.
-            for pump, stream in ((out_pump, proc.stdout), (err_pump, proc.stderr)):
-                if pump is not None and pump.ident is not None:
-                    with contextlib.suppress(Exception):
-                        pump.join(_READER_WAIT_S)
-                elif stream is not None:
-                    with contextlib.suppress(OSError, ValueError):
-                        stream.close()
+            _close_process_pipes(proc, out_pump, err_pump, stdin_feeder, stdin_stop)
             raise
         finally:
             if job is not None:

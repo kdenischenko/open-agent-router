@@ -2936,6 +2936,37 @@ def test_tick_applies_other_results_when_one_write_fails(make_rig) -> None:
     assert len(rig.attempts(first)) == 1
 
 
+def test_cancel_clears_guard_failures(make_rig, monkeypatch) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.plain())
+
+    def fail_consider(_job) -> None:
+        raise RuntimeError("consider failed")
+
+    monkeypatch.setattr(rig.dispatcher, "_consider", fail_consider)
+    rig.tick()
+    assert f"consider:{job.id}" in rig.dispatcher._guard_failures
+    rig.dispatcher._guard_failures.update({f"approval:{job.id}", f"collect:{job.id}"})
+
+    rig.dispatcher.cancel(job.id)
+
+    for action in ("consider", "approval", "collect"):
+        assert f"{action}:{job.id}" not in rig.dispatcher._guard_failures
+
+
+def test_release_clears_guard_failures(make_rig) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.plain())
+    active = dispatcher_module._Active(job.id, 1, rig.config.routes[0], threading.Event(), None)
+    for action in ("consider", "approval", "collect"):
+        rig.dispatcher._guard_failures.add(f"{action}:{job.id}")
+
+    rig.dispatcher._release(active)
+
+    for action in ("consider", "approval", "collect"):
+        assert f"{action}:{job.id}" not in rig.dispatcher._guard_failures
+
+
 @requires_git
 def test_tick_starts_next_job_when_consider_raises(make_rig, monkeypatch) -> None:
     rig = make_rig()

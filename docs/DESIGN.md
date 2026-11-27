@@ -356,9 +356,12 @@ reads it). On Windows the child gets its own process group and no console window
 also gets a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: the harness is created suspended,
 assigned to the job, and only then resumed, closing the launch/assignment race. Descendants join
 the same job. Stopping or finishing an attempt terminates the job and queries its process list;
-anything left sets `survived` and produces `orphan_process`. Job, process and thread handles are
-closed on every exit, and closing the last job handle also stops the tree if the gateway crashes.
-Windows 8 and later support nested jobs, but an enclosing job or policy can reject assignment. If
+anything left sets `survived` and produces `orphan_process`. Job and process handles are closed
+on every exit, and closing the last job handle also stops the tree if the gateway crashes. When
+inherited pipes stay open after a stop, the runner closes the parent's raw pipe handles without
+flushing or waiting for buffered wrapper locks; Windows I/O is cancelled first, while POSIX readers
+and the stdin writer poll for shutdown so they do not wait for a surviving descendant. Windows 8 and later support
+nested jobs, but an enclosing job or policy can reject assignment. If
 job creation or assignment fails, the harness is resumed and the legacy
 `taskkill /PID <pid> /T /F` stop remains in use; in that mode a descendant of a dead harness is not
 visible to the survivor check. On POSIX, stopping still uses `SIGTERM` then `SIGKILL` to the process

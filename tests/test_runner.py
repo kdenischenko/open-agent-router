@@ -731,6 +731,148 @@ def test_survivor_is_reported(work: Path, logs: Path, monkeypatch: pytest.Monkey
             assert wait_dead(pids[0])
 
 
+@pytest.mark.parametrize("readers_hold", [True, False], ids=["held-readers", "held-stdin"])
+def test_survivor_pipe_close_releases_reader_threads(
+    work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch, readers_hold: bool
+) -> None:
+    class HeldPipe:
+        def __init__(self, holds: bool = True) -> None:
+            self.closed = threading.Event()
+            self.holds = holds
+
+        def read1(self, _size: int) -> bytes:
+            if not self.holds:
+                return b""
+            self.closed.wait()
+            raise OSError("pipe closed")
+
+        def write(self, _data: bytes) -> None:
+            self.closed.wait()
+            raise OSError("pipe closed")
+
+        def close(self) -> None:
+            self.closed.set()
+
+    class HeldProcess:
+        pid = 4242
+        returncode = None
+
+        def __init__(self) -> None:
+            self.stdin = HeldPipe()
+            self.stdout = HeldPipe(readers_hold)
+            self.stderr = HeldPipe(readers_hold)
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, timeout: float) -> None:
+            raise subprocess.TimeoutExpired("fake-harness", timeout)
+
+    proc = HeldProcess()
+    cancel = threading.Event()
+    pumps: list[runner_module._Pump] = []
+    feeders: list[threading.Thread] = []
+    real_start = runner_module._Pump.start
+    real_feed = runner_module._feed
+
+    def start_pump(pump: runner_module._Pump) -> None:
+        pumps.append(pump)
+        real_start(pump)
+
+    def track_feeder(stream, text: str, stop: threading.Event) -> None:
+        feeders.append(threading.current_thread())
+        real_feed(stream, text, stop)
+
+    monkeypatch.setattr(runner_module, "KILL_WAIT_S", 0.05)
+    monkeypatch.setattr(runner_module, "_READER_WAIT_S", 0.05)
+    monkeypatch.setattr(runner_module, "create_job", lambda: None)
+    monkeypatch.setattr(runner_module.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(LocalRunner, "_kill", staticmethod(lambda proc, job=None: None))
+    monkeypatch.setattr(runner_module._Pump, "start", start_pump)
+    monkeypatch.setattr(runner_module, "_feed", track_feeder)
+
+    result = run(
+        Invocation(("fake-harness",), stdin_text="prompt"),
+        work,
+        logs,
+        cancel=cancel,
+        on_start=lambda _pid: cancel.set(),
+    )
+    threads = [*pumps, *feeders]
+    try:
+        assert result.survived is True
+        assert result.cancelled is True
+        assert len(threads) == 3
+        assert all(not thread.is_alive() for thread in threads)
+    finally:
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            stream.close()
+        for thread in threads:
+            if thread.ident is not None:
+                thread.join(1)
+
+
+def test_close_pipe_closes_raw_stream_without_buffered_close() -> None:
+    class RawStream:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class BufferedStream:
+        def __init__(self) -> None:
+            self.raw = RawStream()
+            self.closed = False
+
+        def fileno(self) -> int:
+            raise OSError("no descriptor")
+
+        def close(self) -> None:
+            self.closed = True
+
+    stream = BufferedStream()
+
+    runner_module._close_pipe(stream)  # type: ignore[arg-type]
+
+    assert stream.raw.closed is True
+    assert stream.closed is False
+
+
+def test_held_descendant_pipes_close_without_waiting_for_descendant(
+    work: Path, logs: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid_file = tmp_path / "descendant.pid"
+    code = (
+        "import pathlib, subprocess, sys\n"
+        "child = subprocess.Popen("
+        "[sys.executable, '-I', '-c', 'import time; time.sleep(3)'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid), encoding='utf-8')\n"
+    )
+    pumps: list[runner_module._Pump] = []
+    real_start = runner_module._Pump.start
+
+    def start_pump(pump: runner_module._Pump) -> None:
+        pumps.append(pump)
+        real_start(pump)
+
+    monkeypatch.setattr(runner_module, "_READER_WAIT_S", 0.05)
+    monkeypatch.setattr(runner_module, "create_job", lambda: None)
+    monkeypatch.setattr(runner_module._Pump, "start", start_pump)
+
+    started = time.monotonic()
+    try:
+        run(Invocation((sys.executable, "-I", "-c", code)), work, logs)
+        assert time.monotonic() - started < 2
+        assert len(pumps) == 2
+        assert all(not pump.is_alive() for pump in pumps)
+    finally:
+        if pid_file.exists():
+            descendant = int(pid_file.read_text(encoding="utf-8"))
+            if pid_alive(descendant):
+                os.kill(descendant, 9)
+            assert wait_dead(descendant)
+
+
 def test_failure_after_spawn_kills_process(
     work: Path, logs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

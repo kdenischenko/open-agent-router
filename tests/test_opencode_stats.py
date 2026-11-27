@@ -69,7 +69,7 @@ def test_missing_models_returns_none_and_does_not_write_sample(config, store, cl
     assert store.last_counter("opencode-go") is None
 
 
-def _fake_popen(monkeypatch, responses, *, returncode=0):
+def _fake_popen(monkeypatch, responses, *, returncode=0, kill_error=None):
     processes = []
 
     class FakePopen:
@@ -81,21 +81,61 @@ def _fake_popen(monkeypatch, responses, *, returncode=0):
             self.returncode = returncode
             self.responses = iter(responses)
             self.communicate_timeouts = []
+            self.wait_timeouts = []
             self.killed = False
             processes.append(self)
 
         def communicate(self, timeout):
             self.communicate_timeouts.append(timeout)
             response = next(self.responses)
-            if isinstance(response, subprocess.TimeoutExpired):
+            if isinstance(response, Exception):
                 raise response
             return response
 
+        def poll(self):
+            return self.returncode
+
         def kill(self):
             self.killed = True
+            if kill_error is not None:
+                raise kill_error
+
+        def wait(self, timeout=None):
+            self.wait_timeouts.append(timeout)
+            return self.returncode
 
     monkeypatch.setattr(opencode_stats_module.subprocess, "Popen", FakePopen)
     return processes
+
+
+def test_run_stats_unexpected_error_kills_process_tree_and_waits(monkeypatch):
+    processes = _fake_popen(monkeypatch, [RuntimeError("stats failed")], returncode=None)
+    killed = []
+    monkeypatch.setattr(opencode_stats_module, "kill_tree", killed.append)
+
+    with pytest.raises(RuntimeError, match="stats failed"):
+        run_stats("opencode", timeout_s=1)
+
+    assert killed == [4242]
+    assert processes[0].killed is False
+    assert processes[0].wait_timeouts == [KILL_WAIT_S]
+
+
+def test_run_stats_cleanup_error_preserves_original_exception(monkeypatch):
+    _fake_popen(
+        monkeypatch,
+        [RuntimeError("stats failed")],
+        returncode=None,
+        kill_error=OSError("kill failed"),
+    )
+
+    def cleanup_fails(_pid):
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(opencode_stats_module, "kill_tree", cleanup_fails)
+
+    with pytest.raises(RuntimeError, match="stats failed"):
+        run_stats("opencode", timeout_s=1)
 
 
 def test_run_stats_timeout_kills_process_tree(monkeypatch):

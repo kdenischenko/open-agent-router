@@ -89,6 +89,7 @@ ROUTE_ERROR_STREAK = 2
 ROUTE_ERROR_COOLDOWN_S = 1800
 LOCK_GRACE_S = 1.0
 QUEUE_PAGE = 50
+_GUARD_ACTIONS = ("consider", "approval", "collect")
 
 log = logging.getLogger(__name__)
 
@@ -279,7 +280,12 @@ class Dispatcher(RecoveryMixin):
             self.jobs.start_attempt(job, attempt)
         if status in TERMINAL:
             self._checked_cwds.pop(job.id, None)
+            self._clear_guard_failures(job.id)
         self._announce(job, before)
+
+    def _clear_guard_failures(self, job_id: str) -> None:
+        for action in _GUARD_ACTIONS:
+            self._guard_failures.discard(f"{action}:{job_id}")
 
     def _announce(self, job: Job, before: Status | None) -> None:
         self.bus.publish(
@@ -1086,6 +1092,7 @@ class Dispatcher(RecoveryMixin):
         with self._active_lock:
             self._active.pop(active.job_id, None)
             self._live.pop(active.job_id, None)
+        self._clear_guard_failures(active.job_id)
         if active.repo is not None and self._writers.get(active.repo) == active.job_id:
             del self._writers[active.repo]
 
