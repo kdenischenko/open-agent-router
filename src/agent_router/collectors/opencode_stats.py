@@ -66,19 +66,24 @@ def run_stats(executable: str, timeout_s: float = 30) -> Any | None:
             **options,
         )
         try:
-            stdout, _stderr = proc.communicate(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            kill_tree(proc.pid)
             try:
-                proc.communicate(timeout=KILL_WAIT_S)
+                stdout, _stderr = proc.communicate(timeout=timeout_s)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                with contextlib.suppress(subprocess.TimeoutExpired):
+                kill_tree(proc.pid)
+                try:
                     proc.communicate(timeout=KILL_WAIT_S)
-            return None
-        if proc.returncode != 0:
-            return None
-        return json.loads(stdout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        proc.communicate(timeout=KILL_WAIT_S)
+                return None
+            if proc.returncode != 0:
+                return None
+            return json.loads(stdout)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
     except (OSError, subprocess.SubprocessError, UnicodeError, ValueError, TypeError):
         return None
 

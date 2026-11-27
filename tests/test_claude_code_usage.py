@@ -431,6 +431,59 @@ def test_run_command_times_out() -> None:
     assert run_command(_python("import time\ntime.sleep(60)"), dict(os.environ), 0.5) is None
 
 
+class _RunningProcess:
+    pid = 4242
+
+    def __init__(self) -> None:
+        self.stdout = iter([b"line\n"])
+        self.returncode: int | None = None
+        self.killed = False
+        self.wait_timeouts: list[float | None] = []
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+    def wait(self, timeout: float | None = None) -> int | None:
+        self.wait_timeouts.append(timeout)
+        return self.returncode
+
+    def communicate(self, timeout: float) -> None:
+        raise RuntimeError("command failed")
+
+
+def test_run_stream_callback_error_kills_and_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proc = _RunningProcess()
+    monkeypatch.setattr(claude_code_usage.subprocess, "Popen", lambda *args, **kwargs: proc)
+
+    def fail(_line: str) -> bool:
+        raise RuntimeError("line failed")
+
+    with pytest.raises(RuntimeError, match="line failed"):
+        run_stream(["claude"], {}, 30, fail)
+
+    assert proc.killed is True
+    assert proc.wait_timeouts == [None]
+
+
+def test_run_command_unexpected_error_kills_and_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proc = _RunningProcess()
+    monkeypatch.setattr(claude_code_usage.subprocess, "Popen", lambda *args, **kwargs: proc)
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        run_command(["claude"], {}, 30)
+
+    assert proc.killed is True
+    assert proc.wait_timeouts == [None]
+
+
 def test_module_never_reads_claude_credentials() -> None:
     text = Path(claude_code_usage.__file__).read_text(encoding="utf-8")
 

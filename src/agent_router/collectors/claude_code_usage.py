@@ -95,37 +95,42 @@ def run_stream(
         )
     except (OSError, ShimUnsafeArgs):
         return "not_found"
-    lines: queue.Queue[bytes | None] = queue.Queue()
+    try:
+        lines: queue.Queue[bytes | None] = queue.Queue()
 
-    def pump() -> None:
-        assert proc.stdout is not None
-        with contextlib.suppress(OSError, ValueError):
-            for raw in proc.stdout:
-                lines.put(raw)
-        lines.put(None)
+        def pump() -> None:
+            assert proc.stdout is not None
+            with contextlib.suppress(OSError, ValueError):
+                for raw in proc.stdout:
+                    lines.put(raw)
+            lines.put(None)
 
-    threading.Thread(target=pump, name="claude-usage-pump", daemon=True).start()
-    deadline = time.monotonic() + timeout_s
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        threading.Thread(target=pump, name="claude-usage-pump", daemon=True).start()
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _stop(proc)
+                return "timeout"
+            try:
+                raw = lines.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if raw is None:
+                break
+            if not on_line(raw.decode("utf-8", "replace")):
+                _stop(proc)
+                return None
+        try:
+            proc.wait(timeout=max(deadline - time.monotonic(), 0.1))
+        except subprocess.TimeoutExpired:
             _stop(proc)
             return "timeout"
-        try:
-            raw = lines.get(timeout=remaining)
-        except queue.Empty:
-            continue
-        if raw is None:
-            break
-        if not on_line(raw.decode("utf-8", "replace")):
-            _stop(proc)
-            return None
-    try:
-        proc.wait(timeout=max(deadline - time.monotonic(), 0.1))
-    except subprocess.TimeoutExpired:
-        _stop(proc)
-        return "timeout"
-    return None
+        return None
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 def run_command(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -> str | None:
@@ -143,11 +148,16 @@ def run_command(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -
     except (OSError, ShimUnsafeArgs):
         return None
     try:
-        stdout, _ = proc.communicate(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        _stop(proc)
-        return None
-    return stdout.decode("utf-8", "replace")
+        try:
+            stdout, _ = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            _stop(proc)
+            return None
+        return stdout.decode("utf-8", "replace")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 def _reset_time(value: object) -> datetime | None:
