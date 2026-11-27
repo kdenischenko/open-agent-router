@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import weakref
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -125,7 +126,7 @@ class SqliteStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
         self._lock = threading.Lock()
-        self._connections: list[sqlite3.Connection] = []
+        self._connections: dict[weakref.ref[threading.Thread], sqlite3.Connection] = {}
         self._closed = False
         self._scale_hash_column: bool | None = None  # caches a positive answer
         self.migrate(1, _SCHEMA_V1)
@@ -136,16 +137,24 @@ class SqliteStore:
         """The current thread's connection; created on first use."""
         conn = getattr(self._local, "conn", None)
         if conn is None:
+            thread_ref = weakref.ref(threading.current_thread())
             with self._lock:
                 if self._closed:
                     raise RuntimeError("store is closed")
+                stale = []
+                for candidate in self._connections:
+                    thread = candidate()
+                    if thread is None or not thread.is_alive():
+                        stale.append(candidate)
+                for candidate in stale:
+                    self._connections.pop(candidate).close()
                 conn = sqlite3.connect(
                     self.path, timeout=5, isolation_level=None, check_same_thread=False
                 )
                 conn.execute("PRAGMA busy_timeout = 5000")
                 conn.execute("PRAGMA journal_mode = WAL")
                 conn.execute("PRAGMA synchronous = NORMAL")
-                self._connections.append(conn)
+                self._connections[thread_ref] = conn
             self._local.conn = conn
         return conn
 
@@ -182,8 +191,8 @@ class SqliteStore:
     def close(self) -> None:
         with self._lock:
             self._closed = True
-            connections, self._connections = self._connections, []
-        for conn in connections:
+            connections, self._connections = self._connections, {}
+        for conn in connections.values():
             conn.close()
 
     # --- observations ---------------------------------------------------------
