@@ -36,7 +36,7 @@ delegate decisions that a human must make.
    before the time shown, or a human presses Approve in the dashboard. Never approve
    yourself and do not wait in a loop: the decision belongs to a human. Exit code `4`
    without that line means the job is not finished yet; run `agent-router wait <id>` again later.
-   The full answer: `agent-router result <id>`.
+   The full answer: `agent-router result <id>`. For a long job, `agent-router logs <id> --follow` shows the live output of the running attempt.
 4. Rate the result after checking it:
 
    ```bash

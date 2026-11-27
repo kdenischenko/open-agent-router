@@ -281,6 +281,63 @@ def test_app_js_sets_up_copy_buttons(client) -> None:
     assert "navigator.clipboard" in script
 
 
+# --- live progress of a running attempt ---------------------------------------------------------
+
+
+def live_attempt(rig: WebRig, job, tail: str) -> None:
+    import time
+
+    from agent_router.progress import AttemptLive
+
+    log_dir = rig.home / "jobs" / job.id / "attempt-1"
+    log_dir.mkdir(parents=True)
+    (log_dir / "stdout.log").write_text(tail, encoding="utf-8")
+    (log_dir / "stderr.log").write_text("", encoding="utf-8")
+    rig.dispatcher._live[job.id] = AttemptLive(
+        job.id,
+        1,
+        "kimi-cli/kimi-for-coding",
+        rig.clock.now(),
+        time.monotonic(),
+        rig.home,
+        log_dir,
+        14400.0,
+        600.0,
+    )
+
+
+def test_running_job_shows_the_live_tail(web, rig) -> None:
+    job = rig.add_job("running")
+    live_attempt(rig, job, "step one\nstep two\n")
+
+    text = job_page(web, job)
+
+    block = re.search(r'<section\b(?=[^>]*id="live-attempt")[^>]*>(.*?)</section>', text, re.S)
+    assert block is not None, "no section#live-attempt"
+    assert "kimi-cli/kimi-for-coding" in block.group(1)
+    assert "step two" in block.group(1)
+
+
+def test_not_running_job_has_no_live_block(web, rig) -> None:
+    queued = rig.add_job("queued")
+    done = rig.add_job("completed", text="done")
+    live_attempt(rig, done, "old output\n")  # a live record is ignored once the job is done
+
+    assert 'id="live-attempt"' not in job_page(web, queued)
+    assert 'id="live-attempt"' not in job_page(web, done)
+    assert "old output" not in job_page(web, done)
+
+
+def test_live_tail_refreshes_with_the_fragment(web, rig) -> None:
+    job = rig.add_job("running")
+    live_attempt(rig, job, "fragment output\n")
+
+    response = web.get(f"/fragments/jobs/{job.id}")
+
+    assert response.status_code == 200
+    assert "fragment output" in response.text
+
+
 def test_refresh_keeps_closed_disclosures_closed(client) -> None:
     script = client.get("/static/app.js").text
     refresh = script[script.index("async function refresh") : script.index("setInterval(")]

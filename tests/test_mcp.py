@@ -23,6 +23,7 @@ EXPECTED_TOOLS = {
     "submit_job",
     "wait_job",
     "job_result",
+    "job_progress",
     "list_jobs",
     "cancel_job",
     "rate_job",
@@ -239,7 +240,8 @@ def test_wait_job_caps_the_timeout_and_returns_an_unfinished_job() -> None:
     payload = _payload(_call(gateway, "wait_job", {"job_id": "j_1", "timeout_s": 500}))
 
     assert payload["status"] == "running"
-    assert gateway.calls == [("GET", "/api/v1/jobs/j_1/wait", {"timeout": 100})]
+    # the second request is the live-progress fetch for a still-running job
+    assert gateway.calls[0] == ("GET", "/api/v1/jobs/j_1/wait", {"timeout": 100})
 
 
 def test_wait_job_default_timeout() -> None:
@@ -247,7 +249,7 @@ def test_wait_job_default_timeout() -> None:
 
     _call(gateway, "wait_job", {"job_id": "j_1"})
 
-    assert gateway.calls == [("GET", "/api/v1/jobs/j_1/wait", {"timeout": 100})]
+    assert gateway.calls[0] == ("GET", "/api/v1/jobs/j_1/wait", {"timeout": 100})
 
 
 def test_wait_job_rejects_a_negative_timeout_without_a_request() -> None:
@@ -257,6 +259,52 @@ def test_wait_job_rejects_a_negative_timeout_without_a_request() -> None:
 
     assert "timeout" in message
     assert gateway.calls == []
+
+
+def test_wait_job_on_a_running_job_adds_a_progress_summary() -> None:
+    class LiveGateway(FakeGateway):
+        def get(self, path: str, **params: Any) -> dict:
+            if path.endswith("/progress"):
+                self.calls.append(("GET", path, params))
+                return {
+                    "job": "j_1",
+                    "status": "running",
+                    "attempt": {
+                        "n": 1,
+                        "route": "a/main",
+                        "elapsed_s": 12,
+                        "last_signal": "output",
+                        "last_signal_age_s": 1,
+                        "idle_left_s": 590,
+                        "cap_left_s": 14300,
+                        "tail": "first\nsecond line",
+                    },
+                }
+            return super().get(path, **params)
+
+    gateway = LiveGateway()
+
+    payload = _payload(_call(gateway, "wait_job", {"job_id": "j_1", "timeout_s": 0}))
+
+    assert payload["progress"] == {
+        "route": "a/main",
+        "elapsed_s": 12,
+        "last_signal": "output",
+        "tail_line": "second line",
+    }
+    assert ("GET", "/api/v1/jobs/j_1/progress", {}) in gateway.calls
+
+
+def test_wait_job_progress_summary_skipped_when_nothing_runs() -> None:
+    class DoneGateway(FakeGateway):
+        def get(self, path: str, **params: Any) -> dict:
+            if path.endswith("/progress"):
+                return {"job": "j_1", "status": "running", "attempt": None}
+            return super().get(path, **params)
+
+    payload = _payload(_call(DoneGateway(), "wait_job", {"job_id": "j_1", "timeout_s": 0}))
+
+    assert "progress" not in payload
 
 
 def _job_answer() -> dict[str, Any]:

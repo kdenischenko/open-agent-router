@@ -91,6 +91,7 @@ class ScriptRunner:
         on_start=None,
         idle_timeout_s=None,
         quiet_while_working=False,
+        on_liveness=None,
     ) -> ProcessResult:
         step = self.steps.popleft() if self.steps else Step()
         self.calls.append(Call(inv, cwd, timeout_s, cancel, idle_timeout_s, quiet_while_working))
@@ -110,6 +111,13 @@ class ScriptRunner:
         if on_start is not None:
             on_start(step.pid)
         step.started.set()
+        if on_liveness is not None:
+            from agent_router.liveness import Liveness
+
+            liveness = Liveness(time.monotonic() - 1.0, max(0.0, float(timeout_s)), idle_timeout_s)
+            if step.last_signal is not None:
+                liveness.touch(time.monotonic(), step.last_signal)
+            on_liveness(liveness)
         if step.action is not None:
             step.action(cwd)
         if step.release is not None and not step.release.wait(30):
@@ -4073,3 +4081,77 @@ def test_advice_shows_model_unavailable_reason(make_rig) -> None:
     excluded = {item.route.id: item.reason for item in decision.excluded}
     assert excluded["a/main"].startswith("harness unavailable: model unavailable, retry after ")
     assert [choice.route.id for choice in decision.chosen] == ["b/main"]
+
+
+# --- live progress of a running attempt -------------------------------------------------------
+
+
+@requires_git
+def test_progress_of_a_running_attempt(make_rig) -> None:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    release = threading.Event()
+    rig = make_rig(executor)
+    cwd = rig.plain()
+    step = Step(last_signal="output", release=release)
+    rig.runner.add(step)
+    job = rig.submit(cwd)
+    try:
+        rig.tick()
+        assert step.started.wait(5)
+        log_dir = rig.home / "jobs" / job.id / "attempt-1"
+        (log_dir / "stdout.log").write_text(f"first\n{cwd}\nlast line\n", encoding="utf-8")
+        (log_dir / "stderr.log").write_text("warn\n", encoding="utf-8")
+        rig.clock.advance(timedelta(seconds=30))
+
+        progress = rig.dispatcher.progress(job.id)
+
+        assert progress is not None
+        assert progress["job"] == job.id
+        assert progress["status"] == "running"
+        attempt = progress["attempt"]
+        assert (attempt["n"], attempt["route"]) == (1, "a/main")
+        assert attempt["elapsed_s"] == 30  # the dispatcher's clock, advanced deterministically
+        assert attempt["last_signal"] == "output"
+        assert attempt["last_signal_age_s"] is not None
+        assert attempt["idle_left_s"] is not None and 0 <= attempt["idle_left_s"] <= 600
+        assert attempt["cap_left_s"] is not None and 0 <= attempt["cap_left_s"] <= 14400
+        assert "last line" in attempt["tail"]
+        assert "[stderr]\nwarn" in attempt["tail"]
+        assert str(cwd) not in attempt["tail"]  # paths of the job directory are redacted
+        assert "<dir>" in attempt["tail"]
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+@requires_git
+def test_progress_without_a_running_attempt_or_job(make_rig) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.plain())
+    queued = rig.dispatcher.progress(job.id)
+    assert queued == {"job": job.id, "status": "queued", "attempt": None}
+    rig.tick(2)
+    done = rig.dispatcher.progress(job.id)
+    assert done == {"job": job.id, "status": "completed", "attempt": None}
+    assert rig.dispatcher.progress("j_нет такой") is None  # non-ascii on purpose
+
+
+@requires_git
+def test_progress_idle_left_grows_no_shorter_than_the_limit(make_rig) -> None:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    release = threading.Event()
+    rig = make_rig(executor, idle_timeout_s=120)
+    step = Step(release=release)  # no signal seen yet: idle counts from the start
+    rig.runner.add(step)
+    job = rig.submit(rig.plain())
+    try:
+        rig.tick()
+        assert step.started.wait(5)
+        progress = rig.dispatcher.progress(job.id)
+        assert progress is not None
+        attempt = progress["attempt"]
+        assert attempt["last_signal"] is None and attempt["last_signal_age_s"] is None
+        assert 0 <= attempt["idle_left_s"] <= 120
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)

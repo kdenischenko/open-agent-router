@@ -35,6 +35,13 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- Live progress of a running attempt: `GET /api/v1/jobs/{id}/progress` returns the job status
+  and, while an attempt runs, its route, elapsed time, the last sign of life, the time left
+  before the idle and hard-cap limits and the redacted end of the attempt logs. The new CLI
+  command `agent-router logs JOB_ID` prints it (`--follow` polls and prints only new lines until
+  the job ends), the MCP server gains a `job_progress` tool and a `progress` summary inside a
+  still-running `wait_job` result, and the dashboard job page shows the live output, refreshed
+  with the page's own polling.
 
 ### Changed
 

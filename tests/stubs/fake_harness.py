@@ -2,6 +2,7 @@
 
 Usage: python fake_harness.py --scenario <name> [scenario args]. Scenarios:
 echo-file <path>, exit <code>, sleep <s>, quiet-sleep <s>, quiet-busy <s>,
+path-then-sleep <s>,
 tick <count> <interval_s> [stdout|stderr],
 retry <count> <interval_s>, child-sleep <s> <pid-file>, detached-child <s> <pid-file>,
 orphan-sleep <s> <child-s> <pid-file>,
@@ -40,6 +41,11 @@ def main(argv: list[str]) -> int:
         return int(args[0])
     if name == "sleep":
         out("sleeping\n")
+        time.sleep(float(args[0]))
+        return 0
+    if name == "path-then-sleep":
+        # prints its working directory and then blocks: live progress with a path to redact
+        out(str(Path.cwd()) + "\n")
         time.sleep(float(args[0]))
         return 0
     if name == "quiet-sleep":
