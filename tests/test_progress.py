@@ -35,19 +35,19 @@ DONE = {"job": "j_1", "status": "completed", "attempt": None}
 
 def test_read_tail_returns_only_the_end(tmp_path: Path) -> None:
     log = tmp_path / "stdout.log"
-    log.write_bytes(b"x" * 1_000_000 + "конец".encode())
+    log.write_bytes(b"x" * 1_000_000 + "конец".encode())  # non-ascii on purpose
 
     tail = read_tail(log, max_bytes=64)
 
-    assert tail.endswith("конец")
+    assert tail.endswith("конец")  # non-ascii on purpose
     assert len(tail.encode()) <= 64
 
 
 def test_read_tail_drops_a_split_character_at_the_start(tmp_path: Path) -> None:
     log = tmp_path / "stdout.log"
-    log.write_bytes("ж".encode() * 10)
+    log.write_bytes("ж".encode() * 10)  # non-ascii on purpose
 
-    assert read_tail(log, max_bytes=5) == "жж"
+    assert read_tail(log, max_bytes=5) == "жж"  # non-ascii on purpose
 
 
 def test_read_tail_of_a_missing_file_is_empty(tmp_path: Path) -> None:
@@ -136,3 +136,29 @@ def test_job_progress_tool_reads_progress() -> None:
     assert payload["status"] == "running"
     assert payload["attempt"]["route"] == "a/main"
     assert "step 2" in payload["attempt"]["tail"]
+
+
+def test_logs_follow_prints_the_header_once_per_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    later = {**PROGRESS, "attempt": {**PROGRESS["attempt"], "elapsed_s": 127}}
+    use(monkeypatch, SequenceGateway(PROGRESS, later, DONE))
+    monkeypatch.setattr("agent_router.cli_jobs.follow_pause", lambda: None)
+
+    result = CliRunner().invoke(cli.app, ["logs", "j_1", "--follow"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("attempt 1 on route a/main") == 1
+
+
+def test_logs_follow_prints_a_line_once_after_it_is_completed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    partial = {**PROGRESS, "attempt": {**PROGRESS["attempt"], "tail": "step 1\nstep 2"}}
+    completed = {**PROGRESS, "attempt": {**PROGRESS["attempt"], "tail": "step 1\nstep 2 done\n"}}
+    use(monkeypatch, SequenceGateway(partial, completed, DONE))
+    monkeypatch.setattr("agent_router.cli_jobs.follow_pause", lambda: None)
+
+    result = CliRunner().invoke(cli.app, ["logs", "j_1", "--follow"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("step 2") == 1
+    assert "step 2 done" in result.output

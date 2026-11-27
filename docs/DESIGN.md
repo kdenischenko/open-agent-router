@@ -349,9 +349,9 @@ the attempt's liveness tracker. `GET /jobs/{id}/progress` turns that into the jo
 for a running attempt, elapsed time (the dispatcher's clock), the last sign of life with its age
 and the time left before the idle and hard-cap limits (the runner's monotonic clock), and the
 end of the attempt logs — read from the tail of the files in bounded chunks, joined like the
-stored log tail, with the same path redaction (`worktree.without_paths`). The CLI shows it with
-`agent-router logs` (`--follow` polls and prints only new lines), the MCP server as
-`job_progress` and a summary inside a still-running `wait_job`, and the job page of the
+stored log tail, with the job directory paths removed (`worktree.without_paths`; the stored tail
+keeps them). The CLI shows it with `agent-router logs` (`--follow` polls and prints only new
+lines, holding back a line until it is complete), the MCP server as `job_progress` and a summary inside a still-running `wait_job`, and the job page of the
 dashboard renders it inside the block its refresh fragment already replaces.
 
 A harness that stays silent while it works would otherwise be stopped as idle. An adapter may

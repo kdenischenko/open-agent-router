@@ -276,9 +276,8 @@ def _attempt_header(attempt: dict) -> str:
     return line
 
 
-def _new_lines(shown: list[str], tail: str) -> list[str]:
+def _new_lines(shown: list[str], lines: list[str]) -> list[str]:
     """Tail lines not printed yet: the overlap with what was shown is not repeated."""
-    lines = tail.splitlines()
     overlap = min(len(shown), len(lines))
     while overlap > 0 and lines[:overlap] != shown[-overlap:]:
         overlap -= 1
@@ -294,23 +293,32 @@ def logs(
     """Print the live output of a running job."""
     client = _gateway()
     shown: list[str] = []
-    header_shown = ""
+    # a last line without its newline may still grow, so while following it is held back
+    # until it is complete or the job ends; otherwise its text would be printed twice
+    pending = ""
+    attempt_shown: tuple | None = None
     while True:
         progress = _job_request(lambda: client.get(f"/api/v1/jobs/{job_id}/progress"))
         attempt = progress.get("attempt")
         if attempt is not None:
-            header = _attempt_header(attempt)
-            if header != header_shown:
-                typer.echo(header)
-                header_shown = header
-            new = _new_lines(shown, attempt.get("tail") or "")
+            # the header carries changing counters, so it is printed once per attempt
+            if (attempt["n"], attempt["route"]) != attempt_shown:
+                typer.echo(_attempt_header(attempt))
+                attempt_shown = (attempt["n"], attempt["route"])
+            tail = attempt.get("tail") or ""
+            lines = tail.splitlines()
+            pending = ""
+            if follow and lines and not tail.endswith(("\n", "\r")):
+                pending = lines.pop()
+            new = _new_lines(shown, lines)
             shown.extend(new)
             for line in new:
                 typer.echo(line)
-        if attempt is None or progress["status"] in TERMINAL:
-            typer.echo(f"job {job_id}: {progress['status']}")
-            return
-        if not follow:
+        if attempt is None or progress["status"] in TERMINAL or not follow:
+            if pending:
+                typer.echo(pending)
+            if attempt is None or progress["status"] in TERMINAL:
+                typer.echo(f"job {job_id}: {progress['status']}")
             return
         follow_pause()
 
