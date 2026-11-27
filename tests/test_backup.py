@@ -178,3 +178,18 @@ def test_restore_from_backup_brings_back_the_jobs(gateway_home: Path) -> None:
         assert jobs.get("j_000000000003") is None
     finally:
         store.close()
+
+
+def test_backup_accepts_a_relative_source_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    connection = sqlite3.connect("relative.sqlite")
+    connection.execute("CREATE TABLE t (x INTEGER)")
+    connection.commit()
+    connection.close()
+
+    size = backup_database(Path("relative.sqlite"), tmp_path / "copy.sqlite")
+
+    assert size > 0
+    assert (tmp_path / "copy.sqlite").exists()

@@ -19,7 +19,7 @@ def default_backup_path(home: Path, moment: datetime) -> Path:
 
 
 def backup_database(source: Path, target: Path) -> int:
-    source_connection = sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True)
+    source_connection = sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True)
     temporary = None
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
