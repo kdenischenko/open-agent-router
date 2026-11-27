@@ -88,6 +88,11 @@ _EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, that must not run the job; routes of these pools "
     "are excluded from the choice"
 )
+_PREFER_ROUTES = Field(
+    description="Route ids to try first, in order; a preference, not a pin: preferred routes go "
+    "first and the gateway falls back to the other routes when a preferred one fails, unlike "
+    "route which pins the job to a single route"
+)
 _REVIEW_OF = Field(
     description="Id of the job whose result this review looks at; submit_job then sends "
     "kind=review, and the gateway keeps the review off the model group and pool that wrote "
@@ -102,6 +107,10 @@ _KIND = Field(description="Job kind: code, review, research or other; review_of 
 _ADVICE_EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, excluded from the recommendation; their routes "
     "show as excluded by request"
+)
+_ADVICE_PREFER_ROUTES = Field(
+    description="Route ids to put first in the recommendation, in order; a preference, not a "
+    "pin: the gateway falls back to the other routes when a preferred one is not eligible"
 )
 _LIST_VERBOSE = Field(description="Return full job records instead of compact jobs")
 
@@ -147,6 +156,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         route: Annotated[str | None, _ROUTE] = None,
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
         exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
+        prefer_routes: Annotated[list[str] | None, _PREFER_ROUTES] = None,
         kind: Annotated[str | None, _KIND] = None,
         review_of: Annotated[str | None, _REVIEW_OF] = None,
         request_id: Annotated[str | None, _REQUEST_ID] = None,
@@ -164,6 +174,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
             body["timeout_s"] = timeout_s
         if exclude_pools is not None:
             body["exclude_pools"] = exclude_pools
+        if prefer_routes is not None:
+            body["prefer_routes"] = prefer_routes
         if kind is not None:
             body["kind"] = kind
         if review_of is not None:
@@ -254,11 +266,14 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         mode: str | None = None,
         caller: Annotated[str | None, _CALLER] = None,
         exclude_pools: Annotated[list[str] | None, _ADVICE_EXCLUDE_POOLS] = None,
+        prefer_routes: Annotated[list[str] | None, _ADVICE_PREFER_ROUTES] = None,
         review_of: Annotated[str | None, _REVIEW_OF] = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
         if exclude_pools is not None:
             params["exclude_pools"] = exclude_pools
+        if prefer_routes is not None:
+            params["prefer_routes"] = prefer_routes
         if review_of is not None:
             params["review_of"] = review_of
         return run(lambda: gateway.get("/api/v1/advice", **params))

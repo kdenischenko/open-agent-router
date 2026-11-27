@@ -170,6 +170,11 @@ def run(
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool that must not run the job; repeat to exclude several"
     ),
+    prefer_route: list[str] = typer.Option(
+        [],
+        "--prefer-route",
+        help="Route to try first, in order; the gateway still falls back to other routes",
+    ),
     review_of: str | None = typer.Option(
         None,
         "--review-of",
@@ -222,6 +227,8 @@ def run(
         body["kind"] = "review"
     if exclude_pool:
         body["exclude_pools"] = exclude_pool
+    if prefer_route:
+        body["prefer_routes"] = prefer_route
     client = _gateway()
     submitted = _job_request(lambda: _submit_job(client, body))
     job_id = submitted["job_id"]

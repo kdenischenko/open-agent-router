@@ -861,3 +861,15 @@ def test_commands_before_init_point_to_init(tmp_path, monkeypatch, command):
     result = CliRunner().invoke(cli.app, command)
     assert result.exit_code == 1
     assert result.output == f"no config at {home / 'config.toml'}: run agent-router init first\n"
+
+
+def test_advice_sends_prefer_routes(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, config, tokens
+) -> None:
+    gateway = AdviceGateway()
+    monkeypatch.setattr(cli_common, "make_client", lambda base_url, token: gateway)
+
+    result = runner.invoke(cli.app, ["advice", "--prefer-route", "kimi-cli/k3.1-pro"])
+
+    assert result.exit_code == 0
+    assert gateway.params["prefer_routes"] == ["kimi-cli/k3.1-pro"]

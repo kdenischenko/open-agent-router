@@ -61,6 +61,7 @@ class JobRequest:
     route: str | None = None
     timeout_s: int | None = None
     excluded_pools: frozenset[str] = frozenset()
+    preferred_routes: tuple[str, ...] = ()  # routes tried first, in order; others may still run
     review_of: str | None = None  # id of the job this review job looks at; requires kind=review
     # idempotency key of the caller: a repeated submit with the same key gets the existing job
     request_id: str | None = None
@@ -343,6 +344,10 @@ def validate_request_directory(req: JobRequest, config: Config) -> CheckedDirect
             raise RequestRejected("bad_route", f"unknown route: {req.route}")
         if not route.enabled:
             raise RequestRejected("bad_route", f"route is disabled: {req.route}")
+    route_ids = {route.id for route in config.routes}
+    for preferred in req.preferred_routes:
+        if preferred not in route_ids:
+            raise RequestRejected("bad_route", f"unknown route: {preferred}")
     if req.timeout_s is not None:
         timeout = req.timeout_s
         if isinstance(timeout, bool) or not isinstance(timeout, int):

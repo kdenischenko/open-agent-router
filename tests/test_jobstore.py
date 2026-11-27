@@ -104,6 +104,7 @@ def test_job_roundtrip_with_all_fields(jobstore) -> None:
             route="kimi/k3",
             timeout_s=900,
             excluded_pools=frozenset({"claude-pro"}),
+            preferred_routes=("kimi/k3", "opencode/big"),
             review_of="j_author",
         ),
         status="awaiting_approval",

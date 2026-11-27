@@ -1589,6 +1589,49 @@ def test_serve_names_the_client_url_for_another_port(
     assert ("AGENT_ROUTER_URL=http://127.0.0.1:8799" in result.output) is hint
 
 
+# --- preferred routes ------------------------------------------------------------------------
+
+
+def test_prefer_routes_is_accepted_and_stored(api, rig) -> None:
+    job_id = post(api, rig, prefer_routes=["fake/main"])
+
+    job = rig.jobs.get(job_id)
+    assert job is not None
+    assert job.request.preferred_routes == ("fake/main",)
+    assert job.request.route is None
+
+
+def test_prefer_routes_rejects_unknown_route(api, rig) -> None:
+    response = api.post("/api/v1/jobs", json=rig.body(prefer_routes=["missing"]), headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {"code": "bad_route", "message": "unknown route: missing"}
+
+
+@pytest.mark.parametrize("prefer_routes", ["fake/main", [1], ["fake/main", ""]])
+def test_prefer_routes_rejects_invalid_values(api, rig, prefer_routes) -> None:
+    response = api.post("/api/v1/jobs", json=rig.body(prefer_routes=prefer_routes), headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "bad_request"
+
+
+def test_advice_reports_preferred_routes(api, rig) -> None:
+    response = api.get("/api/v1/advice", params={"prefer_routes": ["fake/main"]}, headers=cl(rig))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["preferred"] == ["fake/main"]
+    assert [item["route"] for item in body["chosen"]] == ["fake/main"]
+
+
+def test_advice_rejects_unknown_preferred_route(api, rig) -> None:
+    response = api.get("/api/v1/advice", params={"prefer_routes": ["missing"]}, headers=cl(rig))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "bad_route"
+
+
 # --- request_id ----------------------------------------------------------------------
 
 

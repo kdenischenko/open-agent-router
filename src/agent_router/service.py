@@ -146,11 +146,13 @@ def advise(
     views: Sequence[RouteView] | None = None,
     exclude_pools: frozenset[str] = frozenset(),
     reviewed_route: str | None = None,
+    preferred_routes: tuple[str, ...] = (),
 ) -> Decision:
     """Advice on where to send; without a mode, routes of either mode match.
 
     The caller's pool comes from [callers]. `reviewed_route` is the route of the job being
-    reviewed: its model group and pool are excluded.
+    reviewed: its model group and pool are excluded. Eligible `preferred_routes` come first
+    in the given order; the rest keep the normal order.
     """
     caller_pool = config.callers.get(caller) if caller else None
     model_group, pool = review_targets(config, reviewed_route)
@@ -159,6 +161,7 @@ def advise(
         mode=mode,
         caller_pool=caller_pool,
         request_excluded_pools=exclude_pools,
+        preferred_routes=preferred_routes,
         kind="harness",
         reviewed_model_group=model_group,
         reviewed_pool=pool,
@@ -306,7 +309,12 @@ def snapshot_json(
     return result
 
 
-def decision_json(tier: Tier, decision: Decision, mode: Mode | None = None) -> dict[str, Any]:
+def decision_json(
+    tier: Tier,
+    decision: Decision,
+    mode: Mode | None = None,
+    preferred: Sequence[str] = (),
+) -> dict[str, Any]:
     def item(entry: Any) -> dict[str, Any]:
         return {
             "route": entry.route.id,
@@ -320,6 +328,7 @@ def decision_json(tier: Tier, decision: Decision, mode: Mode | None = None) -> d
         "mode": mode,
         "chosen": [item(entry) for entry in decision.chosen],
         "excluded": [item(entry) for entry in decision.excluded],
+        "preferred": list(preferred),
         "note": decision.note,
     }
 
@@ -416,6 +425,7 @@ class Gateway:
         mode: Mode | None = None,
         exclude_pools: frozenset[str] = frozenset(),
         reviewed_route: str | None = None,
+        preferred_routes: tuple[str, ...] = (),
     ) -> Decision:
         return advise(
             self.config,
@@ -426,6 +436,7 @@ class Gateway:
             self.views(),
             exclude_pools,
             reviewed_route,
+            preferred_routes,
         )
 
     def pool(self, pool_id: str) -> Pool | None:

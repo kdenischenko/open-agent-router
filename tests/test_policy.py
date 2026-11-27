@@ -490,3 +490,40 @@ def test_reason_names_the_time_left_in_the_window():
     assert decision.chosen[0].reason == (
         "behind pace by 11 pp (week: 97% of time elapsed, 86% used, 3% left)"
     )
+
+
+# --- preferred routes ------------------------------------------------------------------------
+
+
+def test_preferred_routes_come_first_in_the_given_order():
+    request = RouteRequest(tier="standard", preferred_routes=("r3", "r2"))
+
+    decision = decide(
+        request,
+        snapshot(status("a", 0.2), status("b", 0.2), status("c", 0.2)),
+        views(route("r1", "a", quality=5), route("r2", "b", quality=4), route("r3", "c")),
+    )
+
+    assert ids(decision) == ["r3", "r2", "r1"]
+
+
+def test_ineligible_preferred_route_is_skipped_with_its_reason():
+    request = RouteRequest(
+        tier="standard", preferred_routes=("r2", "r3"), excluded_routes=frozenset({"r2"})
+    )
+
+    decision = decide(
+        request,
+        snapshot(status("a", 0.2), status("b", 0.2), status("c", 0.2)),
+        views(route("r1", "a", quality=5), route("r2", "b"), route("r3", "c")),
+    )
+
+    assert ids(decision) == ["r3", "r1"]
+    assert reasons(decision) == {"r2": "excluded for this job"}
+
+
+def test_without_preference_the_order_is_unchanged():
+    snap = snapshot(status("a", 0.2), status("b", 0.2))
+    routes = views(route("r1", "a", quality=5), route("r2", "b", quality=4))
+
+    assert ids(decide(RouteRequest(tier="standard"), snap, routes)) == ["r1", "r2"]

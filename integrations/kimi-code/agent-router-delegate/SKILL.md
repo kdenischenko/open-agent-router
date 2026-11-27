@@ -33,6 +33,9 @@ delegate decisions that a human must make.
    When the gateway picks the route itself, it never sends a delegated job back to the
    caller's own pool; in a one-pool setup leave the callers unmapped (`""`), or the jobs
    have no route.
+   To ask for a particular executor without pinning the job to it, pass `--prefer-route ROUTE`
+   (repeatable, tried in the given order) instead of `--route`: the gateway falls back to the
+   other routes when a preferred one fails, while `--route` pins the job and a failure ends it.
    Every submit carries a request id: `run` generates one and retries a lost submit answer
    with it. When you repeat a submit whose answer was lost yourself, pass the same
    `--request-id ID`; the gateway returns the existing job instead of starting a second one.

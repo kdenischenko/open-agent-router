@@ -106,6 +106,11 @@ def advice(
     exclude_pool: list[str] = typer.Option(
         [], "--exclude-pool", help="Pool to leave out of the choice; repeat to exclude several"
     ),
+    prefer_route: list[str] = typer.Option(
+        [],
+        "--prefer-route",
+        help="Route to put first in the choice; repeat to rank several",
+    ),
     review_of: str | None = typer.Option(
         None,
         "--review-of",
@@ -116,6 +121,8 @@ def advice(
     params: dict[str, Any] = {"tier": tier, "caller": caller, "mode": mode}
     if exclude_pool:
         params["exclude_pools"] = exclude_pool
+    if prefer_route:
+        params["prefer_routes"] = prefer_route
     if review_of is not None:
         params["review_of"] = review_of
     result = _request(lambda: _gateway().get("/api/v1/advice", **params))

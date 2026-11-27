@@ -363,6 +363,7 @@ class JobBody(BaseModel):
     route: StrictStr | None = None
     timeout_s: Any = None  # fractional, boolean, etc. — error code bad_timeout, not bad_request
     exclude_pools: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
+    prefer_routes: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
     review_of: Annotated[StrictStr, Field(min_length=1)] | None = None
     request_id: StrictStr | None = None  # format checked later: bad_request_id, not bad_request
 
@@ -420,6 +421,7 @@ def submit_job_created(gateway: Gateway, body: JobBody) -> tuple[Job, bool]:
         route=body.route,
         timeout_s=body.timeout_s,
         excluded_pools=frozenset(body.exclude_pools or []),
+        preferred_routes=tuple(body.prefer_routes or []),
         review_of=body.review_of,
         request_id=body.request_id,
     )
@@ -578,6 +580,7 @@ def api_router(gateway: Gateway) -> APIRouter:
         caller: str | None = None,
         mode: str | None = None,
         exclude_pools: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
+        prefer_routes: Annotated[list[Annotated[str, Field(min_length=1)]] | None, Query()] = None,
         review_of: str | None = None,
         role: Role = client,
     ) -> dict[str, Any]:
@@ -589,14 +592,19 @@ def api_router(gateway: Gateway) -> APIRouter:
         for pool in sorted(excluded):
             if gateway.pool(pool) is None:
                 raise ApiError(422, "bad_request", f"unknown pool: {pool}")
+        preferred = tuple(prefer_routes or [])
+        route_ids = {route.id for route in gateway.config.routes}
+        for route_id in preferred:
+            if route_id not in route_ids:
+                raise ApiError(422, "bad_route", f"unknown route: {route_id}")
         reviewed_route: str | None = None
         if review_of is not None:
             reviewed = None if gateway.jobs is None else gateway.jobs.get(review_of)
             if reviewed is None:
                 raise ApiError(422, "bad_request", f"unknown job: {review_of}")
             reviewed_route = reviewed.route
-        decision = gateway.advise(tier, caller, mode, excluded, reviewed_route)  # type: ignore[arg-type]
-        return decision_json(tier, decision, mode)  # type: ignore[arg-type]
+        decision = gateway.advise(tier, caller, mode, excluded, reviewed_route, preferred)  # type: ignore[arg-type]
+        return decision_json(tier, decision, mode, preferred)  # type: ignore[arg-type]
 
     @router.get("/events/stats")
     def get_event_stats(role: Role = client) -> dict[str, Any]:
