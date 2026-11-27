@@ -668,6 +668,15 @@ class Dispatcher(RecoveryMixin):
         return (decision.chosen[0] if decision.chosen else None), decision
 
     def _no_route(self, job: Job, decision: Decision) -> None:
+        attempts = self.jobs.attempts(job.id)
+        last = attempts[-1].result if attempts else None
+        if last is not None and last.content_rejected:
+            # the last attempt was refused on content and the exclusion left no route:
+            # report the rejection, not a route shortage
+            self._fail(
+                job, "content_rejected", last.error or "provider rejected the request content"
+            )
+            return
         if job.had_refusal:
             job.error_code = None
             job.error_message = "no matching routes left"
@@ -975,7 +984,11 @@ class Dispatcher(RecoveryMixin):
                 pass
             else:
                 tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
-                result = replace(result, model_unavailable=parsed.model_unavailable)
+                result = replace(
+                    result,
+                    model_unavailable=parsed.model_unavailable,
+                    content_rejected=parsed.content_rejected,
+                )
         else:
             parsed = adapter.parse(stdout, stderr, done.exit_code)
             tokens = (parsed.tokens_in, parsed.tokens_out, parsed.cost_usd)
@@ -991,6 +1004,7 @@ class Dispatcher(RecoveryMixin):
                 limit_reset_at=parsed.limit_reset_at,
                 survived=done.survived,
                 model_unavailable=parsed.model_unavailable,
+                content_rejected=parsed.content_rejected,
             )
         return result, done.duration_s, tail, tokens
 
@@ -1129,6 +1143,8 @@ class Dispatcher(RecoveryMixin):
             self._move(job, "queued")  # next attempt runs in a different pool
         elif result.outcome == "timeout":
             self._emergency(job, "timeout", result.error or "timeout", changed)
+        elif result.content_rejected and not changed and not result.survived:
+            self._content_rejected(job, result)
         elif not changed and not result.survived and job.request.route is None:
             # executor error with nothing changed and no surviving process: exclude the route
             # and retry elsewhere; a writing attempt with changes ends partial below
@@ -1142,6 +1158,33 @@ class Dispatcher(RecoveryMixin):
             self._move(job, "queued")  # next attempt runs on another route
         else:
             self._emergency(job, "executor_error", result.error or "executor error", changed)
+
+    def _content_rejected(self, job: Job, result: AttemptResult) -> None:
+        """The provider refused the prompt on content grounds; not a route or executor failure.
+
+        A pinned job fails at once. An unpinned job moves off the route and every enabled
+        route of the same model — the same moderation applies there — and is retried
+        elsewhere; when no route is left, `_no_route` keeps the `content_rejected` code.
+        """
+        message = result.error or "provider rejected the request content"
+        if job.request.route is not None:
+            self._fail(job, "content_rejected", message)
+            return
+        group = next(
+            (route.model_group for route in self.config.routes if route.id == job.route),
+            None,
+        )
+        same_model = {
+            route.id for route in self.config.routes if route.enabled and route.model_group == group
+        }
+        job.excluded_routes = job.excluded_routes | {job.route} | same_model
+        attempts = self.jobs.attempts(job.id)
+        if len(attempts) >= self.config.tasks.max_attempts:
+            self._exhausted(job, attempts[-1])
+            return
+        job.error_code = None
+        job.error_message = None
+        self._move(job, "queued")  # next attempt runs on a route of another model
 
     def _emergency(self, job: Job, code: str, message: str, changed: bool) -> None:
         """Emergency outcome: partial for a writing attempt with changes, otherwise failed."""

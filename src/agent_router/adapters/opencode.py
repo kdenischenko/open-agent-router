@@ -10,10 +10,22 @@ from agent_router.config import Mode
 from agent_router.registry import HarnessSpec
 from agent_router.runner import Invocation, ResolvedExecutable
 
+# wording observed in real provider rejections; new markers are added only from real samples
+_CONTENT_REJECTION_MARKERS = ("security_audit_fail",)
+
 
 def _part(event: dict[str, Any]) -> dict[str, Any]:
     part = event.get("part")
     return part if isinstance(part, dict) else {}
+
+
+def _has_marker(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _CONTENT_REJECTION_MARKERS)
+
+
+def _is_content_rejection(error_type: str, message: str) -> bool:
+    return error_type.strip().lower() == "provider.invalid-request" and _has_marker(message)
 
 
 class OpenCodeAdapter:
@@ -49,6 +61,11 @@ class OpenCodeAdapter:
         harness_error: str | None = None
         limit_hint = False
         model_unavailable_hint = False
+        # the harness may print the rejection on stderr instead of a JSON error event
+        content_rejected_hint = any(
+            _is_content_rejection(line.partition(":")[0], line.partition(":")[2])
+            for line in stderr.splitlines()
+        )
         service = list(other)
         for event in events:
             kind = event.get("type")
@@ -83,6 +100,9 @@ class OpenCodeAdapter:
                     or "no-route" in lowered
                     or "model unavailable" in message.lower()
                 )
+                content_rejected_hint = content_rejected_hint or _is_content_rejection(
+                    error_type, message
+                )
         if texts:
             # the last message counts even when the run stopped before its step finished
             answers.add(texts[-1][0])
@@ -95,6 +115,7 @@ class OpenCodeAdapter:
             limit_hint=limit_hint,
             harness_error=harness_error,
             model_unavailable_hint=model_unavailable_hint,
+            content_rejected_hint=content_rejected_hint,
             tokens_in=tokens_in if steps else None,
             tokens_out=tokens_out if steps else None,
             cost_usd=cost if cost > 0 else None,
@@ -109,4 +130,7 @@ class OpenCodeAdapter:
         return not events or events[0].get("type") != "retry"
 
 
-HARNESS = HarnessSpec("opencode", OpenCodeAdapter(), ("opencode",), spend="counter")
+# `opencode run --archived` first shipped in 2.2.6
+HARNESS = HarnessSpec(
+    "opencode", OpenCodeAdapter(), ("opencode",), spend="counter", min_version="2.2.6"
+)

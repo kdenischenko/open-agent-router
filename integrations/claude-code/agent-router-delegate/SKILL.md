@@ -21,7 +21,14 @@ delegate decisions that a human must make.
 
    Use `--mode write` for a job that changes files. The job tier is `--tier cheap`, `standard`
    (default) or `strong`; the gateway picks the route itself by the remaining subscription
-   limits. The command prints the job id. A short job can be awaited right away: omit
+   limits. Pass `--kind research` for an investigation and `--kind review --review-of <id of
+   the author job>` for a review of another job's result:
+
+   ```bash
+   agent-router run --no-wait --caller claude-code --cwd . --kind research "Find every place that reads the gateway config"
+   ```
+
+   The command prints the job id. A short job can be awaited right away: omit
    `--no-wait`.
    When the gateway picks the route itself, it never sends a delegated job back to the
    caller's own pool; in a one-pool setup leave the callers unmapped (`""`), or the jobs

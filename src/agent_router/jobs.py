@@ -190,6 +190,7 @@ class AttemptResult:
     changes_unknown: bool = False  # measuring the tree after the attempt failed
     survived: bool = False  # the harness process survived the stop
     model_unavailable: bool = False  # the harness reported the route's model as unavailable
+    content_rejected: bool = False  # the provider refused the request on content grounds
 
 
 class RequestRejected(Exception):

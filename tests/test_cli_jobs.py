@@ -1059,3 +1059,37 @@ def test_run_forwards_an_empty_request_id_for_the_gateway_to_reject(
 
     assert result.exit_code == 0
     assert gateway.calls[0][2]["request_id"] == ""
+
+
+def test_run_sends_the_kind(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--kind", "research", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    assert gateway.calls[0][2]["kind"] == "research"
+
+
+def test_run_accepts_kind_review_with_review_of(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(
+        cli.app, ["run", "--no-wait", "--kind", "review", "--review-of", "j_1", _RUN_PROMPT]
+    )
+
+    assert result.exit_code == 0
+    assert gateway.calls[0][2]["kind"] == "review"
+
+
+def test_run_rejects_another_kind_with_review_of(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(
+        cli.app, ["run", "--no-wait", "--kind", "code", "--review-of", "j_1", _RUN_PROMPT]
+    )
+
+    assert result.exit_code == 1
+    assert "--review-of" in result.output
+    assert gateway.calls == []
+
+
+def test_run_rejects_an_unknown_kind_locally(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--kind", "bogus", _RUN_PROMPT])
+
+    assert result.exit_code == 1
+    assert "bogus" in result.output
+    assert gateway.calls == []

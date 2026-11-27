@@ -149,7 +149,7 @@ class JobStore(Protocol):
 
     def route_errors_in_row(self, route: str) -> tuple[int, datetime | None]:
         """Error attempts finished after the route's last successful attempt, and the last one's
-        finish time; None when the count is 0."""
+        finish time; None when the count is 0. Content-rejected attempts are not counted."""
         ...
 
 
@@ -322,6 +322,7 @@ def _result_data(result: AttemptResult | None) -> str | None:
             "changes_unknown": result.changes_unknown,
             "survived": result.survived,
             "model_unavailable": result.model_unavailable,
+            "content_rejected": result.content_rejected,
         },
         ensure_ascii=False,
     )
@@ -349,7 +350,8 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
         if not all(isinstance(flag, bool) for flag in flags):
             return None
         unavailable = data.get("model_unavailable", False)
-        if not isinstance(unavailable, bool):
+        rejected = data.get("content_rejected", False)
+        if not isinstance(unavailable, bool) or not isinstance(rejected, bool):
             return None
         if not all(isinstance(data[key], (str, type(None))) for key in ("text", "error")):
             return None
@@ -363,6 +365,7 @@ def _attempt_result(raw: str | None) -> AttemptResult | None:
             changes_unknown=data["changes_unknown"],
             survived=data["survived"],
             model_unavailable=unavailable,
+            content_rejected=rejected,
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError):
         return None
@@ -1115,6 +1118,9 @@ class SqliteJobStore:
         query = (
             "SELECT COUNT(*), MAX(finished_at) FROM attempts"
             " WHERE route = ? AND outcome = 'error' AND finished_at IS NOT NULL"
+            # a content rejection is the provider's refusal, not the route's failure: it
+            # neither extends nor resets the streak
+            " AND COALESCE(json_extract(result, '$.content_rejected'), 0) = 0"
         )
         if last_ok is None:
             row = conn.execute(query, (route,)).fetchone()
