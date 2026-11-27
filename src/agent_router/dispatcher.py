@@ -51,6 +51,7 @@ from agent_router.jobs import (
     validate_request_directory,
 )
 from agent_router.jobstore import JobStore
+from agent_router.liveness import Liveness
 from agent_router.policy import (
     CALLER_POOL_REASON,
     Choice,
@@ -61,6 +62,7 @@ from agent_router.policy import (
     Snapshot,
     decide,
 )
+from agent_router.progress import AttemptLive
 from agent_router.registry import HarnessSpec, resolve_backend
 from agent_router.runner import (
     KILL_WAIT_S,
@@ -166,6 +168,7 @@ class Dispatcher(RecoveryMixin):
         self._sealed = False
         self._active: dict[str, _Active] = {}
         self._active_lock = threading.Lock()
+        self._live: dict[str, AttemptLive] = {}  # running attempts, same lock as _active
         self._writers: dict[str, str] = {}  # repository → writer job
         self._checked_cwds: dict[str, Path] = {}  # resolved at intake; not persisted
         self._stopped = False
@@ -441,6 +444,32 @@ class Dispatcher(RecoveryMixin):
         job.approval_deadline = None
         job.had_refusal = True
         self._move(job, "queued")
+
+    def _watch_liveness(self, job_id: str, n: int) -> Callable[[Liveness], None]:
+        """Attach the runner's liveness tracker to the live record of this attempt."""
+
+        def watch(liveness: Liveness) -> None:
+            with self._active_lock:
+                live = self._live.get(job_id)
+                if live is not None and live.n == n:
+                    live.liveness = liveness
+
+        return watch
+
+    def progress(self, job_id: str) -> dict[str, Any] | None:
+        """Live state of the running attempt; None for an unknown job, `attempt` None otherwise."""
+        job = self.jobs.get(job_id)
+        if job is None:
+            return None
+        with self._active_lock:
+            live = self._live.get(job_id)
+        return {
+            "job": job.id,
+            "status": job.status,
+            "attempt": None
+            if live is None
+            else live.attempt_json(self.clock.now(), time.monotonic()),
+        }
 
     def unblock(self, pool: str) -> None:
         with self._lock:
@@ -765,8 +794,20 @@ class Dispatcher(RecoveryMixin):
         )
         self._move(job, "running", attempt=attempt)
         active = _Active(job.id, n, route, threading.Event(), repo)
+        live = AttemptLive(
+            job.id,
+            n,
+            route.id,
+            now,
+            time.monotonic(),
+            cwd,
+            prompt_file.parent / f"attempt-{n}",
+            self._timeout_s(job, route),
+            self._idle_timeout_s(route),
+        )
         with self._active_lock:
             self._active[job.id] = active
+            self._live[job.id] = live
             if self._stopped:  # shutdown() already took its snapshot: cancel the attempt ourselves
                 active.cancel.set()
         if repo is not None:
@@ -962,6 +1003,7 @@ class Dispatcher(RecoveryMixin):
             on_start=on_start,
             idle_timeout_s=self._idle_timeout_s(route),
             quiet_while_working=getattr(adapter, "quiet_while_working", False),
+            on_liveness=self._watch_liveness(job.id, attempt.n),
         )
         stdout = _read(done.stdout_path)
         stderr = _read(done.stderr_path)
@@ -1043,6 +1085,7 @@ class Dispatcher(RecoveryMixin):
     def _release(self, active: _Active) -> None:
         with self._active_lock:
             self._active.pop(active.job_id, None)
+            self._live.pop(active.job_id, None)
         if active.repo is not None and self._writers.get(active.repo) == active.job_id:
             del self._writers[active.repo]
 

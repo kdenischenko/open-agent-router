@@ -334,6 +334,7 @@ class Runner(Protocol):
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
         quiet_while_working: bool = False,
+        on_liveness: Callable[[Liveness], None] | None = None,
     ) -> ProcessResult: ...
 
 
@@ -450,6 +451,7 @@ class LocalRunner:
         on_start: Callable[[int], None] | None = None,
         idle_timeout_s: float | None = None,
         quiet_while_working: bool = False,
+        on_liveness: Callable[[Liveness], None] | None = None,
     ) -> ProcessResult:
         check_shim_args(inv.argv)
         log_dir = Path(log_dir)
@@ -519,6 +521,9 @@ class LocalRunner:
                 on_start(proc.pid)
             assert proc.stdout is not None and proc.stderr is not None
             liveness = Liveness(started, max(0.0, float(timeout_s)), idle_timeout_s)
+            if on_liveness is not None:
+                # the dispatcher watches the attempt's signs of life while it runs
+                on_liveness(liveness)
 
             def on_activity() -> None:
                 liveness.touch(time.monotonic())

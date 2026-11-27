@@ -660,6 +660,14 @@ def api_router(gateway: Gateway) -> APIRouter:
             raise not_found(job_id)
         return job_json(job, dispatcher.jobs.attempts(job_id), dispatcher.jobs.last_rating(job_id))
 
+    @router.get("/jobs/{job_id}/progress")
+    def get_progress(job_id: str, role: Role = client) -> dict[str, Any]:
+        dispatcher = tasks()
+        found = dispatcher.progress(job_id)
+        if found is None:
+            raise not_found(job_id)
+        return found
+
     @router.get("/jobs/{job_id}/wait")
     async def wait_job(
         job_id: str, request: Request, timeout: float = WAIT_MAX_S, role: Role = client

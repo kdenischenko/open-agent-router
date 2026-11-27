@@ -40,6 +40,11 @@ class Liveness:
         """The moment of the last sign of life."""
         return self._last_signal_at
 
+    @property
+    def last_activity(self) -> float:
+        """The last moment the attempt counted as alive; the start if nothing was seen yet."""
+        return self._last_activity
+
     def touch(self, now: float, signal: Signal = "output") -> None:
         """Record a sign of life; an older moment never moves the mark back."""
         if now > self._last_activity:

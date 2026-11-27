@@ -10,13 +10,14 @@ is not running. Start the gateway before the harness, so the harness process can
 
 ## Tools
 
-The server exposes exactly these 8 tools:
+The server exposes exactly these 9 tools:
 
 | Tool | Purpose |
 |---|---|
 | `submit_job` | Submit a job: prompt, working directory, mode, tier, kind, caller, route, excluded pools, timeout, the reviewed job and an idempotency key |
 | `wait_job` | Wait up to 100 seconds for a job and return a compact result; `verbose=true` returns the full job record |
 | `job_result` | Get a compact job result without waiting; `verbose=true` returns the full job record |
+| `job_progress` | Get live progress of a job: status and, while an attempt runs, its route, elapsed time, last sign of life, time left before the idle and hard-cap limits, and the end of the output |
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
 | `cancel_job` | Cancel a queued or running job |
 | `rate_job` | Rate a result: `good`, `bad` or `partial`, with an optional tier hint; returns only `id`, `status` and `rating` |
@@ -28,6 +29,9 @@ The server exposes exactly these 8 tools:
 By default, `wait_job` and `job_result` return only `id`, `status`, `route`, `text`,
 `changed_files` and `error`; the full `log_tail` and other diagnostic fields are left out. For a
 job whose status is `failed`, the compact result also includes the last 20 lines of `log_tail`.
+A compact `wait_job` that returns while the job is still `running` also includes a short
+`progress` summary of the running attempt: route, elapsed seconds, last sign of life and the
+last output line; `job_progress` returns the full live progress including the output tail.
 
 Pass `verbose=true` to either tool to return the complete gateway job record, including the
 full `log_tail`, attempts and timestamps.

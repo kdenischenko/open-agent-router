@@ -20,6 +20,8 @@ from agent_router.jobs import KINDS, TERMINAL
 
 retry_pause = time.sleep  # pause between submit retries; tests monkeypatch it
 
+FOLLOW_PAUSE_S = 2.0
+
 
 def _job_failure(exc: GatewayUnavailable | GatewayError) -> NoReturn:
     if isinstance(exc, GatewayUnavailable):
@@ -303,6 +305,67 @@ def wait(
     _emit_job(job, as_json)
 
 
+def follow_pause() -> None:
+    """Pause between progress polls while following a job; tests monkeypatch it."""
+    time.sleep(FOLLOW_PAUSE_S)
+
+
+def _attempt_header(attempt: dict) -> str:
+    line = (
+        f"attempt {attempt['n']} on route {attempt['route']}, running for {attempt['elapsed_s']} s"
+    )
+    if attempt.get("last_signal") is not None:
+        line += f", last signal {attempt['last_signal']} {attempt['last_signal_age_s']} s ago"
+    return line
+
+
+def _new_lines(shown: list[str], lines: list[str]) -> list[str]:
+    """Tail lines not printed yet: the overlap with what was shown is not repeated."""
+    overlap = min(len(shown), len(lines))
+    while overlap > 0 and lines[:overlap] != shown[-overlap:]:
+        overlap -= 1
+    return lines[overlap:]
+
+
+def logs(
+    job_id: str = typer.Argument(..., help="Job identifier"),
+    follow: bool = typer.Option(
+        False, "--follow", help="Keep printing new output until the job ends"
+    ),
+) -> None:
+    """Print the live output of a running job."""
+    client = _gateway()
+    shown: list[str] = []
+    # a last line without its newline may still grow, so while following it is held back
+    # until it is complete or the job ends; otherwise its text would be printed twice
+    pending = ""
+    attempt_shown: tuple | None = None
+    while True:
+        progress = _job_request(lambda: client.get(f"/api/v1/jobs/{job_id}/progress"))
+        attempt = progress.get("attempt")
+        if attempt is not None:
+            # the header carries changing counters, so it is printed once per attempt
+            if (attempt["n"], attempt["route"]) != attempt_shown:
+                typer.echo(_attempt_header(attempt))
+                attempt_shown = (attempt["n"], attempt["route"])
+            tail = attempt.get("tail") or ""
+            lines = tail.splitlines()
+            pending = ""
+            if follow and lines and not tail.endswith(("\n", "\r")):
+                pending = lines.pop()
+            new = _new_lines(shown, lines)
+            shown.extend(new)
+            for line in new:
+                typer.echo(line)
+        if attempt is None or progress["status"] in TERMINAL or not follow:
+            if pending:
+                typer.echo(pending)
+            if attempt is None or progress["status"] in TERMINAL:
+                typer.echo(f"job {job_id}: {progress['status']}")
+            return
+        follow_pause()
+
+
 def result(
     job_id: str = typer.Argument(..., help="Job identifier"),
     as_json: bool = typer.Option(False, "--json", help="Print JSON instead of text"),
@@ -422,6 +485,7 @@ def register(app: typer.Typer) -> None:
     """Register the job commands on the root app."""
     app.command()(run)
     app.command()(wait)
+    app.command()(logs)
     app.command()(result)
     app.command()(rate)
     app.command()(cancel)

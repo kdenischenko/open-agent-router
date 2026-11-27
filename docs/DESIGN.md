@@ -377,6 +377,17 @@ Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt from argv to 
 a "read the task from the file" instruction; shim arguments are validated against a safe
 character set.
 
+Live progress: while an attempt runs, the dispatcher keeps its in-memory state (`progress.py` —
+attempt number, route, start time, log paths, idle and hard-cap limits) and the runner hands it
+the attempt's liveness tracker. `GET /jobs/{id}/progress` turns that into the job status plus,
+for a running attempt, elapsed time (the dispatcher's clock), the last sign of life with its age
+and the time left before the idle and hard-cap limits (the runner's monotonic clock), and the
+end of the attempt logs — read from the tail of the files in bounded chunks, joined like the
+stored log tail, with the job directory paths removed (`worktree.without_paths`; the stored tail
+keeps them). The CLI shows it with `agent-router logs` (`--follow` polls and prints only new
+lines, holding back a line until it is complete), the MCP server as `job_progress` and a summary inside a still-running `wait_job`, and the job page of the
+dashboard renders it inside the block its refresh fragment already replaces.
+
 A harness that stays silent while it works would otherwise be stopped as idle. An adapter may
 declare `quiet_while_working` (False when absent): the runner then samples two more signs of life
 every 30 s and treats a positive sample as activity. The CPU time of the attempt's process tree
@@ -454,7 +465,8 @@ routes; only `127.0.0.1`/`localhost` Host headers are accepted):
 
 - Client: `GET /snapshot`, `POST /signals/claude-statusline`, `GET /advice`, `GET /events/stats`,
   job operations — `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/wait`
-  (long-poll, capped), `POST /jobs/{id}/cancel`, `POST /jobs/{id}/rating`.
+  (long-poll, capped), `GET /jobs/{id}/progress` (live attempt state), `POST /jobs/{id}/cancel`,
+  `POST /jobs/{id}/rating`.
 - Admin: `POST /observations` (calibration), `POST /jobs/{id}/approve`, `POST /jobs/{id}/deny`,
   `POST /pools/{id}/unblock`.
 - `GET /healthz` is unauthenticated.
@@ -522,7 +534,7 @@ scripting is available.
 | `cli.py` | `agent-router` root app and the `advice`, `calibrate`, `purge`, `export`, `classifier`, `doctor` and `mcp` commands |
 | `cli_common.py` | Helpers shared by the CLI command modules (config loading, gateway client, quoting) |
 | `cli_gateway.py` | CLI commands `init`, `serve` and `status` with their helpers |
-| `cli_jobs.py` | CLI job commands: `run`, `wait`, `result`, `rate`, `cancel`, `jobs`, `approve`, `deny`, `unblock` |
+| `cli_jobs.py` | CLI job commands: `run`, `wait`, `logs`, `result`, `rate`, `cancel`, `jobs`, `approve`, `deny`, `unblock` |
 | `client.py` | Minimal stdlib HTTP client used by the CLI |
 | `clock.py` | Clock protocol (system/fake), UTC helpers, local-time formatting |
 | `config.py` | TOML parsing and validation: `load_config`, config template, re-exports of the config model |
@@ -545,6 +557,7 @@ scripting is available.
 | `plugins.py` | Entry-point loading for harnesses, counters, storage, sinks |
 | `policy.py` | Deterministic route filters and ordering |
 | `prices.py` | Price-file parsing and token-based cost estimation |
+| `progress.py` | Live state of a running attempt: bounded log-tail reads and the progress payload |
 | `registry.py` | Harness/counter specs, backend resolution, config validation |
 | `route_report.py` | Route scorecard core: rows per route, tier and mode from jobs, attempts, ratings and config quality |
 | `runner.py` | Child-process execution, log capture, timeouts, process-tree kill |

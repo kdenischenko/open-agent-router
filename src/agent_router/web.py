@@ -683,6 +683,10 @@ def web_router(deps: Gateway) -> APIRouter:
 
     def job_context(job: Job, attempts: list[Attempt]) -> dict:
         prompt_chars = job.prompt_chars if job.prompt_chars is not None else len(job.request.prompt)
+        live = None
+        if job.status == "running":
+            found = deps.dispatcher.progress(job.id)
+            live = None if found is None else found.get("attempt")
         return {
             "title": f"Job {job.id}",
             "job": job,
@@ -690,6 +694,7 @@ def web_router(deps: Gateway) -> APIRouter:
             "prompt_truncated": prompt_chars > 2000,
             "prompt_chars": prompt_chars,
             "attempts": attempts,
+            "live": live,
             "totals": job_totals(job, attempts),
             "status_kind": STATUS_KIND,
             "caller": job.request.caller,

@@ -95,6 +95,10 @@ agent-router wait <job-id>
 `wait` exits 4 while the job is still running; run it again, or use `--timeout` to wait longer.
 A job that needs approval returns at once with
 `job awaits approval: agent-router approve <id> before <time>, then agent-router wait <id>`.
+While a job runs, `agent-router logs <job-id>` shows the live output of the running attempt —
+route, elapsed time, the last sign of life and the end of the attempt log — and `--follow`
+keeps printing new lines until the job ends. The data comes from
+`GET /api/v1/jobs/{id}/progress`.
 
 ![Terminal: a job on the opencode-cli/glm-5.3 route is submitted with run --no-wait, approved, awaited and rated; status then shows automatic Claude Code and OpenCode Go usage figures and manual Kimi Code figures](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/cycle.svg)
 
@@ -261,6 +265,7 @@ option.
 | `unblock POOL` | Remove a pool block set after a limit hit (admin token) |
 | `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, repeatable `--prefer-route ROUTE` tries those routes first but still falls back to the others (unlike `--route`, which pins), `--kind KIND` marks the job as `code`, `review`, `research` or `other`, `--review-of JOB` submits a review kept off the model and pool that wrote the code, `--request-id ID` makes a repeated submit return the existing job |
 | `wait JOB_ID` | Wait for a job and print its result; retries for up to 10 s while the gateway restarts |
+| `logs JOB_ID` | Print the live output of the running attempt (route, elapsed time, last sign of life, tail of the attempt log); `--follow` keeps printing new lines until the job ends |
 | `result JOB_ID` | Print the status and result of a job without waiting |
 | `rate JOB_ID good\|bad\|partial` | Rate a finished job; the last rating wins, a `--note` is stored as hash and length only |
 | `jobs` | List jobs with status, route, tier and creation time, optionally by `--status` |

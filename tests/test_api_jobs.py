@@ -1541,6 +1541,7 @@ def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
             on_start=None,
             idle_timeout_s=None,
             quiet_while_working=False,
+            on_liveness=None,
         ) -> ProcessResult:
             log_dir.mkdir(parents=True, exist_ok=True)
             stdout = log_dir / "stdout.log"
@@ -1587,6 +1588,60 @@ def test_serve_names_the_client_url_for_another_port(
 
     assert result.exit_code == 0
     assert ("AGENT_ROUTER_URL=http://127.0.0.1:8799" in result.output) is hint
+
+
+# --- live progress ---------------------------------------------------------------------------
+
+
+def wait_for_output(rig: Rig, job_id: str, needle: str, seconds: float = 10) -> dict[str, Any]:
+    """Ticks until the running attempt's live tail shows the needle and a sign of life."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        rig.dispatcher.tick()
+        progress = rig.dispatcher.progress(job_id)
+        assert progress is not None
+        attempt = progress["attempt"]
+        if attempt is not None and attempt["last_signal"] == "output" and needle in attempt["tail"]:
+            return progress
+        time.sleep(0.05)
+    raise AssertionError(f"no live attempt output in {seconds} s")
+
+
+def test_progress_of_a_running_attempt(api, rig) -> None:
+    cwd = rig.plain("живой прогресс")  # non-ascii on purpose
+    job_id = post(api, rig, scenario="path-then-sleep 60", cwd=cwd)
+    try:
+        wait_for_output(rig, job_id, "<dir>")
+
+        response = api.get(f"/api/v1/jobs/{job_id}/progress", headers=cl(rig))
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["job"] == job_id and body["status"] == "running"
+        attempt = body["attempt"]
+        assert attempt["n"] == 1 and attempt["route"] == "fake/main"
+        assert attempt["elapsed_s"] >= 0
+        assert attempt["last_signal"] == "output" and attempt["last_signal_age_s"] >= 0
+        assert 0 <= attempt["idle_left_s"] <= 600
+        assert 0 <= attempt["cap_left_s"] <= 14400
+        assert "<dir>" in attempt["tail"]  # the harness printed its working directory
+        assert str(cwd) not in attempt["tail"]  # and the path is redacted from the tail
+    finally:
+        api.post(f"/api/v1/jobs/{job_id}/cancel", headers=cl(rig))
+        rig.drive(job_id)
+
+
+def test_progress_after_finish_and_unknown_id(api, rig) -> None:
+    job_id = run_job(api, rig)["id"]
+
+    response = api.get(f"/api/v1/jobs/{job_id}/progress", headers=cl(rig))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"job": job_id, "status": "completed", "attempt": None}
+    missing = api.get("/api/v1/jobs/j-missing/progress", headers=cl(rig))
+    plain = api.get("/api/v1/jobs/j-missing", headers=cl(rig))
+    assert missing.status_code == 404 == plain.status_code
+    assert missing.json() == plain.json()
 
 
 # --- preferred routes ------------------------------------------------------------------------

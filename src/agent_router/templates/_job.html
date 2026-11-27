@@ -70,6 +70,16 @@
     <dd>{{ totals.duration_s|age }}</dd>
   </div>
 </dl>
+{% if live %}
+<section class="panel" id="live-attempt">
+  <h2>Live output</h2>
+  <p>Attempt #{{ live.n }} on route <code>{{ live.route }}</code>, running for {{ live.elapsed_s|age }}{% if live.last_signal %}; last activity: {{ live.last_signal }} {{ live.last_signal_age_s|age }} ago{% endif %}</p>
+  {% if live.tail %}
+  <pre class="wrap" id="live-tail">{{ live.tail }}</pre>
+  <button type="button" class="copy-button" data-copy-target="live-tail" hidden>Copy</button>
+  {% endif %}
+</section>
+{% endif %}
 <details open>
   <summary>Prompt</summary>
   <pre class="wrap" id="job-prompt">{{ prompt }}</pre>
