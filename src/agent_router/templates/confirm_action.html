@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<section>
+<section class="panel">
   <h2>{{ heading }}</h2>
   <p>Job <a href="/jobs/{{ job.id }}"><code>{{ job.id }}</code></a>{% if job.approval_route %}, route <code>{{ job.approval_route }}</code>{% endif %}</p>
-  <p>{{ text }}</p>
-  <form method="post" action="/jobs/{{ job.id }}/{{ action }}">
+  <p class="hint">{{ text }}</p>
+  <form method="post" action="/jobs/{{ job.id }}/{{ action }}" class="inline">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">{{ button }}</button>
   </form>

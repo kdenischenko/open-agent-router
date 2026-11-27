@@ -70,7 +70,7 @@
     <dd>{{ totals.duration_s|age }}</dd>
   </div>
 </dl>
-<details open>
+<details open class="panel">
   <summary>Prompt</summary>
   <pre class="wrap" id="job-prompt">{{ prompt }}</pre>
   <button type="button" class="copy-button" data-copy-target="job-prompt" hidden>Copy</button>
@@ -78,12 +78,12 @@
   <p>Showing the first 2000 of {{ prompt_chars }} characters.</p>
   {% endif %}
 </details>
-<details open>
+<details open class="panel">
   <summary>Final text</summary>
   <pre class="wrap" id="job-text">{{ job.text or '—' }}</pre>
   <button type="button" class="copy-button" data-copy-target="job-text" hidden>Copy</button>
 </details>
-<section>
+<section class="panel">
   <h2>Attempts</h2>
   {% if attempts %}
   <ol class="attempt-timeline">
@@ -123,7 +123,7 @@
   <p>No attempts yet.</p>
   {% endif %}
 </section>
-<section>
+<section class="panel">
   <h2>Changed files</h2>
   {% if 'changes_unknown' in job.violations %}
   <p>Could not measure the changed files.</p>
@@ -138,7 +138,7 @@
   <p>No files changed.</p>
   {% endif %}
 </section>
-<section>
+<section class="panel">
   <h2>Violations</h2>
   {% if job.violations %}
   <ul>{% for violation in job.violations %}<li>{{ violation }}</li>{% endfor %}</ul>

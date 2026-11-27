@@ -1,4 +1,4 @@
-"""Job page redesign: header with status badge, totals, attempt timeline and copy buttons."""
+"""Job page: framed console sections, header badge, totals, attempt timeline, copy buttons."""
 
 from __future__ import annotations
 
@@ -181,6 +181,20 @@ def test_completed_job_shows_totals_timeline_and_rating(web, rig) -> None:
     header_end = text.index(f"<code>{job.id}</code>")
     between = text[header_end : rating.start()]
     assert "<section" not in between and "<dl" not in between and "<details" not in between
+
+
+# --- the console framing ------------------------------------------------------------------------
+
+
+def test_job_page_frames_its_sections(web, rig) -> None:
+    job = rig.add_job("completed", text="done")
+    add_attempt(rig, job, 1, log_tail="tail")
+
+    text = job_page(web, job)
+
+    assert text.count('<details open class="panel">') == 2
+    assert text.count('<section class="panel">') == 3
+    assert '<section class="panel job-rating">' in text
 
 
 # --- awaiting approval: actions survive the redesign --------------------------------------------
