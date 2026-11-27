@@ -9,6 +9,7 @@ from datetime import datetime
 import httpx
 
 from agent_router.clock import to_utc
+from agent_router.collectors.response_shape import log_malformed_response
 from agent_router.config_model import PoolUsage
 from agent_router.usage import UsagePoint, UsageRead, UsageSourceSpec
 
@@ -96,10 +97,12 @@ class OpenCodeGoUsage:
             return UsageRead(reason="http_error")
         try:
             body = response.json()
-        except ValueError:  # includes json.JSONDecodeError; the body is not logged
+        except ValueError:  # includes json.JSONDecodeError
+            log_malformed_response(SOURCE.name, response.content)
             return UsageRead(reason="malformed_response")
         points = _points(body)
         if not points:
+            log_malformed_response(SOURCE.name, response.content)
             return UsageRead(reason="malformed_response")
         return UsageRead(points=points)
 
