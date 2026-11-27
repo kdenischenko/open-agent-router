@@ -2,48 +2,61 @@
   <section>
     <h2>Closed pools</h2>
     {% if closed_pools %}
-    {% for pool in closed_pools %}
-    <article class="panel">
-      <h3>{{ pool.title }}</h3>
-      <p>Closed until {{ local(pool.block.until) }}: {{ pool.block.reason }}</p>
-      <form method="post" action="/pools/{{ pool.id }}/unblock">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit">Unblock</button>
-      </form>
-    </article>
-    {% endfor %}
+    <table>
+      <tbody>
+        {% for pool in closed_pools %}
+        <tr>
+          <th scope="row">{{ pool.title }}</th>
+          <td>Closed until {{ local(pool.block.until) }}: {{ pool.block.reason }}</td>
+          <td>
+            <form class="limit-unblock inline" method="post" action="/pools/{{ pool.id }}/unblock">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button type="submit" aria-label="Unblock {{ pool.title }}">Unblock</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
-    <p>No closed pools.</p>
+    <p class="hint">No closed pools.</p>
     {% endif %}
   </section>
   <section>
     <h2>Where to send now</h2>
-    <div class="grid advice-grid">
-      {% for decision in decisions %}
-      <article class="panel" data-tier="{{ decision.tier }}">
-        <h3>{{ decision.title }} <code>{{ decision.tier }}</code></h3>
-        <h4>Recommended routes</h4>
-        {% if decision.chosen %}
-        <ol>
+    {% for decision in decisions %}
+    <article class="panel" data-tier="{{ decision.tier }}">
+      <h3>{{ decision.title }} <code>{{ decision.tier }}</code></h3>
+      {% if decision.chosen or decision.excluded %}
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Route</th>
+            <th scope="col">Advice</th>
+            <th scope="col">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
           {% for item in decision.chosen %}
-          <li><code>{{ item.route }}</code> — {{ item.reason }}</li>
+          <tr>
+            <th scope="row"><code>{{ item.route }}</code></th>
+            <td><span class="status-badge status-badge--ok">chosen</span></td>
+            <td>{{ item.reason }}</td>
+          </tr>
           {% endfor %}
-        </ol>
-        {% else %}
-        <p>No routes available.</p>
-        {% endif %}
-        <h4>Excluded routes</h4>
-        {% if decision.excluded %}
-        <ul>
           {% for item in decision.excluded %}
-          <li><code>{{ item.route }}</code> — {{ item.reason }}</li>
+          <tr>
+            <th scope="row"><code>{{ item.route }}</code></th>
+            <td><span class="status-badge status-badge--muted">excluded</span></td>
+            <td>{{ item.reason }}</td>
+          </tr>
           {% endfor %}
-        </ul>
-        {% else %}
-        <p>No excluded routes.</p>
-        {% endif %}
-      </article>
-      {% endfor %}
-    </div>
+        </tbody>
+      </table>
+      {% else %}
+      <p class="hint">No routes available.</p>
+      {% endif %}
+    </article>
+    {% endfor %}
   </section>
 </div>

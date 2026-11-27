@@ -89,6 +89,29 @@ def test_card_shows_link_route_pool_and_reasons(web, rig) -> None:
     assert "route choice reason" in section  # job.reason
 
 
+def test_card_collects_meta_and_actions_into_dense_rows(web, rig) -> None:
+    job = rig.add_job("awaiting_approval")
+
+    section = approvals_section(web.get("/").text)
+    card = re.search(r'<article class="panel job"[^>]*>.*?</article>', section, re.DOTALL)
+    assert card is not None
+
+    # the hotkey cursor keys on the first code of the card: the job id
+    first_code = re.search(r"<code>([^<]+)</code>", card.group(0))
+    assert first_code is not None
+    assert first_code.group(1) == job.id
+
+    meta = re.search(r'<ul class="job-meta">.*?</ul>', card.group(0), re.DOTALL)
+    assert meta is not None
+    assert "requires confirmation" in meta.group(0)
+    assert "data-approval-countdown" in meta.group(0)
+
+    actions = re.search(r'<div class="inline">.*?</div>', card.group(0), re.DOTALL)
+    assert actions is not None
+    assert f'action="/jobs/{job.id}/approve"' in actions.group(0)
+    assert f'href="/jobs/{job.id}/deny"' in actions.group(0)
+
+
 def test_card_escapes_the_prompt_and_truncates_it_to_200_characters(web, rig) -> None:
     prompt = "<script>" + "A" * 200 + "DO_NOT_SHOW"
     rig.add_job("awaiting_approval", prompt=prompt)

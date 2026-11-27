@@ -176,21 +176,26 @@ def test_advice_fragment_requires_session(client):
     assert response.headers["location"] == "/login"
 
 
-def standard_advice_sections(text: str) -> tuple[str, str]:
+def advice_kind(text: str, route: str) -> str:
+    """The advice badge the standard tier gives the route: chosen or excluded."""
     article = re.search(
         r'<article class="panel" data-tier="standard">(.*?)</article>', text, re.DOTALL
     )
     assert article is not None
-    return article.group(1).split("<h4>Excluded routes</h4>", maxsplit=1)
+    row = re.search(
+        rf'<th scope="row"><code>{re.escape(route)}</code></th>\s*'
+        r'<td><span class="status-badge[^"]*">(chosen|excluded)</span></td>',
+        article.group(1),
+    )
+    assert row is not None, f"{route} is not listed in the standard tier"
+    return row.group(1)
 
 
 def test_advice_fragment_follows_calibration(client, tokens):
     authenticated_client(client, tokens)
     before = client.get("/fragments/advice")
     assert before.status_code == 200
-    recommended, excluded = standard_advice_sections(before.text)
-    assert "kimi-cli/k3.1-pro" in recommended
-    assert "kimi-cli/k3.1-pro" not in excluded
+    assert advice_kind(before.text, "kimi-cli/k3.1-pro") == "chosen"
 
     csrf = csrf_from(client.get("/calibrate"))
     response = client.post(
@@ -202,9 +207,69 @@ def test_advice_fragment_follows_calibration(client, tokens):
 
     after = client.get("/fragments/advice")
     assert after.status_code == 200
-    recommended, excluded = standard_advice_sections(after.text)
-    assert "kimi-cli/k3.1-pro" not in recommended
-    assert "kimi-cli/k3.1-pro" in excluded
+    assert advice_kind(after.text, "kimi-cli/k3.1-pro") == "excluded"
+
+
+def test_advice_tables_list_route_advice_and_reason_per_row(client, tokens):
+    authenticated_client(client, tokens)
+    text = client.get("/fragments/advice").text
+
+    article = re.search(
+        r'<article class="panel" data-tier="standard">(.*?)</article>', text, re.DOTALL
+    )
+    assert article is not None
+    for column in ("Route", "Advice", "Reason"):
+        assert rf'<th scope="col">{column}</th>' in article.group(1)
+    chosen = re.search(
+        r'<th scope="row"><code>[^<]+</code></th>\s*'
+        r'<td><span class="status-badge status-badge--ok">chosen</span></td>',
+        article.group(1),
+    )
+    excluded = re.search(
+        r'<th scope="row"><code>[^<]+</code></th>\s*'
+        r'<td><span class="status-badge status-badge--muted">excluded</span></td>',
+        article.group(1),
+    )
+    assert chosen is not None
+    assert excluded is not None
+
+
+def test_advice_without_closed_pools_keeps_a_hint(client, tokens):
+    authenticated_client(client, tokens)
+
+    text = client.get("/fragments/advice").text
+
+    assert '<p class="hint">No closed pools.</p>' in text
+    assert 'action="/pools/' not in text
+
+
+def test_closed_pools_are_dense_table_rows(config, store, clock, tokens, home, monkeypatch):
+    app = create_app(config, store, clock, tokens, home=home, background=False)
+    block = {"until": "2026-11-15T06:00:00+00:00", "reason": "limit reached"}
+    with TestClient(app, base_url=BASE_URL) as client:
+        authenticated_client(client, tokens)
+        monkeypatch.setattr(
+            app.state.gateway,
+            "snapshot_view",
+            lambda: {"pools": [pool_json(window_json(), block=block)]},
+        )
+        text = client.get("/fragments/advice").text
+
+    assert re.search(r"<th\b[^>]*scope=\"row\"[^>]*>\s*Claude Pro\s*</th>", text)
+    assert "No closed pools." not in text
+
+
+def test_index_jobs_section_is_a_panel_of_dense_links(client, tokens):
+    authenticated_client(client, tokens)
+
+    text = client.get("/").text
+
+    section = re.search(r'<section class="panel">\s*<h2>Jobs</h2>(.*?)</section>', text, re.DOTALL)
+    assert section is not None
+    assert '<a href="/jobs">Open the job list</a>' in section.group(1)
+    # this rig runs without the dispatcher, so the awaiting link gives way to the hint
+    assert "Jobs are disabled: the job dispatcher is not running." in section.group(1)
+    assert "Awaiting approval:" not in section.group(1)
 
 
 def test_index_includes_advice_block(client, tokens):

@@ -4,14 +4,16 @@
 {% if usage_message %}<p class="flash flash--info" role="status"><span class="flash__prefix">Usage:</span> {{ usage_message }}</p>{% endif %}
 {% include "_approvals.html" %}
 {% include "_limits.html" %}
-<section>
+<section class="panel">
   <h2>Jobs</h2>
-  <p><a href="/jobs">Open the job list</a></p>
-  {% if awaiting_count is not none %}
-  <p><a href="/jobs">Awaiting approval: {{ awaiting_display }}</a></p>
-  {% else %}
-  <p>Jobs are disabled: the job dispatcher is not running.</p>
-  {% endif %}
+  <ul class="job-meta">
+    <li><a href="/jobs">Open the job list</a></li>
+    {% if awaiting_count is not none %}
+    <li><a href="/jobs">Awaiting approval: {{ awaiting_display }}</a></li>
+    {% else %}
+    <li>Jobs are disabled: the job dispatcher is not running.</li>
+    {% endif %}
+  </ul>
 </section>
 {% include "_advice.html" %}
 {% endblock %}

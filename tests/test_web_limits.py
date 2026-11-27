@@ -1,4 +1,4 @@
-"""Limits overview cards: one panel per pool with usage bars, pace markers, resets and blocks."""
+"""Limits overview: one panel per pool, its windows as dense table rows inside it."""
 
 from __future__ import annotations
 
@@ -46,6 +46,11 @@ def class_block(text: str, klass: str) -> str:
     )
 
 
+def window_row(text: str, window_id: str) -> str:
+    """Balanced html of the pool table row whose row header names the window."""
+    return element_block(text, rf'<tr>\s*<th scope="row">{re.escape(window_id)}</th>')
+
+
 def show_limits(web, rig, monkeypatch, pools, path="/"):
     """Renders a page with the gateway snapshot replaced by the given pools."""
     monkeypatch.setattr(rig.app.state.gateway, "snapshot_view", lambda: {"pools": pools})
@@ -60,8 +65,7 @@ def test_known_window_renders_a_limit_card(web, rig, monkeypatch, path):
     text = show_limits(web, rig, monkeypatch, [pool_json(window)], path).text
 
     limits = element_block(text, r'<div\b[^>]*\bid="limits"[^>]*>')
-    grid = element_block(limits, r'<div\b[^>]*class="grid limit-grid"[^>]*>')
-    card = element_block(grid, r'<article\b[^>]*class="panel limit-card(?: [^"]*)?"[^>]*>')
+    card = element_block(limits, r'<article\b[^>]*class="panel limit-card(?: [^"]*)?"[^>]*>')
 
     labelledby = re.search(r'aria-labelledby="([^"]+)"', card)
     assert labelledby is not None
@@ -69,15 +73,19 @@ def test_known_window_renders_a_limit_card(web, rig, monkeypatch, path):
     heading = rf'<h2\b[^>]*\bid="{labelledby.group(1)}"[^>]*>\s*Claude Pro\s*</h2>'
     assert re.search(heading, card)
 
-    window_html = class_block(card, "limit-window")
-    assert re.search(r"<h3\b[^>]*>\s*week\s*</h3>", window_html)
+    # windows are dense table rows inside the pool frame, not nested boxes
+    table = class_block(card, "limit-windows")
+    for column in ("Window", "Usage", "Expected", "Status", "Reset", "Age"):
+        assert re.search(rf'<th scope="col">\s*{column}\s*</th>', table)
+    row = window_row(card, "week")
+    assert re.search(r'<th scope="row">\s*week\s*</th>', row)
 
-    status = class_block(window_html, "limit-status")
+    status = class_block(row, "limit-status")
     assert "behind pace" in status
     assert "approval-badge--ok" in status
 
-    bar = class_block(window_html, "usage-bar")
-    opener = re.search(r'<\w+\b[^>]*class="[^"]*\busage-bar\b[^"]*"[^>]*>', window_html)
+    bar = class_block(row, "usage-bar")
+    opener = re.search(r'<\w+\b[^>]*class="[^"]*\busage-bar\b[^"]*"[^>]*>', row)
     assert opener is not None
     assert 'role="img"' in opener.group(0)
     label = re.search(r'aria-label="([^"]*)"', opener.group(0))
@@ -86,25 +94,40 @@ def test_known_window_renders_a_limit_card(web, rig, monkeypatch, path):
     assert "expected 50.0%" in label.group(1)
     progress = r'<progress\b(?=[^>]*max="100")(?=[^>]*value="40.0")[^>]*>'
     assert re.search(progress, bar)
-    assert "expected 50.0%" in class_block(window_html, "limit-usage")
     pace = (
         r'<\w+\b(?=[^>]*class="[^"]*\busage-pace\b)'
         r'(?=[^>]*data-expected="50.0")(?=[^>]*\bhidden\b)[^>]*>'
     )
     assert re.search(pace, bar)
+    assert re.search(r"</div>\s*40\.0%\s*</td>", row)
+    assert "<td>50.0%</td>" in row
 
-    reset = class_block(card, "limit-reset")
+    reset = class_block(row, "limit-reset")
     assert "data-countdown" in reset
     assert 'datetime="2026-11-13T12:12:00' in reset
     assert "13.11 12:12" in reset
     assert "data-countdown-relative" in reset
     assert "in 3 h 12 min" in reset
 
-    table = element_block(limits, r"<details\b[^>]*>")
-    assert 'class="limit-table"' in table
-    assert re.search(r"<summary>\s*All windows as a table\s*</summary>", table)
-    assert "Claude Pro" in table
-    assert "week" in table
+    age = class_block(row, "limit-age")
+    assert "1 min" in age
+    assert "figure: manual" in age
+
+    table_details = element_block(limits, r"<details\b[^>]*>")
+    assert 'class="limit-table"' in table_details
+    assert re.search(r"<summary>\s*All windows as a table\s*</summary>", table_details)
+    assert "Claude Pro" in table_details
+    assert "week" in table_details
+
+
+def test_limit_card_keeps_no_code_so_the_cursor_keys_on_the_pool_title(web, rig, monkeypatch):
+    """The hotkey engine reads the first code or h2 of a .limit-card as its identity."""
+    pools = [pool_json(window_json())]
+    text = show_limits(web, rig, monkeypatch, pools, "/fragments/limits").text
+
+    card = class_block(text, "limit-card")
+    assert "<code" not in card
+    assert re.search(r"<h2\b[^>]*>\s*Claude Pro\s*</h2>", card)
 
 
 def test_window_ahead_of_expected_pace(web, rig, monkeypatch):
@@ -179,13 +202,16 @@ def test_unknown_window_shows_no_data(web, rig, monkeypatch):
     )
     text = show_limits(web, rig, monkeypatch, [pool_json(window)], "/fragments/limits").text
 
-    window_html = class_block(text, "limit-window")
-    status = class_block(window_html, "limit-status")
+    card = class_block(text, "limit-card")
+    row = window_row(card, "week")
+    status = class_block(row, "limit-status")
     assert "no data" in status
-    assert "no observation recorded" in window_html
-    assert "usage-bar" not in window_html
-    assert "limit-usage" not in window_html
-    assert "<progress" not in window_html
+    assert "usage-bar" not in row
+    assert "limit-usage" not in row
+    assert "<progress" not in row
+    note = class_block(card, "limit-note")
+    assert "week:" in note
+    assert "no observation recorded" in note
 
 
 @pytest.mark.parametrize(
@@ -197,12 +223,12 @@ def test_stale_window_gets_a_badge(web, rig, monkeypatch, age_s, is_stale):
         web, rig, monkeypatch, [pool_json(window_json(age_s=age_s))], "/fragments/limits"
     ).text
 
-    window_html = class_block(text, "limit-window")
-    age = class_block(window_html, "limit-age")
+    row = window_row(text, "week")
+    age = class_block(row, "limit-age")
     assert "6 h" in age
-    assert ("limit-stale" in window_html) is is_stale
+    assert ("limit-stale" in row) is is_stale
     if is_stale:
-        assert ">stale<" in class_block(window_html, "limit-stale")
+        assert ">stale<" in class_block(row, "limit-stale")
 
 
 @pytest.mark.parametrize("path", PATHS)
