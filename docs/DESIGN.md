@@ -418,10 +418,11 @@ the worst case of a JSON-escaped character, plus 64 KiB), dashboard forms get 64
 `Content-Length` over the limit is rejected at once, a streamed body as soon as it passes the limit;
 both answer `413` with the code `body_too_large`.
 
-Every response except static assets carries security headers — `Cache-Control: no-store`,
+Every response carries security headers — `Cache-Control: no-store`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` —
 set by the outermost middleware, so the 400 and 413 responses of the Host and body-limit checks
-carry them too.
+carry them too. A static file that is actually served keeps its normal caching and gets only the
+other three; errors under `/static/` are marked `no-store` like any other response.
 
 Intake validation failures answer `422` with an `error.code` naming what was wrong: `POST /jobs`
 rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_route`, `bad_tier`,

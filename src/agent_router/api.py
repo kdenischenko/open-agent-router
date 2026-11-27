@@ -109,27 +109,34 @@ SECURITY_HEADERS = (
 
 
 class SecurityHeaders:
-    """Security headers on every HTTP response except static assets.
+    """Security headers on every HTTP response.
 
-    Static files keep their normal caching headers; everything else (dashboard pages,
-    fragments, API responses, including the 400/413 responses of HostCheck and BodyLimit)
-    is marked as non-cacheable. Pure ASGI for the same reason as HostCheck: it must wrap
-    every response, including the ones produced before the router is reached.
+    A static file actually served (2xx or 304 under `/static/`) keeps its normal caching
+    headers; every other response (dashboard pages, fragments, API responses, errors on any
+    path, including the 400/413 responses of HostCheck and BodyLimit) is marked as
+    non-cacheable. Pure ASGI for the same reason as HostCheck: it must wrap every response,
+    including the ones produced before the router is reached.
     """
 
     def __init__(self, app: Any) -> None:
         self.app = app
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope["type"] != "http" or scope["path"].startswith("/static/"):
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        static = scope["path"].startswith("/static/")
 
         async def secured_send(message: Any) -> None:
             if message["type"] == "http.response.start":
-                headers = message.get("headers", [])
-                headers = [pair for pair in headers if pair[0].lower() != b"cache-control"]
-                headers.extend(SECURITY_HEADERS)
+                served_file = static and (
+                    200 <= message["status"] < 300 or message["status"] == 304
+                )
+                extra = SECURITY_HEADERS[1:] if served_file else SECURITY_HEADERS
+                headers = list(message.get("headers", []))
+                if not served_file:
+                    headers = [pair for pair in headers if pair[0].lower() != b"cache-control"]
+                headers.extend(extra)
                 message["headers"] = headers
             await send(message)
 

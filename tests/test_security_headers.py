@@ -78,3 +78,27 @@ def test_static_asset_keeps_normal_caching(rig) -> None:
 
     assert response.status_code == 200
     assert "no-store" not in response.headers.get("cache-control", "")
+
+
+def test_static_asset_carries_the_other_security_headers(rig) -> None:
+    with TestClient(rig.app, base_url="http://127.0.0.1:8787") as client:
+        response = client.get("/static/app.css")
+
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+
+
+def test_missing_static_file_carries_security_headers(rig) -> None:
+    with TestClient(rig.app, base_url="http://127.0.0.1:8787") as client:
+        response = client.get("/static/missing.css")
+
+    assert response.status_code == 404
+    assert_secured(response)
+
+
+def test_rejected_host_on_a_static_path_carries_security_headers(rig) -> None:
+    with TestClient(rig.app, base_url="http://evil.example:8787") as client:
+        response = client.get("/static/app.css")
+
+    assert response.status_code == 400
+    assert_secured(response)
