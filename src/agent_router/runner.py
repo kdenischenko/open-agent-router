@@ -432,6 +432,23 @@ def _feed(stream: IO[bytes], text: str) -> None:
         stream.close()
 
 
+def _close_pipe(stream: IO[bytes]) -> None:
+    """Close a pipe without waiting for a pending Windows read to finish first."""
+    if sys.platform == "win32":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        with contextlib.suppress(OSError, ValueError, AttributeError):
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            cancel_io_ex = kernel32.CancelIoEx
+            cancel_io_ex.argtypes = [wintypes.HANDLE, wintypes.LPVOID]
+            cancel_io_ex.restype = wintypes.BOOL
+            cancel_io_ex(msvcrt.get_osfhandle(stream.fileno()), None)
+    with contextlib.suppress(OSError, ValueError):
+        stream.close()
+
+
 class LocalRunner:
     """A process on this machine: no shell, stdin closed, output to files in the job directory."""
 
@@ -511,6 +528,7 @@ class LocalRunner:
             raise
         out_pump: _Pump | None = None
         err_pump: _Pump | None = None
+        stdin_feeder: threading.Thread | None = None
         try:
             if job is not None and not job.assign(proc.pid):
                 job.close()  # the tree stays outside the job: the taskkill fallback applies
@@ -543,12 +561,13 @@ class LocalRunner:
             err_pump.start()
             if inv.stdin_text is not None:
                 assert proc.stdin is not None
-                threading.Thread(
+                stdin_feeder = threading.Thread(
                     target=_feed,
                     args=(proc.stdin, inv.stdin_text),
                     daemon=True,
                     name="runner-stdin",
-                ).start()
+                )
+                stdin_feeder.start()
 
             timed_out = cancelled = forced = idle = False
             sampler = self._sampler(cwd, log_dir, job, proc.pid, quiet_while_working)
@@ -580,6 +599,16 @@ class LocalRunner:
                 job.terminate()  # a descendant that outlived the harness stops with the attempt
             out_pump.join(_READER_WAIT_S)
             err_pump.join(_READER_WAIT_S)
+            if out_pump.is_alive() or err_pump.is_alive():
+                # A descendant can hold the inherited ends open; the parent's ends must close
+                # before the reader and feeder threads can release their log files.
+                for stream in (proc.stdout, proc.stderr, proc.stdin):
+                    if stream is not None:
+                        _close_pipe(stream)
+                out_pump.join(_READER_WAIT_S)
+                err_pump.join(_READER_WAIT_S)
+                if stdin_feeder is not None:
+                    stdin_feeder.join(_READER_WAIT_S)
             parent_alive = proc.poll() is None
             survived = _survived(proc.pid, parent_alive, job)
             exit_code = None if parent_alive else proc.returncode
