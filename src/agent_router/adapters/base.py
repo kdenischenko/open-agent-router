@@ -46,6 +46,7 @@ class RunOutcome:
     limit_reset_at: datetime | None = None
     error: str | None = None
     model_unavailable: bool = False  # the route's model is gone, not a job or quota failure
+    content_rejected: bool = False  # the provider refused the request on content grounds
 
 
 class Adapter(Protocol):
@@ -161,6 +162,7 @@ def settle(
     session_id: str | None = None,
     limit_reset_at: datetime | None = None,
     model_unavailable_hint: bool = False,
+    content_rejected_hint: bool = False,
 ) -> RunOutcome:
     """Shared outcome resolution order.
 
@@ -168,7 +170,8 @@ def settle(
     in the service messages (`service`, stderr) or the harness itself reported the error as
     a limit (`limit_hint`); otherwise error. The model response text is not checked for
     limit signs. Error outcomes are marked as model-unavailable when the service messages
-    report the route's model as gone (`model_unavailable_hint` or the signs).
+    report the route's model as gone (`model_unavailable_hint` or the signs); a provider
+    content rejection (`content_rejected_hint`) is reported the same way.
     """
     common = {
         "tokens_in": tokens_in,
@@ -197,5 +200,10 @@ def settle(
             **common,
         )
     return RunOutcome(
-        "error", text=text, error=_short(message), model_unavailable=unavailable, **common
+        "error",
+        text=text,
+        error=_short(message),
+        model_unavailable=unavailable,
+        content_rejected=content_rejected_hint,
+        **common,
     )

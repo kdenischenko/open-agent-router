@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Provider content rejections (e.g. OpenCode's `security_audit_fail` behind
+  `provider.invalid-request`) are reported by the adapter as `content_rejected`: a clean
+  attempt fails a pinned job with code `content_rejected`, moves an unpinned job off all routes
+  of the same model (the job is requeued and fails with `content_rejected` when no route is
+  left), and no longer harms route health.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.

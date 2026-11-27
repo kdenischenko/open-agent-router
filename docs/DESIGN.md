@@ -85,8 +85,16 @@ executable is missing. A write attempt that changed files and then failed ends a
 automatic retry); a clean failure that is not moved to another route (a timeout, a pinned
 route, no route left) ends as `failed`.
 
+A provider content rejection (the adapter reports `content_rejected`, e.g. OpenCode's
+`provider.invalid-request` with a moderation marker) on a clean attempt — nothing changed, no
+surviving process — does not count as an executor error for routing: a pinned job fails with
+code `content_rejected`; an unpinned job excludes the route and every enabled route with the
+same `model_key` for this job only and is requeued, and when no route is left it fails with
+code `content_rejected` (not `no_route`).
+
 Route health: a route with `ROUTE_ERROR_STREAK` (2) error attempts in a row — errors finished
-after the route's last `ok` attempt, a later `ok` resets the streak — is marked unavailable for
+after the route's last `ok` attempt, a later `ok` resets the streak, a content-rejected attempt
+neither extends nor resets the streak — is marked unavailable for
 `ROUTE_ERROR_COOLDOWN_S` (1800 s). The policy excludes such a route and `advice` shows
 `harness unavailable: N errors in a row, retry after <local time>`; after the cooldown the route
 is available again. A route the caller pinned still runs, and a job already approved for a route
