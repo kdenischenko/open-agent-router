@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import math
+import sqlite3
 import statistics
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, timedelta
 from pathlib import Path
 from typing import Any
@@ -1585,3 +1587,119 @@ def test_serve_names_the_client_url_for_another_port(
 
     assert result.exit_code == 0
     assert ("AGENT_ROUTER_URL=http://127.0.0.1:8799" in result.output) is hint
+
+
+# --- request_id ----------------------------------------------------------------------
+
+
+def submit_body(api, rig, **fields):
+    return api.post("/api/v1/jobs", json=rig.body(**fields), headers=cl(rig))
+
+
+@requires_git
+def test_repeated_request_id_returns_the_same_job(api, rig) -> None:
+    first = submit_body(api, rig, request_id="req-1")
+    again = submit_body(api, rig, request_id="req-1")
+
+    assert first.status_code == 201, first.text
+    assert again.status_code == 200, again.text
+    assert again.json()["job_id"] == first.json()["job_id"]
+    assert len(rig.jobs.list(limit=10)) == 1
+
+
+@requires_git
+def test_different_request_ids_never_merge(api, rig) -> None:
+    responses = [
+        submit_body(api, rig, request_id="req-1"),
+        submit_body(api, rig, request_id="req-2"),
+        submit_body(api, rig),
+        submit_body(api, rig),
+    ]
+
+    assert all(response.status_code == 201 for response in responses)
+    assert len({response.json()["job_id"] for response in responses}) == 4
+
+
+@requires_git
+def test_request_id_is_scoped_per_caller(api, rig) -> None:
+    mine = submit_body(api, rig, request_id="req-1", caller="agent-a")
+    anonymous = submit_body(api, rig, request_id="req-1")
+
+    assert mine.status_code == 201 and anonymous.status_code == 201
+    assert mine.json()["job_id"] != anonymous.json()["job_id"]
+
+
+@requires_git
+@pytest.mark.parametrize("change", [{"scenario": "exit 1"}, {"mode": "write"}])
+def test_conflicting_reuse_of_a_request_id_is_rejected(api, rig, change) -> None:
+    assert submit_body(api, rig, request_id="req-1").status_code == 201
+
+    response = submit_body(api, rig, request_id="req-1", **change)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_id_conflict"
+    assert len(rig.jobs.list(limit=10)) == 1
+
+
+@requires_git
+def test_reuse_with_another_cwd_is_rejected(api, rig) -> None:
+    assert submit_body(api, rig, request_id="req-1").status_code == 201
+
+    other = rig.plain("другой каталог")  # non-ascii on purpose
+    response = submit_body(api, rig, request_id="req-1", cwd=other)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_id_conflict"
+
+
+@requires_git
+@pytest.mark.parametrize("value", ["", "has space", "x" * 129, "слово", "a/b"])  # noqa: E501 - non-ascii on purpose
+def test_malformed_request_id_is_rejected(api, rig, value) -> None:
+    response = submit_body(api, rig, request_id=value)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "bad_request_id"
+
+
+@requires_git
+@pytest.mark.parametrize("value", ["a", "x" * 128, "Az09._:-"])
+def test_wellformed_request_id_is_accepted(api, rig, value) -> None:
+    assert submit_body(api, rig, request_id=value).status_code == 201
+
+
+@requires_git
+def test_concurrent_submits_with_one_request_id_create_one_job(rig) -> None:
+    request = replace(rig_request(rig), request_id="req-race")
+    barrier = threading.Barrier(8)
+    results: list[str] = []
+    errors: list[BaseException] = []
+
+    def go() -> None:
+        try:
+            barrier.wait()
+            results.append(rig.dispatcher.submit(request).id)
+        except BaseException as exc:  # noqa: BLE001 - reported by the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(set(results)) == 1
+    assert len(rig.jobs.list(limit=20)) == 1
+
+
+@requires_git
+def test_store_rejects_a_second_job_with_the_same_caller_and_request_id(rig) -> None:
+    job = rig.dispatcher.submit(replace(rig_request(rig), request_id="req-1"))
+    twin = replace(job, id="j_000000000099")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        rig.jobs.create(twin)
+
+
+def test_job_request_has_no_request_id_by_default(tmp_path) -> None:
+    assert JobRequest("p", tmp_path).request_id is None

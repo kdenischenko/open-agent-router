@@ -259,7 +259,7 @@ option.
 | `calibrate POOL WINDOW PERCENT` | Record the usage your subscription shows; `--resets-at` or `--resets-in 10d` sets the reset of a fixed window, a rolling window takes none (admin token) |
 | `usage refresh [POOL]` | Read the usage sources now and record what they report; without a pool every pool with a source outside `manual` mode is read, and a pool read within the last 60 s is skipped (admin token) |
 | `unblock POOL` | Remove a pool block set after a limit hit (admin token) |
-| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, `--review-of JOB` submits a review kept off the model and pool that wrote the code |
+| `run [TEXT]` | Submit a job and wait up to 100 s; `--no-wait` prints the job id, `-` reads the prompt from stdin, repeatable `--exclude-pool POOL` keeps the job off those pools, `--review-of JOB` submits a review kept off the model and pool that wrote the code, `--request-id ID` makes a repeated submit return the existing job |
 | `wait JOB_ID` | Wait for a job and print its result; retries for up to 10 s while the gateway restarts |
 | `result JOB_ID` | Print the status and result of a job without waiting |
 | `rate JOB_ID good\|bad\|partial` | Rate a finished job; the last rating wins, a `--note` is stored as hash and length only |

@@ -26,6 +26,9 @@ delegate decisions that a human must make.
    When the gateway picks the route itself, it never sends a delegated job back to the
    caller's own pool; in a one-pool setup leave the callers unmapped (`""`), or the jobs
    have no route.
+   Every submit carries a request id: `run` generates one and retries a lost submit answer
+   with it. When you repeat a submit whose answer was lost yourself, pass the same
+   `--request-id ID`; the gateway returns the existing job instead of starting a second one.
 3. Wait for the result:
 
    ```bash

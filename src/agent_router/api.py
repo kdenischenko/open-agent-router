@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -321,6 +321,7 @@ class JobBody(BaseModel):
     timeout_s: Any = None  # fractional, boolean, etc. — error code bad_timeout, not bad_request
     exclude_pools: list[Annotated[StrictStr, Field(min_length=1)]] | None = None
     review_of: Annotated[StrictStr, Field(min_length=1)] | None = None
+    request_id: StrictStr | None = None  # format checked later: bad_request_id, not bad_request
 
 
 class RatingBody(BaseModel):
@@ -360,6 +361,11 @@ def require_dispatcher(gateway: Gateway) -> Any:
 
 def submit_job(gateway: Gateway, body: JobBody) -> Job:
     """Validate and submit a job through the dispatcher used by the API and dashboard."""
+    return submit_job_created(gateway, body)[0]
+
+
+def submit_job_created(gateway: Gateway, body: JobBody) -> tuple[Job, bool]:
+    """Submit a job; the flag tells a new job (201) apart from a replayed one (200)."""
     dispatcher = require_dispatcher(gateway)
     request = JobRequest(
         prompt=body.prompt,
@@ -372,9 +378,10 @@ def submit_job(gateway: Gateway, body: JobBody) -> Job:
         timeout_s=body.timeout_s,
         excluded_pools=frozenset(body.exclude_pools or []),
         review_of=body.review_of,
+        request_id=body.request_id,
     )
     try:
-        return dispatcher.submit(request)
+        return dispatcher.submit_tracked(request)
     except RequestRejected as exc:
         status = 429 if exc.code == "queue_full" else 422
         raise ApiError(status, exc.code, exc.message) from exc
@@ -571,8 +578,10 @@ def api_router(gateway: Gateway) -> APIRouter:
         return job_json(job, dispatcher.jobs.attempts(job.id), dispatcher.jobs.last_rating(job.id))
 
     @router.post("/jobs", status_code=201)
-    def post_job(body: JobBody, role: Role = client) -> dict[str, Any]:
-        job = submit_job(gateway, body)
+    def post_job(body: JobBody, response: Response, role: Role = client) -> dict[str, Any]:
+        job, created = submit_job_created(gateway, body)
+        if not created:
+            response.status_code = 200
         return {"job_id": job.id, "status": job.status}
 
     @router.get("/jobs")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn
@@ -16,6 +17,8 @@ from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
 from agent_router.clock import format_local
 from agent_router.config import home_dir
 from agent_router.jobs import TERMINAL
+
+retry_pause = time.sleep  # pause between submit retries; tests monkeypatch it
 
 
 def _job_failure(exc: GatewayUnavailable | GatewayError) -> NoReturn:
@@ -134,6 +137,22 @@ def _prompt_text(data: bytes) -> str:
     return data.decode("utf-8-sig").replace("\r\n", "\n")
 
 
+def _submit_job(client: GatewayClient, body: dict) -> dict:
+    """POST the job; a lost answer is retried up to twice with the same request_id.
+
+    A rejection (GatewayError) is never retried: the gateway gave an answer.
+    """
+    retries = 0
+    while True:
+        try:
+            return client.post("/api/v1/jobs", body)
+        except GatewayUnavailable:
+            if retries >= 2:
+                raise
+            retries += 1
+            retry_pause(retries)
+
+
 def run(
     text: str | None = typer.Argument(None, help="Job prompt text, or - for standard input"),
     cwd: Path = typer.Option(Path("."), "--cwd", help="Working directory for the job"),
@@ -166,12 +185,19 @@ def run(
     prompt_file: Path | None = typer.Option(
         None, "--prompt-file", help="UTF-8 file containing the job prompt"
     ),
+    request_id: str | None = typer.Option(
+        None,
+        "--request-id",
+        help="Idempotency key of the submit; repeat a lost submit with the same id and the "
+        "gateway returns the existing job instead of starting a second one",
+    ),
 ) -> None:
     """Submit a job and wait for its result."""
     body: dict[str, Any] = {
         "prompt": _prompt(text, prompt_file),
         "cwd": str(cwd.resolve()),
         "mode": mode,
+        "request_id": request_id or uuid.uuid4().hex,
     }
     for name, value in (
         ("tier", tier),
@@ -187,7 +213,7 @@ def run(
     if exclude_pool:
         body["exclude_pools"] = exclude_pool
     client = _gateway()
-    submitted = _job_request(lambda: client.post("/api/v1/jobs", body))
+    submitted = _job_request(lambda: _submit_job(client, body))
     job_id = submitted["job_id"]
     if no_wait:
         typer.echo(job_id)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+import uuid
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -10,6 +12,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
+
+retry_pause = time.sleep  # pause between submit retries; tests monkeypatch it
 
 _UNAVAILABLE = "gateway unavailable: check that agent-router serve is running"
 _REJECTED = "gateway rejected the token"
@@ -89,6 +93,11 @@ _REVIEW_OF = Field(
     "kind=review, and the gateway keeps the review off the model group and pool that wrote "
     "the code"
 )
+_REQUEST_ID = Field(
+    description="Idempotency key of the submit; reuse the same id when you repeat a submit "
+    "whose answer was lost, and the gateway returns the existing job instead of starting a "
+    "second one"
+)
 _ADVICE_EXCLUDE_POOLS = Field(
     description="Pool ids, e.g. claude-pro, excluded from the recommendation; their routes "
     "show as excluded by request"
@@ -112,6 +121,21 @@ def build_server(gateway: GatewayClient) -> MCPServer:
                 raise ToolError(f"{exc.code}: {exc.message}") from exc
             raise ToolError(exc.message) from exc
 
+    def submit(body: dict[str, Any]) -> dict[str, Any]:
+        """POST the job; a lost answer is retried up to twice with the same request_id.
+
+        A rejection (GatewayError) is never retried: the gateway gave an answer.
+        """
+        retries = 0
+        while True:
+            try:
+                return gateway.post("/api/v1/jobs", body)
+            except GatewayUnavailable:
+                if retries >= 2:
+                    raise
+                retries += 1
+                retry_pause(retries)
+
     @server.tool(description=_SUBMIT_DESCRIPTION, structured_output=False)
     def submit_job(
         prompt: str,
@@ -123,6 +147,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         timeout_s: Annotated[int | None, _JOB_TIMEOUT] = None,
         exclude_pools: Annotated[list[str] | None, _EXCLUDE_POOLS] = None,
         review_of: Annotated[str | None, _REVIEW_OF] = None,
+        request_id: Annotated[str | None, _REQUEST_ID] = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt, "cwd": cwd, "mode": mode}
         if tier is not None:
@@ -138,7 +163,8 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         if review_of is not None:
             body["kind"] = "review"
             body["review_of"] = review_of
-        return run(lambda: gateway.post("/api/v1/jobs", body))
+        body["request_id"] = request_id or uuid.uuid4().hex
+        return run(lambda: submit(body))
 
     def compact_job(job: dict[str, Any]) -> dict[str, Any]:
         compact = {

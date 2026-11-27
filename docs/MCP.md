@@ -14,7 +14,7 @@ The server exposes exactly these 8 tools:
 
 | Tool | Purpose |
 |---|---|
-| `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route, excluded pools, timeout and the reviewed job |
+| `submit_job` | Submit a job: prompt, working directory, mode, tier, caller, route, excluded pools, timeout, the reviewed job and an idempotency key |
 | `wait_job` | Wait up to 100 seconds for a job and return a compact result; `verbose=true` returns the full job record |
 | `job_result` | Get a compact job result without waiting; `verbose=true` returns the full job record |
 | `list_jobs` | List compact jobs: `id`, `status`, `route`, `mode`, `caller`, `created_at`, `finished_at` and `error_code`, optionally filtered by status, with a limit; `verbose=true` returns full job records |
@@ -53,6 +53,12 @@ full `log_tail`, attempts and timestamps.
   marks those routes `author of reviewed job`. When nothing else is eligible, the review runs
   on the author's model and the decision note says so. The job id must be known; a pinned
   route is not overridden.
+- `request_id` is the idempotency key of the submit; `submit_job` generates one when it is
+  omitted. When the submit's answer is lost because the gateway is unreachable, the tool
+  retries up to twice with the same `request_id`, and the gateway returns the existing job
+  instead of starting a second one; a rejection is never retried. When you repeat such a
+  submit yourself, pass the same `request_id` again. A repeated id whose prompt, directory
+  or mode does not match the stored job is rejected with `request_id_conflict`.
 - Write the job with full context: the directory it may work in, the expected result
   and the constraints. Do not submit a second write job in the same directory until
   the first one has finished.

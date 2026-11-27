@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -565,7 +566,10 @@ def test_run_sends_options_and_absolute_cwd(
     )
 
     assert result.exit_code == 0
-    assert gateway.calls[0][2] == {
+    body = gateway.calls[0][2]
+    request_id = body.pop("request_id")
+    assert re.fullmatch(r"[0-9a-f]{32}", request_id)
+    assert body == {
         "prompt": _RUN_PROMPT,
         "cwd": str(work.resolve()),
         "mode": "write",
@@ -982,3 +986,67 @@ def test_cli_deny_names_denied_route(runner: CliRunner, gateway: FakeGateway) ->
 
     assert result.exit_code == 0
     assert "denied route fake/main: the job looks for another route" in result.stderr
+
+
+def test_run_generates_a_request_id(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    request_id = gateway.calls[0][2]["request_id"]
+    assert re.fullmatch(r"[0-9a-f]{32}", request_id)
+
+
+def test_run_sends_the_given_request_id(runner: CliRunner, gateway: FakeGateway) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--request-id", "my-id", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    assert gateway.calls[0][2]["request_id"] == "my-id"
+
+
+def test_run_retries_a_lost_submit_with_the_same_request_id(
+    runner: CliRunner, gateway: FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pauses: list[float] = []
+    monkeypatch.setattr(cli_jobs, "retry_pause", pauses.append)
+    failures = [GatewayUnavailable("gateway unavailable")] * 2
+    plain_post = gateway.post
+
+    def flaky_post(path: str, body: dict | None = None) -> dict:
+        if path == "/api/v1/jobs" and failures:
+            gateway.calls.append(("POST", path, body))
+            raise failures.pop()
+        return plain_post(path, body)
+
+    monkeypatch.setattr(gateway, "post", flaky_post)
+
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 0, result.output
+    submits = [body for _, path, body in gateway.calls if path == "/api/v1/jobs"]
+    assert len(submits) == 3
+    assert len({body["request_id"] for body in submits}) == 1
+    assert len(pauses) == 2
+
+
+def test_run_gives_up_after_two_retries(
+    runner: CliRunner, gateway: FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli_jobs, "retry_pause", lambda seconds: None)
+    gateway.error = GatewayUnavailable("gateway unavailable")
+
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 5
+    assert len([call for call in gateway.calls if call[1] == "/api/v1/jobs"]) == 3
+
+
+def test_run_does_not_retry_a_rejected_submit(
+    runner: CliRunner, gateway: FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli_jobs, "retry_pause", lambda seconds: None)
+    gateway.error = GatewayError(422, "request_id_conflict", "request id reused")
+
+    result = runner.invoke(cli.app, ["run", "--no-wait", _RUN_PROMPT])
+
+    assert result.exit_code == 6
+    assert len(gateway.calls) == 1

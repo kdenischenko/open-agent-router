@@ -393,9 +393,13 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
 snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
-Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with no `jobs` row)
-older than the cutoff — preferred over a deletion-marker schema because it needs no schema change
-and also cleans directories left behind by crashes or older versions.
+The `jobs` table also carries the idempotency key of a submit in the columns `request_caller` and
+`request_id`, with a UNIQUE index on the pair: a second job with the same key cannot be inserted,
+and a NULL `request_id` never collides because SQLite treats NULLs as distinct. The key lives as
+long as its job does — `purge` forgets it with the job row, so a purged `request_id` starts a
+new job again. Purge also sweeps orphaned `jobs/<job-id>/` directories (job-id-shaped names with
+no `jobs` row) older than the cutoff — preferred over a deletion-marker schema because it needs
+no schema change and also cleans directories left behind by crashes or older versions.
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
 bounded queue (overflow drops, never blocks). Event payloads pass a JSON round-trip plus a key
@@ -423,6 +427,16 @@ rejects an unknown pool id in `exclude_pools` with `bad_pool`, alongside `bad_ro
 `bad_caller` and the other field codes, and a `review_of` without `kind=review` or naming an
 unknown job with `bad_review_of`. `GET /advice` reports invalid query values — an unknown tier,
 mode, pool or reviewed job — as `bad_request`.
+
+`POST /jobs` takes an optional `request_id`: 1–128 characters of `[A-Za-z0-9._:-]`; any other
+value is rejected `422 bad_request_id`. The pair (caller or empty string, `request_id`) is the
+idempotency key of the submit, enforced by the UNIQUE index on the `jobs` table — the constraint
+is the source of truth, so two concurrent submits with one key still create one job. A repeated
+submit with a known key and the same prompt hash, working directory and mode returns the existing
+job with `200` (same `{"job_id", "status"}` body, no new job, no announce, no classifier submit),
+while a new job answers `201`. A key reused with a different prompt, directory or mode is rejected
+`422 request_id_conflict`. The key is remembered only while the job is kept: after `purge` the
+same `request_id` creates a new job again.
 
 Tokens are files `client.token` / `admin.token` in the gateway home, created by `init` (or the first
 `serve`) with owner-only permissions where the OS supports them. The dashboard (`web.py`, Jinja2, no
