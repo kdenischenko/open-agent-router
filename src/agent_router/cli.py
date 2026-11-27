@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -20,6 +21,7 @@ from urllib.parse import urlparse
 import typer
 
 from agent_router import __version__, cli_gateway, cli_jobs
+from agent_router.backup import backup_database, default_backup_path, prune_backups
 from agent_router.cli_common import _config, _export_moment, _gateway, _request
 from agent_router.cli_jobs import _job_failure, _job_request
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
@@ -237,6 +239,37 @@ def purge(
         typer.echo(f"warning: could not remove {directory}", err=True)
     if failed_dirs:
         raise typer.Exit(1)
+
+
+@app.command()
+def backup(
+    path: Path | None = typer.Argument(
+        None, help="Backup file; by default a timestamped file in the home backups directory"
+    ),
+    keep: int | None = typer.Option(
+        None, "--keep", min=1, help="Keep only the newest N timestamped backups"
+    ),
+) -> None:
+    """Back up the SQLite store without stopping the gateway."""
+    home = home_dir()
+    config = _config(home)
+    if config.storage.backend != "sqlite":
+        typer.echo("backup supports only the sqlite store")
+        raise typer.Exit(1)
+    database = home / "agent-router.sqlite"
+    if not database.exists():
+        typer.echo(f"no database: {database}")
+        raise typer.Exit(1)
+    target = path or default_backup_path(home, SystemClock().now())
+    try:
+        size = backup_database(database, target)
+        typer.echo(f"{target} ({size} bytes)")
+        if keep is not None:
+            for removed in prune_backups(target.parent, keep):
+                typer.echo(removed)
+    except (OSError, sqlite3.Error) as exc:
+        typer.echo(f"backup failed: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @app.command("export")
@@ -504,6 +537,21 @@ def _harness_version(exe: ResolvedExecutable) -> str | None:
     )
 
 
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    match = re.search(r"\d+(?:\.\d+)+", text)
+    return tuple(int(part) for part in match.group().split(".")) if match else None
+
+
+def _older_than(version: str | None, minimum: str | None) -> str | None:
+    """The found version as text when it is below `minimum`; unknown versions are not reported."""
+    if version is None or minimum is None:
+        return None
+    found, needed = _version_tuple(version), _version_tuple(minimum)
+    if found is None or needed is None or found >= needed:
+        return None
+    return ".".join(map(str, found))
+
+
 def _doctor_backends(config: Config) -> None:
     typer.echo("Harness | Found | Launch | Version | Enabled routes")
     configured = harnesses(config)
@@ -514,17 +562,25 @@ def _doctor_backends(config: Config) -> None:
         exe = resolve_backend(section, spec, resolve_executable)
         label = name if section.harness == name else f"{name} ({section.harness})"
         routes = [route.id for route in config.routes if route.enabled and route.backend == name]
+        outdated = None
         if exe.path is None:
             launch = "—"
             version = "—"
         else:
             kind = "shim" if exe.is_shim else "executable"
             launch = f"{exe.path} ({kind})"
-            version = _harness_version(exe) or "failed to detect"
+            detected = _harness_version(exe)
+            version = detected or "failed to detect"
+            outdated = _older_than(detected, spec.min_version)
         typer.echo(
             f"{label} | {'yes' if exe.path is not None else 'no'} | {launch} | "
             f"{version} | {', '.join(routes) or '—'}"
         )
+        if outdated is not None:
+            typer.echo(
+                f"Warning: harness {name} {outdated} is older than {spec.min_version}, "
+                f"which jobs need: update it or set [backends.{name}] executable"
+            )
         if exe.path is None:
             for route in routes:
                 typer.echo(f"Warning: route {route} is enabled, but harness {name} not found")

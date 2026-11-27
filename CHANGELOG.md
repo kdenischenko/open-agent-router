@@ -8,6 +8,21 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Job submission is idempotent: an optional `request_id` (CLI `--request-id`, generated when
+  omitted; an MCP `submit_job` parameter) is unique per caller in the job store. A repeated
+  submit with the same key and the same prompt, working directory and mode returns the existing
+  job with `200` instead of starting a second one (`201` for a new job), a conflicting reuse is
+  rejected `422 request_id_conflict`, and a malformed id `422 bad_request_id`. The CLI and the
+  MCP server retry a submit whose answer was lost up to twice with the same id. After `purge`
+  the id is forgotten and starts a new job again.
+- Provider content rejections (e.g. OpenCode's `security_audit_fail` behind
+  `provider.invalid-request`) are reported by the adapter as `content_rejected`: a clean
+  attempt fails a pinned job with code `content_rejected`, moves an unpinned job off all routes
+  of the same model (the job is requeued and fails with `content_rejected` when no route is
+  left), and no longer harms route health.
+- Dashboard and API responses (including rejected-host and body-limit errors) carry security
+  headers: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; static assets keep normal caching.
 - `docs/INSTALL.md` describes autostart on Linux with a `systemd --user` unit.
 - Job submission and advice accept `exclude_pools` (repeatable `--exclude-pool` in the CLI and
   pool selection in the dashboard) to keep routes on the requested subscriptions out of the choice.
@@ -38,9 +53,19 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- `agent-router backup [PATH]` copies the gateway database with SQLite's online
+  backup API, so the backup is consistent even while the gateway writes; without a
+  path it writes `<home>/backups/agent-router-<UTC YYYYMMDD-HHMMSS>.sqlite`, and
+  `--keep N` prunes older timestamp-named backups in the target directory after a
+  successful backup, keeping the newest N and leaving unrelated files alone.
+  Restore steps and scheduled-backup examples are in `docs/INSTALL.md`.
+- `agent-router run --kind` and the MCP `submit_job` tool set the job kind (`code`, `review`,
+  `research` or `other`); `--review-of` and `review_of` set `review`.
 
 ### Changed
 
+- Job errors name a Windows NTSTATUS exit code, e.g. `exit code 3221226505 (0xC0000409
+  STATUS_STACK_BUFFER_OVERRUN)`; unknown codes in the NTSTATUS range show their hex value.
 - The README now says that a window far behind its pace makes its pool take every job it can
   serve until it catches up, and that `priority` and `weight` in the config change the order.
 - The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
@@ -56,6 +81,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- `doctor` warns when OpenCode is older than 2.2.6: its `opencode run` rejects `--archived`, so
+  every job on its routes failed with `executor_error` without an earlier hint.
 - The job page attempt timeline formats each attempt's duration with units, like the job total
   duration, and shows a dash instead of an empty cell when an attempt has no cost.
 - Approval cards on the Limits page keep Approve and Deny side by side in one responsive row.

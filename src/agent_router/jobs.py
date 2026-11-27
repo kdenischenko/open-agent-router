@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -38,6 +39,8 @@ KINDS: tuple[str, ...] = ("code", "review", "research", "other")
 TierSource = Literal["caller", "default", "classifier"]
 TIMEOUT_MIN_S = 30
 TIMEOUT_MAX_S = 7200
+# an idempotent submit key: safe in URLs and file names, never ambiguous
+REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 # Allowed status transitions; no others exist.
 _TRANSITIONS: dict[Status, frozenset[Status]] = {
@@ -60,6 +63,8 @@ class JobRequest:
     excluded_pools: frozenset[str] = frozenset()
     preferred_routes: tuple[str, ...] = ()  # routes tried first, in order; others may still run
     review_of: str | None = None  # id of the job this review job looks at; requires kind=review
+    # idempotency key of the caller: a repeated submit with the same key gets the existing job
+    request_id: str | None = None
 
 
 @dataclass
@@ -186,6 +191,7 @@ class AttemptResult:
     changes_unknown: bool = False  # measuring the tree after the attempt failed
     survived: bool = False  # the harness process survived the stop
     model_unavailable: bool = False  # the harness reported the route's model as unavailable
+    content_rejected: bool = False  # the provider refused the request on content grounds
 
 
 class RequestRejected(Exception):
@@ -324,6 +330,10 @@ def validate_request_directory(req: JobRequest, config: Config) -> CheckedDirect
         raise RequestRejected("bad_review_of", "review_of requires kind=review")
     if req.caller is not None and req.caller not in config.callers:
         raise RequestRejected("bad_caller", f"unknown caller: {req.caller}")
+    if req.request_id is not None and not REQUEST_ID_PATTERN.fullmatch(req.request_id):
+        raise RequestRejected(
+            "bad_request_id", "request_id must be 1 to 128 characters of [A-Za-z0-9._:-]"
+        )
     pool_ids = {pool.id for pool in config.pools}
     for pool in sorted(req.excluded_pools):
         if pool not in pool_ids:
