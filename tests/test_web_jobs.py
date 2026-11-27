@@ -189,6 +189,21 @@ def test_job_post_without_session_redirects_to_login(client, path) -> None:
     assert response.headers["location"] == "/login"
 
 
+@pytest.mark.parametrize("action", ["deny", "cancel"])
+def test_confirmation_page_is_a_framed_panel(web, rig, action) -> None:
+    status = "queued" if action == "cancel" else "awaiting_approval"
+    job = rig.add_job(status)
+
+    response = web.get(f"/jobs/{job.id}/{action}")
+
+    assert response.status_code == 200
+    assert '<section class="panel">' in response.text
+    assert f'<a href="/jobs/{job.id}"><code>{job.id}</code></a>' in response.text
+    assert f'action="/jobs/{job.id}/{action}"' in response.text
+    assert '<p class="hint">' in response.text
+    assert f'<a href="/jobs/{job.id}">Back to the job</a>' in response.text
+
+
 def test_unblock_without_session_redirects_to_login(client) -> None:
     response = client.post("/pools/kimi-code/unblock", follow_redirects=False)
 

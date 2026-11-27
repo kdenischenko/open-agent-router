@@ -163,7 +163,7 @@ def test_fragment_honours_the_query_string(web, rig) -> None:
     assert '<form method="get"' not in text
 
 
-def test_rows_show_status_badge_text_and_caller(web, rig) -> None:
+def test_rows_show_status_badge_and_bare_columns(web, rig) -> None:
     rig.add_job("queued", caller="claude-code")
     finish(rig, rig.add_job("running"), 5, "failed")
 
@@ -171,8 +171,47 @@ def test_rows_show_status_badge_text_and_caller(web, rig) -> None:
 
     assert '<span class="status-badge status-badge--danger">failed</span>' in text
     assert '<span class="status-badge status-badge--info">queued</span>' in text
-    assert "Caller: claude-code" in text
-    assert "Took: 5 s" in text
+    assert "<span>claude-code</span>" in text
+    assert "<span>standard</span>" in text
+    assert "<span>5 s</span>" in text
+    for label in ("Route:", "Caller:", "Created:", "Took:"):
+        assert label not in text, f"the dense row still labels its {label}"
+
+
+def test_row_columns_read_id_status_route_tier_caller_age_duration(web, rig) -> None:
+    job = finish(rig, rig.add_job("running", caller="claude-code"), 5, "failed")
+
+    text = web.get("/jobs").text
+    start = text.index(f'<a href="/jobs/{job.id}">')
+    row = text[start : text.index("</li>", start)]
+
+    columns = (
+        f"<code>{job.id}</code>",
+        '<span class="status-badge status-badge--danger">failed</span>',
+        "<span>kimi-cli/kimi-for-coding</span>",
+        "<span>standard</span>",
+        "<span>claude-code</span>",
+        "<time datetime=",
+        "<span>5 s</span>",
+    )
+    positions = [row.index(column) for column in columns]
+    assert positions == sorted(positions)
+    # the reason stays a muted second line under the row, not another column
+    assert '<span class="job-row__reason">Reason: route choice reason</span>' in row
+
+
+def test_rows_keep_the_hotkey_cursor_hook(web, rig) -> None:
+    job = rig.add_job("queued")
+
+    text = web.get("/jobs").text
+
+    # app.js moves its cursor over .job-row and reads the job id from the code inside,
+    # so the row must open with the id link and keep data-status for the smoke tests
+    assert re.search(
+        r'<li class="job-row" data-status="queued">\s*'
+        r'<a href="/jobs/' + job.id + r'"><code>' + job.id + r"</code></a>",
+        text,
+    )
 
 
 def test_every_status_has_a_badge_kind() -> None:
