@@ -722,3 +722,33 @@ def test_opencode_ordinary_error_is_not_a_content_rejection() -> None:
     outcome = opencode.parse(sample("opencode_error.jsonl"), "", 1)
 
     assert not outcome.content_rejected
+
+
+@pytest.mark.parametrize(
+    ("code", "name"),
+    [
+        (0xC0000005, "STATUS_ACCESS_VIOLATION"),
+        (0xC00000FD, "STATUS_STACK_OVERFLOW"),
+        (0xC0000135, "STATUS_DLL_NOT_FOUND"),
+        (0xC0000142, "STATUS_DLL_INIT_FAILED"),
+        (0xC000013A, "STATUS_CONTROL_C_EXIT"),
+        (0xC0000409, "STATUS_STACK_BUFFER_OVERRUN"),
+    ],
+)
+def test_settle_names_a_known_ntstatus_exit_code(code: int, name: str) -> None:
+    outcome = settle(exit_code=code, text="", service=[], stderr="")
+
+    assert outcome.error == f"exit code {code} (0x{code:08X} {name})"
+
+
+def test_settle_shows_an_unknown_ntstatus_exit_code_in_hex() -> None:
+    outcome = settle(exit_code=0xC0001234, text="", service=[], stderr="")
+
+    assert outcome.error == f"exit code {0xC0001234} (0xC0001234)"
+
+
+@pytest.mark.parametrize("code", [1, 2, 255, 0xBFFFFFFF, -9])
+def test_settle_keeps_an_ordinary_exit_code(code: int) -> None:
+    outcome = settle(exit_code=code, text="", service=[], stderr="")
+
+    assert outcome.error == f"exit code {code}"

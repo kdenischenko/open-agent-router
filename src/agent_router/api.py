@@ -100,6 +100,49 @@ class HostCheck:
         await self.app(scope, receive, send)
 
 
+SECURITY_HEADERS = (
+    (b"cache-control", b"no-store"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"no-referrer"),
+    (b"x-frame-options", b"DENY"),
+)
+
+
+class SecurityHeaders:
+    """Security headers on every HTTP response.
+
+    A static file actually served (2xx or 304 under `/static/`) keeps its normal caching
+    headers; every other response (dashboard pages, fragments, API responses, errors on any
+    path, including the 400/413 responses of HostCheck and BodyLimit) is marked as
+    non-cacheable. Pure ASGI for the same reason as HostCheck: it must wrap every response,
+    including the ones produced before the router is reached.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        static = scope["path"].startswith("/static/")
+
+        async def secured_send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                served_file = static and (
+                    200 <= message["status"] < 300 or message["status"] == 304
+                )
+                extra = SECURITY_HEADERS[1:] if served_file else SECURITY_HEADERS
+                headers = list(message.get("headers", []))
+                if not served_file:
+                    headers = [pair for pair in headers if pair[0].lower() != b"cache-control"]
+                headers.extend(extra)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, secured_send)
+
+
 # a JSON string spends at most twelve bytes on one character: a surrogate pair escaped as two \uXXXX
 JSON_BYTES_PER_CHAR = 12
 API_BODY_OVERHEAD_BYTES = 64 * 1024  # job fields other than the prompt, and JSON syntax
@@ -767,6 +810,7 @@ def create_app(
 
     app.add_middleware(BodyLimit, api_limit=api_body_limit(config))
     app.add_middleware(HostCheck)
+    app.add_middleware(SecurityHeaders)
 
     @app.exception_handler(ApiError)
     async def on_api_error(request: Request, exc: ApiError) -> JSONResponse:

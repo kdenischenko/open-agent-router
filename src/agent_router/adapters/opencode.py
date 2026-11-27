@@ -130,4 +130,7 @@ class OpenCodeAdapter:
         return not events or events[0].get("type") != "retry"
 
 
-HARNESS = HarnessSpec("opencode", OpenCodeAdapter(), ("opencode",), spend="counter")
+# `opencode run --archived` first shipped in 2.2.6
+HARNESS = HarnessSpec(
+    "opencode", OpenCodeAdapter(), ("opencode",), spend="counter", min_version="2.2.6"
+)

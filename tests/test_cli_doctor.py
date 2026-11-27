@@ -122,6 +122,36 @@ def test_doctor_table_lists_three_harnesses_with_details(
     assert "opencode-cli/glm-5.3-flash" in result.stdout
 
 
+def test_doctor_warns_about_opencode_older_than_archived_flag(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_harness_version", lambda exe: "opencode v2.2.5", raising=False)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert (
+        "Warning: harness opencode 2.2.5 is older than 2.2.6, which jobs need: "
+        "update it or set [backends.opencode] executable"
+    ) in result.stdout
+
+
+@pytest.mark.parametrize("version", ["opencode v2.2.6", "opencode 3.0.0", "dev build", None])
+def test_doctor_does_not_warn_about_supported_or_unknown_opencode(
+    runner: CliRunner,
+    gateway: FakeGateway,
+    fake_harnesses: None,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str | None,
+) -> None:
+    monkeypatch.setattr(cli, "_harness_version", lambda exe: version, raising=False)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "is older than" not in result.stdout
+
+
 def test_doctor_warns_about_empty_allowed_roots(
     runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
 ) -> None:
