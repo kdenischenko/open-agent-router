@@ -38,6 +38,8 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Job errors name a Windows NTSTATUS exit code, e.g. `exit code 3221226505 (0xC0000409
+  STATUS_STACK_BUFFER_OVERRUN)`; unknown codes in the NTSTATUS range show their hex value.
 - The README now says that a window far behind its pace makes its pool take every job it can
   serve until it catches up, and that `priority` and `weight` in the config change the order.
 - The test suite runs without the harness CLIs installed, and the Ubuntu CI job verifies this;
