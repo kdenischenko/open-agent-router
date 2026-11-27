@@ -39,8 +39,6 @@ from helpers import (
     write_config,
 )
 
-pytestmark = requires_git
-
 HARNESS = Path(__file__).parent / "stubs" / "fake_harness.py"
 PREFIX = "fake:"
 
@@ -247,6 +245,7 @@ JOB_FIELDS = {
 # --- submit and read ----------------------------------------------------------------------
 
 
+@requires_git
 def test_job_runs_to_success_and_has_fields(api, rig) -> None:
     job = run_job(api, rig, scenario="exit 0")
     assert set(job) == JOB_FIELDS
@@ -261,6 +260,7 @@ def test_job_runs_to_success_and_has_fields(api, rig) -> None:
     assert job["created_at"] and job["finished_at"]
 
 
+@requires_git
 def test_job_json_has_null_classifier_fields_by_default(api, rig) -> None:
     job_id = post(api, rig)
     job = api.get(f"/api/v1/jobs/{job_id}", headers=cl(rig)).json()
@@ -268,6 +268,7 @@ def test_job_json_has_null_classifier_fields_by_default(api, rig) -> None:
     assert job["classifier_confidence"] is None
 
 
+@requires_git
 def test_job_json_has_prompt_hash_and_chars(api, rig) -> None:
     body = rig.body()
     job_id = post(api, rig, **body)
@@ -276,12 +277,14 @@ def test_job_json_has_prompt_hash_and_chars(api, rig) -> None:
     assert job["prompt_sha256"] == hashlib.sha256(body["prompt"].encode("utf-8")).hexdigest()
 
 
+@requires_git
 def test_failed_job_reports_error(api, rig) -> None:
     job = run_job(api, rig, scenario="exit 3")
     assert job["status"] == "failed"
     assert job["error"] is not None and job["error"]["code"]
 
 
+@requires_git
 def test_job_json_has_no_prompt_and_no_tokens(api, rig) -> None:
     job_id = post(api, rig, scenario="echo")
     rig.drive(job_id)
@@ -326,11 +329,13 @@ def test_cwd_outside_roots_is_rejected(api, rig, tmp_path) -> None:
     assert response.json()["error"]["code"] == "cwd_not_allowed"
 
 
+@requires_git
 def test_known_caller_is_accepted(api, rig) -> None:
     job_id = post(api, rig, caller="agent-a")
     assert api.get(f"/api/v1/jobs/{job_id}", headers=cl(rig)).json()["caller"] == "agent-a"
 
 
+@requires_git
 def test_exclude_pools_is_accepted_and_stored(api, rig) -> None:
     job_id = post(api, rig, exclude_pools=["pool-a"])
 
@@ -359,6 +364,7 @@ def test_exclude_pools_rejects_unknown_pool(api, rig) -> None:
     }
 
 
+@requires_git
 def test_exclude_pools_leaving_no_route_uses_existing_error(api, rig) -> None:
     job = run_job(api, rig, exclude_pools=["pool-a"])
 
@@ -367,6 +373,7 @@ def test_exclude_pools_leaving_no_route_uses_existing_error(api, rig) -> None:
     assert "fake/main: excluded by request" in job["error"]["message"]
 
 
+@requires_git
 def test_exclude_pools_rejects_an_ineligible_pinned_route(api, rig) -> None:
     job = run_job(api, rig, route="fake/main", exclude_pools=["pool-a"])
 
@@ -396,6 +403,7 @@ def test_advice_rejects_unknown_excluded_pool(api, rig) -> None:
     }
 
 
+@requires_git
 def test_queue_full_is_429(make_rig) -> None:
     rig = make_rig(max_queued=1)
     with TestClient(rig.app, base_url=BASE_URL) as api:
@@ -438,6 +446,7 @@ def test_unknown_job_is_404(api, rig) -> None:
         assert api.post(path, headers=adm(rig)).status_code == 404
 
 
+@requires_git
 def test_cancel_queued_then_finished_is_409(api, rig) -> None:
     job_id = post(api, rig)
     first = api.post(f"/api/v1/jobs/{job_id}/cancel", headers=cl(rig))
@@ -447,6 +456,7 @@ def test_cancel_queued_then_finished_is_409(api, rig) -> None:
     assert again.json()["error"]["code"] == "wrong_state"
 
 
+@requires_git
 def test_cancel_reports_whether_a_cancel_was_requested(api, rig) -> None:
     queued = post(api, rig)
     running = post(api, rig)
@@ -464,6 +474,7 @@ def test_cancel_reports_whether_a_cancel_was_requested(api, rig) -> None:
     assert fetched["cancel_requested"] is True
 
 
+@requires_git
 def test_list_filters_by_status_and_checks_params(api, rig) -> None:
     done = run_job(api, rig)["id"]
     queued = post(api, rig)
@@ -485,12 +496,14 @@ def rate(api: TestClient, rig: Rig, job_id: str, **body) -> Any:
     return api.post(f"/api/v1/jobs/{job_id}/rating", json=body, headers=cl(rig))
 
 
+@requires_git
 def test_job_json_has_null_rating_by_default(api, rig) -> None:
     job_id = post(api, rig)
     job = api.get(f"/api/v1/jobs/{job_id}", headers=cl(rig)).json()
     assert job["rating"] is None
 
 
+@requires_git
 def test_rate_returns_job_with_rating(api, rig) -> None:
     job_id = run_job(api, rig)["id"]
     secret = "заметка про C:/Users/<user>/секрет"  # non-ascii on purpose
@@ -511,6 +524,7 @@ def test_rate_returns_job_with_rating(api, rig) -> None:
     assert again["rating"] == rating
 
 
+@requires_git
 def test_rate_twice_last_wins_including_empty_should_tier(api, rig) -> None:
     job_id = run_job(api, rig)["id"]
     assert rate(api, rig, job_id, value="good", should_tier="strong").status_code == 200
@@ -533,6 +547,7 @@ def test_rate_unknown_job_is_404(api, rig) -> None:
     assert response.json()["error"]["code"] == "job_not_found"
 
 
+@requires_git
 def test_rate_running_job_is_409(api, rig) -> None:
     job_id = post(api, rig)
     job = rig.jobs.get(job_id)
@@ -546,6 +561,7 @@ def test_rate_running_job_is_409(api, rig) -> None:
     assert response.json()["error"]["code"] == "job_not_finished"
 
 
+@requires_git
 def test_rate_bad_value_is_422(api, rig) -> None:
     job_id = run_job(api, rig)["id"]
 
@@ -555,6 +571,7 @@ def test_rate_bad_value_is_422(api, rig) -> None:
     assert response.json()["error"]["code"] == "bad_rating"
 
 
+@requires_git
 def test_rate_note_not_in_db_and_event_has_no_note(api, rig) -> None:
     seen: list[tuple[str, dict[str, Any]]] = []
     rig.bus.subscribe("test-rating", lambda event: seen.append((event.type, dict(event.data))))
@@ -588,6 +605,7 @@ def awaiting(api: TestClient, rig: Rig) -> str:
     return job_id
 
 
+@requires_git
 def test_approve_needs_admin_and_requeues(make_rig) -> None:
     rig = make_rig(confirm=True)
     with TestClient(rig.app, base_url=BASE_URL) as api:
@@ -602,6 +620,7 @@ def test_approve_needs_admin_and_requeues(make_rig) -> None:
         assert again.status_code == 409
 
 
+@requires_git
 def test_deny_needs_admin(make_rig) -> None:
     rig = make_rig(confirm=True)
     with TestClient(rig.app, base_url=BASE_URL) as api:
@@ -615,6 +634,7 @@ def test_deny_needs_admin(make_rig) -> None:
         assert again.json()["error"]["code"] == "wrong_state"
 
 
+@requires_git
 def test_approve_and_deny_of_queued_job_are_409(api, rig) -> None:
     job_id = post(api, rig)
     for action in ("approve", "deny"):
@@ -623,6 +643,7 @@ def test_approve_and_deny_of_queued_job_are_409(api, rig) -> None:
         assert response.json()["error"]["code"] == "wrong_state"
 
 
+@requires_git
 def test_approve_after_deadline_is_409_and_declines(make_rig, clock) -> None:
     rig = make_rig(confirm=True)
     with TestClient(rig.app, base_url=BASE_URL) as api:
@@ -674,6 +695,7 @@ def test_unblock_reports_window_that_still_blocks_the_pool(api, rig, clock) -> N
     assert "pool-a" not in rig.jobs.active_blocks(clock.now())
 
 
+@requires_git
 def test_snapshot_counts_gateway_jobs(api, rig) -> None:
     run_job(api, rig)
     body = api.get("/api/v1/snapshot", headers=cl(rig)).json()
@@ -726,6 +748,7 @@ def test_build_dispatcher_wires_classifier_executor(make_rig, monkeypatch, kind,
 # --- write jobs in git --------------------------------------------------------------------
 
 
+@requires_git
 def test_write_job_reports_changed_files(api, rig) -> None:
     repo = rig.repo()
     new_file = "новый.txt"  # non-ascii on purpose
@@ -735,12 +758,14 @@ def test_write_job_reports_changed_files(api, rig) -> None:
     assert job["violations"] == []
 
 
+@requires_git
 def test_commit_by_harness_is_a_violation(api, rig) -> None:
     repo = rig.repo()
     job = run_job(api, rig, scenario="commit", cwd=repo, mode="write")
     assert "head_moved" in job["violations"]
 
 
+@requires_git
 def test_write_outside_git_is_rejected(api, rig) -> None:
     response = api.post("/api/v1/jobs", json=rig.body(mode="write"), headers=cl(rig))
     assert response.status_code == 422
@@ -748,6 +773,7 @@ def test_write_outside_git_is_rejected(api, rig) -> None:
 
 
 @pytest.mark.parametrize("mode", ["read", "write"])
+@requires_git
 def test_git_failure_is_rejected_with_code(api, rig, monkeypatch, mode) -> None:
     repo = rig.repo()
 
@@ -780,6 +806,7 @@ def test_without_dispatcher_tasks_are_503(client, tokens) -> None:
 # --- wait -----------------------------------------------------------------------------------
 
 
+@requires_git
 def test_wait_with_small_timeout_returns_current_state(api, rig) -> None:
     job_id = post(api, rig)
     started = time.monotonic()
@@ -789,6 +816,7 @@ def test_wait_with_small_timeout_returns_current_state(api, rig) -> None:
     assert 0.25 <= time.monotonic() - started < 5
 
 
+@requires_git
 def test_wait_timeout_is_capped(api, rig, monkeypatch) -> None:
     monkeypatch.setattr(api_module, "WAIT_MAX_S", 0.3)
     job_id = post(api, rig)
@@ -799,6 +827,7 @@ def test_wait_timeout_is_capped(api, rig, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("timeout", ["-1", "nan", "x"])
+@requires_git
 def test_wait_rejects_bad_timeout(api, rig, timeout) -> None:
     job_id = post(api, rig)
     response = api.get(f"/api/v1/jobs/{job_id}/wait?timeout={timeout}", headers=cl(rig))
@@ -806,6 +835,7 @@ def test_wait_rejects_bad_timeout(api, rig, timeout) -> None:
     assert response.json()["error"]["code"] == "bad_request"
 
 
+@requires_git
 def test_wait_of_finished_job_returns_at_once(api, rig) -> None:
     job_id = run_job(api, rig)["id"]
     started = time.monotonic()
@@ -814,6 +844,7 @@ def test_wait_of_finished_job_returns_at_once(api, rig) -> None:
     assert time.monotonic() - started < 5
 
 
+@requires_git
 def test_wait_returns_on_awaiting_approval(make_rig, monkeypatch) -> None:
     monkeypatch.setattr(api_module, "WAIT_MAX_S", 10.0)
     rig = make_rig(confirm=True)
@@ -833,6 +864,7 @@ async def _in_app(rig: Rig, body) -> Any:
             return await body(client)
 
 
+@requires_git
 def test_wait_wakes_on_event_not_on_safety_poll(rig, monkeypatch) -> None:
     monkeypatch.setattr(api_module, "WAIT_SAFETY_S", 30.0)
     job_id = rig.dispatcher.submit(rig_request(rig)).id
@@ -853,6 +885,7 @@ def test_wait_wakes_on_event_not_on_safety_poll(rig, monkeypatch) -> None:
     assert elapsed < 5  # without notification the response would take 30 s
 
 
+@requires_git
 def test_wait_does_not_miss_change_during_read(rig, monkeypatch) -> None:
     """The job changes while wait is reading it from the store: the notification is not lost."""
     monkeypatch.setattr(api_module, "WAIT_SAFETY_S", 30.0)
@@ -880,6 +913,7 @@ def test_wait_does_not_miss_change_during_read(rig, monkeypatch) -> None:
     assert elapsed < 5
 
 
+@requires_git
 def test_wait_falls_back_to_safety_poll(make_rig, monkeypatch) -> None:
     """If notifications never arrive, the safety interval re-reads the job."""
     monkeypatch.setattr(AsyncWaiters, "notify", lambda self, event: None)
@@ -902,6 +936,7 @@ def test_wait_falls_back_to_safety_poll(make_rig, monkeypatch) -> None:
     assert time.monotonic() - started < 5
 
 
+@requires_git
 def test_client_disconnect_removes_waiter(rig) -> None:
     job_id = rig.dispatcher.submit(rig_request(rig)).id
     waiters = rig.app.state.waiters
@@ -1082,6 +1117,7 @@ def live_post(gateway: LiveGateway, scenario: str) -> str:
     return response.json()["job_id"]
 
 
+@requires_git
 def test_fifty_parallel_waits_on_live_server(live_gateway) -> None:
     rig = live_gateway.rig
     job_id = live_post(live_gateway, "sleep 1")
@@ -1111,6 +1147,7 @@ def test_fifty_parallel_waits_on_live_server(live_gateway) -> None:
     assert rig.app.state.waiters.watching() == 0
 
 
+@requires_git
 def test_stop_with_running_job_finishes_attempt(live_gateway, tmp_path, home) -> None:
     rig = live_gateway.rig
     job_id = live_post(live_gateway, "sleep 60")
@@ -1143,6 +1180,7 @@ def test_stop_with_running_job_finishes_attempt(live_gateway, tmp_path, home) ->
 
 
 @pytest.mark.bench
+@requires_git
 def test_bench_jobs_api(live_gateway) -> None:
     """Medians: POST to job.running (outside and inside git); attempt.exited to wait
     answer; git write.
@@ -1284,6 +1322,7 @@ def test_serve_closes_store_when_jobstore_fails(home, monkeypatch: pytest.Monkey
     assert closed == [True]
 
 
+@requires_git
 def test_wait_releases_waiter_when_client_drops_connection(live_gateway) -> None:
     """A real TCP disconnect: uvicorn does not cancel the handler,
     so the wait must go away on its own.
@@ -1334,6 +1373,7 @@ def test_failed_startup_still_releases_resources(make_rig, monkeypatch) -> None:
     assert not alive
 
 
+@requires_git
 def test_app_stop_is_bounded_with_stuck_attempt(make_rig) -> None:
     rig = make_rig()
     started = threading.Event()

@@ -24,8 +24,6 @@ from agent_router.store import CounterSample, Observation
 from helpers import full_config_text, requires_git, write_config
 from test_dispatcher import ROUTES, ImmediateExecutor, Rig, ScriptAdapter, Step
 
-pytestmark = requires_git
-
 NOW = datetime(2026, 11, 12, 12, tzinfo=UTC)
 TOL = timedelta(minutes=15)
 US = timedelta(microseconds=1)
@@ -186,6 +184,7 @@ def orphan_job(rig: SpendRig, route: str = "s/main") -> Job:
 # --- journal rows from attempts -------------------------------------------------------
 
 
+@requires_git
 def test_journal_route_writes_one_spend_row(spend_rig) -> None:
     rig = spend_rig(MeteredAdapter(cost=0.12))
     rig.calibrate(0.2, rig.clock.now() - timedelta(hours=1))
@@ -219,6 +218,7 @@ def test_journal_route_writes_one_spend_row(spend_rig) -> None:
     assert rig.used() == pytest.approx(0.2 + 0.012)  # dispatcher adds journal rows to the window
 
 
+@requires_git
 def test_counter_route_writes_no_spend(spend_rig) -> None:
     rig = spend_rig(MeteredAdapter(cost=0.12), backend="opencode", spend="counter", counter=True)
     job = rig.submit(rig.plain())
@@ -240,6 +240,7 @@ def test_counter_route_writes_no_spend(spend_rig) -> None:
     ],
     ids=["ok", "limit", "error", "timeout", "cancelled"],
 )
+@requires_git
 def test_every_outcome_writes_spend(spend_rig, step: Step, outcome: str) -> None:
     rig = spend_rig()
     rig.runner.add(step)
@@ -251,6 +252,7 @@ def test_every_outcome_writes_spend(spend_rig, step: Step, outcome: str) -> None
     assert [(row["ref_id"], row["ref_n"]) for row in rows] == [(job.id, 1)]
 
 
+@requires_git
 def test_recover_twice_no_duplicate(spend_rig) -> None:
     rig = spend_rig()
     job = orphan_job(rig)
@@ -261,6 +263,7 @@ def test_recover_twice_no_duplicate(spend_rig) -> None:
     assert len(rig.bus.data("spend.recorded")) == 1
 
 
+@requires_git
 def test_recover_after_route_removed(spend_rig) -> None:
     rig = spend_rig()
     job = orphan_job(rig, route="gone/route")  # route absent from config: source from the record
@@ -270,6 +273,7 @@ def test_recover_after_route_removed(spend_rig) -> None:
     assert row["cost_usd"] is None
 
 
+@requires_git
 def test_final_write_retry_after_failure(spend_rig, monkeypatch) -> None:
     rig = spend_rig(MeteredAdapter(cost=0.5))
     job = rig.submit(rig.plain())
@@ -290,6 +294,7 @@ def test_final_write_retry_after_failure(spend_rig, monkeypatch) -> None:
     assert [(row["ref_id"], row["ref_n"]) for row in rig.rows()] == [(job.id, 1)]
 
 
+@requires_git
 def test_final_write_retry_keeps_measured_spend(spend_rig, monkeypatch) -> None:
     rig = spend_rig(MeteredAdapter(cost=0.5, tokens=(10, 5)))
     job = rig.submit(rig.plain())
@@ -565,6 +570,7 @@ def test_via_gateway_fields(home, store, jobstore, counter: bool, priced: bool) 
     assert all(window["estimated_prices"] is False for window in kimi["windows"])
 
 
+@requires_git
 def test_opencode_job_counted_once(spend_rig) -> None:
     rig = spend_rig(MeteredAdapter(cost=1.5), backend="opencode", spend="counter", counter=True)
     base = rig.clock.now() - timedelta(hours=1)

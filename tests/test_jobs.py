@@ -25,8 +25,6 @@ from agent_router.jobs import (
 )
 from helpers import make_git_repo, requires_git
 
-pytestmark = requires_git
-
 ALLOWED = {
     ("queued", "running"),
     ("queued", "awaiting_approval"),
@@ -107,6 +105,7 @@ def test_attempt_result_defaults_and_immutability() -> None:
 # --- directory --------------------------------------------------------------------
 
 
+@requires_git
 def test_cwd_inside_allowed_root_is_accepted(config: Config, root: Path) -> None:
     work = root / "project one"
     work.mkdir()
@@ -152,6 +151,7 @@ def test_empty_allowed_roots_rejects_everything(config: Config, root: Path) -> N
     assert rejected(JobRequest("job", root), with_roots(config, [])) == "cwd_not_allowed"
 
 
+@requires_git
 def test_escape_through_dotdot(config: Config, root: Path, tmp_path: Path) -> None:
     inner = root / "inside"
     inner.mkdir()
@@ -190,6 +190,7 @@ def test_escape_through_link(config: Config, root: Path, tmp_path: Path) -> None
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="path case is only ignored on Windows")
+@requires_git
 def test_windows_path_in_other_case_is_accepted(config: Config, tmp_path: Path) -> None:
     root = tmp_path / "TaskRoot"
     work = root / "Project"
@@ -237,6 +238,7 @@ def test_denied_root_in_other_case_is_denied(
     assert rejected(JobRequest("job", swapped), cfg) == "cwd_not_allowed"
 
 
+@requires_git
 def test_allowed_root_in_other_case_is_accepted(
     config: Config, root: Path, case_insensitive: None
 ) -> None:
@@ -256,6 +258,7 @@ def test_denied_root_matched_by_volume_identity(
     assert rejected(JobRequest("job", inner.parent), cfg) == "cwd_not_allowed"
 
 
+@requires_git
 def test_allowed_root_matched_by_volume_identity(
     config: Config, root: Path, folding_volume: None
 ) -> None:
@@ -274,6 +277,7 @@ def test_sibling_is_outside_by_volume_identity(
     assert rejected(JobRequest("job", sibling), cfg) == "cwd_not_allowed"
 
 
+@requires_git
 def test_case_sensitive_volume_keeps_other_case_apart(config: Config, root: Path) -> None:
     secret = root / "secret"
     secret.mkdir()
@@ -326,11 +330,13 @@ def test_double_slash_path_is_rejected(config: Config, root: Path) -> None:
 # --- git --------------------------------------------------------------------------
 
 
+@requires_git
 def test_write_outside_git(config: Config, root: Path) -> None:
     cfg = with_roots(config, [root])
     assert rejected(JobRequest("job", root, mode="write"), cfg) == "not_a_git_repo"
 
 
+@requires_git
 def test_write_inside_git_returns_repo_root(config: Config, root: Path) -> None:
     repo = make_git_repo(root / "repository")
     sub = repo / "package"
@@ -344,6 +350,7 @@ def test_write_inside_git_returns_repo_root(config: Config, root: Path) -> None:
 
 
 @pytest.mark.parametrize("mode", ["read", "write"])
+@requires_git
 def test_git_failure_rejects_request(config: Config, root: Path, monkeypatch, mode: str) -> None:
     repo = make_git_repo(root / "repository")
     cfg = with_roots(config, [root])
@@ -369,6 +376,7 @@ def test_empty_prompt(config: Config, root: Path, prompt: str) -> None:
     assert rejected(JobRequest(prompt, root), with_roots(config, [root])) == "bad_prompt"
 
 
+@requires_git
 def test_too_long_prompt(config: Config, root: Path) -> None:
     cfg = with_roots(config, [root])
     limit = cfg.tasks.max_prompt_chars
@@ -376,6 +384,7 @@ def test_too_long_prompt(config: Config, root: Path) -> None:
     assert rejected(JobRequest("a" * (limit + 1), root), cfg) == "bad_prompt"
 
 
+@requires_git
 def test_unknown_and_disabled_route(config: Config, root: Path) -> None:
     cfg = with_roots(config, [root])
     assert rejected(JobRequest("job", root, route="no-such-route"), cfg) == "bad_route"
@@ -387,6 +396,7 @@ def test_unknown_and_disabled_route(config: Config, root: Path) -> None:
     assert rejected(JobRequest("job", root, route=first.id), cfg_off) == "bad_route"
 
 
+@requires_git
 def test_caller(config: Config, root: Path) -> None:
     cfg = with_roots(config, [root])
     assert rejected(JobRequest("job", root, caller="claude-cod"), cfg) == "bad_caller"
@@ -395,6 +405,7 @@ def test_caller(config: Config, root: Path) -> None:
     assert validate_request(JobRequest("job", root), cfg) is None  # anonymous request
 
 
+@requires_git
 def test_tier_kind_mode(config: Config, root: Path) -> None:
     cfg = with_roots(config, [root])
     req = JobRequest("job", root, tier="huge")  # type: ignore[arg-type]
@@ -414,6 +425,7 @@ def test_bad_timeout(config: Config, root: Path, timeout: object) -> None:
 
 
 @pytest.mark.parametrize("timeout", [30, 7200, 600])
+@requires_git
 def test_good_timeout(config: Config, root: Path, timeout: int) -> None:
     cfg = with_roots(config, [root])
     assert validate_request(JobRequest("job", root, timeout_s=timeout), cfg) is None
