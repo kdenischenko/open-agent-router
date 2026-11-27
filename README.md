@@ -272,6 +272,7 @@ option.
 | `backup [PATH]` | Copy the gateway database consistently while it is being written; without a path writes `<home>/backups/agent-router-<UTC timestamp>.sqlite`, `--keep N` keeps the newest N timestamp-named backups in the target directory |
 | `classifier report` | Show classifier votes, errors and accuracy against ratings; `--json` adds the tier matrix and latency |
 | `classifier eval --models ID,...` | Replay past prompts through offline classifier models |
+| `report routes` | Scorecard with one row per route, tier and mode: job and attempt outcomes, rating shares, duration/token/cost medians (estimates marked `~`); rows with at least 5 jobs are ranked by good share, the rest are listed as unranked; `--since DATE` limits the window, `--json` prints the rows |
 
 Job history is kept forever by default. To bound it, set `retention_days = 30` in `[storage]`,
 then run `agent-router purge`. Age is measured from the job's finish time. Queued, running and

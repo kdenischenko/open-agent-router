@@ -411,6 +411,85 @@ def classifier_eval(
     typer.echo(f"votes recorded: {count}")
 
 
+report_app = typer.Typer(help="Summarize the job history")
+app.add_typer(report_app, name="report")
+
+
+def _report_share(count: int, total: int) -> str:
+    return f"{count}/{total} ({count / total:.0%})" if total else "-"
+
+
+def _report_row_line(row: dict[str, Any], min_jobs: int) -> str:
+    outcomes = row["outcomes"]
+    attempts = row["attempts"]
+    ratings = row["ratings"]
+    rated = row["rated"]
+    jobs = row["jobs"]
+    duration = row["duration_s"]
+    duration_text = (
+        "-" if duration["median"] is None else f"{duration['median']:.1f}s/{duration['p90']:.1f}s"
+    )
+    tokens = row["tokens_median"]
+    cost = row["cost_median"]
+    cost_text = "-" if cost is None else f"${cost:.2f}"
+    if cost is not None and row["cost_estimated"]:
+        cost_text = f"~{cost_text}"
+    markers = ""
+    if not row["ranked"]:
+        markers += f" (fewer than {min_jobs} jobs)"
+    if not row["in_config"]:
+        markers += " (not in config)"
+    quality = "-" if row["quality"] is None else row["quality"]
+    attempt_text = (
+        f"attempts limit {attempts['limit']}/error {attempts['error']}"
+        f"/timeout {attempts['timeout']}"
+    )
+    return (
+        f"{row['route']} {row['tier']} {row['mode']}: jobs {jobs}, "
+        f"completed {outcomes['completed']}, partial {outcomes['partial']}, "
+        f"failed {outcomes['failed']}, cancelled {outcomes['cancelled']}, "
+        f"{attempt_text}, "
+        f"duration median/p90 {duration_text}, tokens median "
+        f"{'-' if tokens is None else f'{tokens:.0f}'}, cost {cost_text}, "
+        f"quality {quality}, rated {_report_share(rated, jobs)}, "
+        f"good {_report_share(ratings['good'], rated)}, "
+        f"partial {_report_share(ratings['partial'], rated)}, "
+        f"bad {_report_share(ratings['bad'], rated)}{markers}"
+    )
+
+
+@report_app.command("routes")
+def report_routes(
+    since: str | None = typer.Option(None, "--since", help="Start time in ISO 8601 format"),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON instead of text"),
+) -> None:
+    """Show a scorecard of routes from finished jobs and their ratings."""
+    from agent_router import route_report
+
+    home = home_dir()
+    config = _config(home)
+    if config.storage.backend != "sqlite":
+        typer.echo("report routes supports only the sqlite store")
+        raise typer.Exit(1)
+    store = open_store(config.storage, home)
+    try:
+        jobs = open_jobstore(config.storage, home, store)
+        moment = _export_moment(since) if since else _EPOCH
+        samples_jobs, samples_attempts = jobs.route_samples_since(moment)
+        quality = {route.id: route.quality for route in config.routes}
+        result = route_report.build(samples_jobs, samples_attempts, quality)
+    finally:
+        store.close()
+    if as_json:
+        typer.echo(json.dumps(result, ensure_ascii=False))
+        return
+    if not result["rows"]:
+        typer.echo("no finished jobs")
+        return
+    for row in result["rows"]:
+        typer.echo(_report_row_line(row, result["min_jobs"]))
+
+
 def _doctor_classifier(config: Config) -> None:
     """Local Ollama memory and budget; other classifier endpoints report their key state."""
     from agent_router import classifier

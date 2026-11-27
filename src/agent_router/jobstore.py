@@ -27,6 +27,7 @@ from agent_router.jobs import (
     VoteRow,
 )
 from agent_router.policy import PoolBlock
+from agent_router.route_report import AttemptSample, JobSample
 from agent_router.spend import SpendBucket, SpendEntry, SpendTotal
 from agent_router.store import STORAGE_GROUP, SqliteStore, Store, from_us, plugin_call, to_us
 
@@ -113,6 +114,12 @@ class JobStore(Protocol):
     def votes_since(
         self, since: datetime, offline: bool | None = None
     ) -> builtins.list[VoteRow]: ...
+
+    def route_samples_since(
+        self, since: datetime
+    ) -> tuple[builtins.list[JobSample], builtins.list[AttemptSample]]:
+        """Finished jobs and attempts since a moment, for the route scorecard."""
+        ...
 
     def prompts_since(self, since: datetime) -> builtins.list[tuple[str, str]]: ...
 
@@ -992,6 +999,62 @@ class SqliteJobStore:
             (to_us(since),),
         )
         return [(job_id, json.loads(raw)["request"]["prompt"]) for job_id, raw in rows.fetchall()]
+
+    def route_samples_since(
+        self, since: datetime
+    ) -> tuple[builtins.list[JobSample], builtins.list[AttemptSample]]:
+        # tokens stay None unless at least one attempt reports them; cost stays None
+        # unless at least one attempt has a figure, and estimated marks estimated ones
+        moment = to_us(since)
+        rows = (
+            self._store.connection()
+            .execute(
+                "SELECT j.data, j.status,"
+                " (SELECT r.value FROM ratings r WHERE r.job_id = j.id"
+                "  ORDER BY r.id DESC LIMIT 1),"
+                " SUM(a.duration_s),"
+                " CASE WHEN COUNT(a.tokens_in) + COUNT(a.tokens_out) = 0 THEN NULL"
+                " ELSE SUM(COALESCE(a.tokens_in, 0) + COALESCE(a.tokens_out, 0)) END,"
+                " SUM(a.cost_usd), COALESCE(MAX(a.cost_estimated), 0)"
+                " FROM jobs j LEFT JOIN attempts a ON a.job_id = j.id"
+                " WHERE j.finished_at IS NOT NULL AND j.finished_at >= ?"
+                " GROUP BY j.id ORDER BY j.created_at, j.seq",
+                (moment,),
+            )
+            .fetchall()
+        )
+        jobs: list[JobSample] = []
+        for raw, status, rating, duration_s, tokens, cost_usd, estimated in rows:
+            data = json.loads(raw)
+            jobs.append(
+                JobSample(
+                    route=data["route"],
+                    tier=data["tier"],
+                    mode=data["request"]["mode"],
+                    status=status,
+                    rating=rating,
+                    duration_s=duration_s,
+                    tokens=None if tokens is None else int(tokens),
+                    cost_usd=cost_usd,
+                    cost_estimated=bool(estimated),
+                )
+            )
+        attempt_rows = (
+            self._store.connection()
+            .execute(
+                "SELECT a.route, a.outcome,"
+                " json_extract(j.data, '$.tier'), json_extract(j.data, '$.request.mode')"
+                " FROM attempts a JOIN jobs j ON j.id = a.job_id"
+                " WHERE a.finished_at IS NOT NULL AND a.finished_at >= ? ORDER BY a.id",
+                (moment,),
+            )
+            .fetchall()
+        )
+        attempts = [
+            AttemptSample(route=route, tier=tier, mode=mode, outcome=outcome)
+            for route, outcome, tier, mode in attempt_rows
+        ]
+        return jobs, attempts
 
     def usage_since(self, pool: str, since: datetime | None) -> GatewayUsage:
         floor = -(2**62) if since is None else to_us(since)
