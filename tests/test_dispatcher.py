@@ -2936,6 +2936,22 @@ def test_tick_applies_other_results_when_one_write_fails(make_rig) -> None:
     assert len(rig.attempts(first)) == 1
 
 
+def test_cancel_clears_guard_failures(make_rig, monkeypatch) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.plain())
+
+    def fail_consider(_job) -> None:
+        raise RuntimeError("consider failed")
+
+    monkeypatch.setattr(rig.dispatcher, "_consider", fail_consider)
+    rig.tick()
+    assert f"consider:{job.id}" in rig.dispatcher._guard_failures
+
+    rig.dispatcher.cancel(job.id)
+
+    assert not {key for key in rig.dispatcher._guard_failures if key.endswith(f":{job.id}")}
+
+
 @requires_git
 def test_tick_starts_next_job_when_consider_raises(make_rig, monkeypatch) -> None:
     rig = make_rig()

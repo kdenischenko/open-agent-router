@@ -279,6 +279,8 @@ class Dispatcher(RecoveryMixin):
             self.jobs.start_attempt(job, attempt)
         if status in TERMINAL:
             self._checked_cwds.pop(job.id, None)
+            for action in ("consider", "approval", "collect"):
+                self._guard_failures.discard(f"{action}:{job.id}")
         self._announce(job, before)
 
     def _announce(self, job: Job, before: Status | None) -> None:
@@ -1086,6 +1088,8 @@ class Dispatcher(RecoveryMixin):
         with self._active_lock:
             self._active.pop(active.job_id, None)
             self._live.pop(active.job_id, None)
+        for action in ("consider", "approval", "collect"):
+            self._guard_failures.discard(f"{action}:{active.job_id}")
         if active.repo is not None and self._writers.get(active.repo) == active.job_id:
             del self._writers[active.repo]
 
