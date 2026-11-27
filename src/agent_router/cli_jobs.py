@@ -197,7 +197,7 @@ def run(
         "prompt": _prompt(text, prompt_file),
         "cwd": str(cwd.resolve()),
         "mode": mode,
-        "request_id": request_id or uuid.uuid4().hex,
+        "request_id": uuid.uuid4().hex if request_id is None else request_id,
     }
     for name, value in (
         ("tier", tier),

@@ -163,7 +163,7 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         if review_of is not None:
             body["kind"] = "review"
             body["review_of"] = review_of
-        body["request_id"] = request_id or uuid.uuid4().hex
+        body["request_id"] = uuid.uuid4().hex if request_id is None else request_id
         return run(lambda: submit(body))
 
     def compact_job(job: dict[str, Any]) -> dict[str, Any]:

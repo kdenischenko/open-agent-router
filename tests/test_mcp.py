@@ -638,3 +638,11 @@ def test_submit_job_retries_a_lost_submit_with_the_same_request_id(
     assert len(gateway.calls) == 3
     assert len({body["request_id"] for _, _, body in gateway.calls}) == 1
     assert len(pauses) == 2
+
+
+def test_submit_job_forwards_an_empty_request_id() -> None:
+    gateway = FakeGateway()
+
+    _call(gateway, "submit_job", {"prompt": "p", "cwd": "C:/work/repo", "request_id": ""})
+
+    assert gateway.calls[0][2]["request_id"] == ""

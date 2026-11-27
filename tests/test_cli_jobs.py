@@ -1050,3 +1050,12 @@ def test_run_does_not_retry_a_rejected_submit(
 
     assert result.exit_code == 6
     assert len(gateway.calls) == 1
+
+
+def test_run_forwards_an_empty_request_id_for_the_gateway_to_reject(
+    runner: CliRunner, gateway: FakeGateway
+) -> None:
+    result = runner.invoke(cli.app, ["run", "--no-wait", "--request-id", "", _RUN_PROMPT])
+
+    assert result.exit_code == 0
+    assert gateway.calls[0][2]["request_id"] == ""
