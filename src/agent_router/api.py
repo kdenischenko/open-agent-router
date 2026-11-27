@@ -391,6 +391,8 @@ def job_json(job: Job, attempts: Sequence[Attempt], rating: Rating | None = None
                 "tokens_in": a.tokens_in,
                 "tokens_out": a.tokens_out,
                 "cost_usd": a.cost_usd,
+                "patch": a.patch,
+                "patch_truncated": a.patch_truncated,
             }
             for a in attempts
         ],

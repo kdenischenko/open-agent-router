@@ -1,4 +1,4 @@
-"""Job store: the JobStore protocol and a SQLite implementation (schema version 8)."""
+"""Job store: the JobStore protocol and a SQLite implementation (schema version 11)."""
 
 from __future__ import annotations
 
@@ -304,6 +304,11 @@ _SCHEMA_V10 = (
     "CREATE INDEX classifier_votes_job ON classifier_votes (job_id)",
 )
 
+_SCHEMA_V11 = (
+    "ALTER TABLE attempts ADD COLUMN patch TEXT",
+    "ALTER TABLE attempts ADD COLUMN patch_truncated INTEGER",
+)
+
 
 def migrate_jobs_schema(store: Store) -> None:
     """Migrates the SQLite schema to the latest version; called by both the job store and the
@@ -317,12 +322,13 @@ def migrate_jobs_schema(store: Store) -> None:
     store.migrate(8, _SCHEMA_V8)
     store.migrate(9, _SCHEMA_V9)
     store.migrate(10, _SCHEMA_V10)
+    store.migrate(11, _SCHEMA_V11)
 
 
 _ATTEMPT_COLUMNS = (
     "job_id, n, route, pool, started_at, finished_at, outcome, duration_s, tokens_in,"
     " tokens_out, cost_usd, head_before, tree_before, log_tail, pid, exe_name, proc_started,"
-    " result, spend_source, decision, cost_estimated"
+    " result, spend_source, decision, cost_estimated, patch, patch_truncated"
 )
 
 _SPEND_COLUMNS = (
@@ -522,6 +528,8 @@ def _attempt_values(a: Attempt) -> tuple[Any, ...]:
         a.spend_source,
         _decision_data(a.decision),
         int(a.cost_estimated),
+        a.patch,
+        int(a.patch_truncated),
     )
 
 
@@ -554,6 +562,8 @@ def _attempt(row: Sequence[Any]) -> Attempt:
         spend_source=row[18],
         decision=_decision(row[19]),
         cost_estimated=bool(row[20]),
+        patch=row[21],
+        patch_truncated=bool(row[22]),
     )
 
 
@@ -798,7 +808,7 @@ class SqliteJobStore:
     # --- attempts --------------------------------------------------------------
 
     def add_attempt(self, a: Attempt) -> None:
-        marks = ", ".join("?" * 21)
+        marks = ", ".join("?" * 23)
         with self._store.transaction() as conn:
             conn.execute(
                 f"INSERT INTO attempts ({_ATTEMPT_COLUMNS}) VALUES ({marks})", _attempt_values(a)
@@ -806,7 +816,7 @@ class SqliteJobStore:
 
     def start_attempt(self, job: Job, a: Attempt) -> None:
         """The attempt row and the job row are one transaction."""
-        marks = ", ".join("?" * 21)
+        marks = ", ".join("?" * 23)
         with self._store.transaction() as conn:
             done = conn.execute(
                 "UPDATE jobs SET status = ?, finished_at = ?, data = ? WHERE id = ?",
@@ -836,7 +846,7 @@ class SqliteJobStore:
                 " outcome = ?, duration_s = ?, tokens_in = ?, tokens_out = ?, cost_usd = ?,"
                 " head_before = ?, tree_before = ?, log_tail = ?, pid = ?, exe_name = ?,"
                 " proc_started = ?, result = ?, spend_source = ?, decision = ?,"
-                " cost_estimated = ?"
+                " cost_estimated = ?, patch = ?, patch_truncated = ?"
                 " WHERE job_id = ? AND n = ?",
                 (*values[2:], a.job_id, a.n),
             )

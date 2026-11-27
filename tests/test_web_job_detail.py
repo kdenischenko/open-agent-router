@@ -280,3 +280,75 @@ def test_refresh_keeps_closed_disclosures_closed(client) -> None:
 
     # prompt and final text render open: a refresh restores what the visitor chose, both ways
     assert "item.open = open[index]" in refresh
+
+
+# --- attempt diffs --------------------------------------------------------------------------
+
+
+SAMPLE_PATCH = (
+    "diff --git a/src/файл.py b/src/файл.py\n"  # non-ascii on purpose
+    "index 9daeafb..2a6de3f 100644\n"
+    "--- a/src/файл.py\n"  # non-ascii on purpose
+    "+++ b/src/файл.py\n"  # non-ascii on purpose
+    "@@ -1,2 +1,2 @@\n"
+    "-старая строка\n"  # non-ascii on purpose
+    "+новая строка\n"  # non-ascii on purpose
+)
+
+
+def test_attempt_diff_is_a_closed_section_with_coloured_lines(web, rig) -> None:
+    job = rig.add_job("completed", text="done")
+    add_attempt(rig, job, 1, patch=SAMPLE_PATCH)
+
+    text = job_page(web, job)
+
+    found = re.search(
+        r"<details\b(?![^>]*\bopen\b)[^>]*>(?:(?!</details>).)*"
+        r'<pre\b(?=[^>]*id="attempt-1-patch")',
+        text,
+        re.S,
+    )
+    assert found is not None, "no closed diff details with pre#attempt-1-patch"
+    add = re.search(
+        r'<span class="diff-line diff-line--add">\+новая строка\n</span>',  # non-ascii on purpose
+        text,
+    )
+    deleted = re.search(
+        r'<span class="diff-line diff-line--del">-старая строка\n</span>',  # non-ascii on purpose
+        text,
+    )
+    assert add is not None and deleted is not None
+    assert 'data-copy-target="attempt-1-patch"' in text
+
+
+def test_truncated_patch_says_so(web, rig) -> None:
+    job = rig.add_job("completed", text="done")
+    add_attempt(rig, job, 1, patch="diff --git a/x b/x\n", patch_truncated=True)
+
+    text = job_page(web, job)
+
+    assert "diff truncated at 256 KiB" in text
+
+
+def test_attempt_without_patch_has_no_diff_section(web, rig) -> None:
+    job = rig.add_job("completed", text="done")
+    add_attempt(rig, job, 1, log_tail="tail")
+
+    text = job_page(web, job)
+
+    assert ">Diff<" not in text
+    assert "attempt-1-patch" not in text
+    assert "diff truncated at" not in text
+
+
+def test_diff_line_colours_come_from_the_theme_tokens(client) -> None:
+    css = client.get("/static/app.css").text
+
+    for rule, colour in (
+        (r"\.diff-line--add\s*\{[^}]*\}", ("var(--color-ok)", "var(--color-ok-bg)")),
+        (r"\.diff-line--del\s*\{[^}]*\}", ("var(--color-danger)", "var(--color-danger-bg)")),
+    ):
+        found = re.search(rule, css)
+        assert found is not None, f"no {rule} rule"
+        for token in colour:
+            assert token in found.group(0)

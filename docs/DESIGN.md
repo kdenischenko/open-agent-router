@@ -365,7 +365,9 @@ One SQLite database (`agent-router.sqlite` in the gateway home; WAL, schema vers
 `user_version`, pluggable through the `agent_router.storage` entry point). Tables: `observations`,
 `counter_samples`, `jobs` (JSON blob per job, including the request with its prompt; `prompt_sha256`
 and `prompt_chars` let exports omit the text), `attempts` (one row per attempt with result, git
-snapshots, log tail, spend source, decision snapshot), `pool_blocks`, `spend`, `ratings` (note kept
+snapshots, log tail, spend source, decision snapshot, and the patch: a unified diff of exactly the
+attempt's changed files, capped at 256 KiB with a truncated flag; captured only for write mode, and
+only when files changed), `pool_blocks`, `spend`, `ratings` (note kept
 as hash + length only), `classifier_votes`, and `settings` (atomic flags, panel epoch, export salt).
 
 Events: an in-process `EventBus` with named subscribers, each on its own daemon thread with a
@@ -410,7 +412,12 @@ SQL over the stored job data. The job page refreshes itself, shows the error and
 a finished job.
 It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
 final text and per-attempt output in expandable blocks; copy buttons appear when clipboard
-scripting is available.
+scripting is available. Each attempt of a write-mode job that changed files also carries a
+collapsible Diff block: the dispatcher captures a unified diff of exactly the files the attempt
+changed (`git diff` for tracked modifications, a synthetic new-file diff for untracked files,
+one-line markers for binary or unreadable ones, the git index never touched), capped at 256 KiB
+with a truncation notice; added lines are green and removed lines red from the theme tokens, and
+the job's API JSON exposes the same patch fields (`patch`, `patch_truncated` per attempt).
 The stats page (`/stats`, fragment `/fragments/stats`, `range` of `24h`/`7d`/`30d`, refreshed
 like the other fragments) is read-only analytics over what the gateway already stored:
 `JobStore.attempt_stats_since`, `job_stats_since` and `spend_stats_since` pull plain rows, and
@@ -471,7 +478,7 @@ and CSS classes only, so every colour comes from the app.css theme tokens.
 | `usage_reader.py` | Scheduled and on-demand reads of usage sources into observations, per-pool read health |
 | `web.py` | Dashboard pages and fragments |
 | `winjob.py` | Windows job objects: every process an attempt starts stops with the attempt |
-| `worktree.py` | Git snapshots, changed-file detection, path sanitizing |
+| `worktree.py` | Git snapshots, changed-file detection, attempt patches, path sanitizing |
 | `adapters/base.py` | Adapter protocol, preamble, outcome settling, limit hints |
 | `adapters/{kimi,claude,opencode,cline}.py` | Per-harness argv and output parsing |
 | `collectors/claude_statusline.py` | Status-line JSON to observations |

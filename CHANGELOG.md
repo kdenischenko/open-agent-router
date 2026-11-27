@@ -35,6 +35,12 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- Every attempt of a write-mode job captures the patch of exactly the files it changed: `git
+  diff` for tracked modifications, a synthetic new-file diff for untracked ones, one-line
+  markers for binary or unreadable files, and the git index is never touched. The patch is
+  stored with the attempt (capped at 256 KiB, flagged when truncated), shown on the job page
+  as a collapsible Diff block with added lines green and removed lines red, and exposed as
+  `patch` and `patch_truncated` on each attempt in the job's API JSON.
 
 ### Changed
 

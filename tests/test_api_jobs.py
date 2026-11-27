@@ -667,6 +667,25 @@ def test_write_job_reports_changed_files(api, rig) -> None:
     assert job["violations"] == []
 
 
+def test_write_attempt_carries_patch_in_job_json(api, rig) -> None:
+    repo = rig.repo()
+    new_file = "новый.txt"  # non-ascii on purpose
+    job = run_job(api, rig, scenario=f"write {new_file}", cwd=repo, mode="write")
+    assert job["status"] == "completed", job
+    [attempt] = job["attempts"]
+    assert attempt["patch_truncated"] is False
+    assert attempt["patch"] is not None
+    assert f"diff --git a/{new_file} b/{new_file}" in attempt["patch"]
+    assert "+written by fake harness" in attempt["patch"]
+
+
+def test_read_attempt_has_no_patch_in_job_json(api, rig) -> None:
+    job = run_job(api, rig, scenario="exit 0")
+    [attempt] = job["attempts"]
+    assert attempt["patch"] is None
+    assert attempt["patch_truncated"] is False
+
+
 def test_commit_by_harness_is_a_violation(api, rig) -> None:
     repo = rig.repo()
     job = run_job(api, rig, scenario="commit", cwd=repo, mode="write")

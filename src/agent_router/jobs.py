@@ -164,6 +164,8 @@ class Attempt:
     spend_source: SpendSource | None = None
     decision: dict | None = None  # snapshot of the route decision; None — an old row
     cost_estimated: bool = False  # cost_usd estimated from price_file, not reported by the harness
+    patch: str | None = None  # unified diff of the attempt's changed files; None — not captured
+    patch_truncated: bool = False  # the patch crossed the size cap and was cut
 
 
 Outcome = Literal["ok", "limit", "error", "timeout", "cancelled"]

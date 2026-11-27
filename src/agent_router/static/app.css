@@ -1059,6 +1059,18 @@ pre.wrap {
   white-space: pre-wrap;
 }
 
+/* Job page: attempt diff lines take their colours from the theme tokens */
+
+.diff-line--add {
+  background: var(--color-ok-bg);
+  color: var(--color-ok);
+}
+
+.diff-line--del {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
 .copy-button {
   background: none;
   border-color: var(--color-control-border);

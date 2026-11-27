@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 from agent_router.worktree import (
+    PATCH_MAX_BYTES,
     TreeSnapshot,
     WorktreeError,
+    build_patch,
     changed_files,
     committed_files,
     head,
@@ -675,3 +677,156 @@ def test_git_invocation_contract(tmp_path: Path, monkeypatch) -> None:
     assert kwargs["timeout"] == 30
     assert kwargs["env"]["LC_ALL"] == "C"
     assert "shell" not in kwargs
+
+
+# --- attempt patches -----------------------------------------------------------------------
+
+
+def test_build_patch_new_untracked_file(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    name = "новый файл.txt"  # non-ascii on purpose
+    (repo / name).write_text(
+        "первая строка\nвторая строка\n",  # non-ascii on purpose
+        encoding="utf-8",
+    )
+
+    patch, truncated = build_patch(repo, [name])
+
+    assert truncated is False
+    assert patch == (
+        f"diff --git a/{name} b/{name}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{name}\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+первая строка\n"  # non-ascii on purpose
+        "+вторая строка\n"  # non-ascii on purpose
+    )
+
+
+def test_build_patch_file_without_trailing_newline(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    (repo / "note.txt").write_text("конец без перевода", encoding="utf-8")  # non-ascii on purpose
+
+    patch, truncated = build_patch(repo, ["note.txt"])
+
+    assert truncated is False
+    assert patch is not None
+    assert "@@ -0,0 +1,1 @@" in patch
+    no_newline = "+конец без перевода\n\\ No newline at end of file\n"  # non-ascii on purpose
+    assert patch.endswith(no_newline)
+
+
+def test_build_patch_empty_new_file_has_only_headers(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    name = "пустой.txt"  # non-ascii on purpose
+    (repo / name).write_text("", encoding="utf-8")
+
+    patch, truncated = build_patch(repo, [name])
+
+    assert truncated is False
+    assert patch == f"diff --git a/{name} b/{name}\nnew file mode 100644\n"
+
+
+def test_build_patch_tracked_modification(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    (repo / "README.md").write_text("changed content\n", encoding="utf-8")
+
+    patch, truncated = build_patch(repo, ["README.md"])
+
+    assert truncated is False
+    assert patch is not None
+    assert patch.startswith("diff --git a/README.md b/README.md\n")
+    assert "-test repo" in patch and "+changed content" in patch
+
+
+def test_build_patch_deleted_tracked_file(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    (repo / "README.md").unlink()
+
+    patch, truncated = build_patch(repo, ["README.md"])
+
+    assert truncated is False
+    assert patch is not None
+    assert "--- a/README.md" in patch and "+++ /dev/null" in patch
+
+
+def test_build_patch_puts_modifications_before_new_files(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    name = "новый.txt"  # non-ascii on purpose
+    (repo / name).write_text("содержимое\n", encoding="utf-8")  # non-ascii on purpose
+
+    patch, truncated = build_patch(repo, ["README.md", name])
+
+    assert truncated is False
+    assert patch is not None
+    assert patch.index("diff --git a/README.md") < patch.index(f"diff --git a/{name}")
+    assert "+содержимое" in patch  # non-ascii on purpose
+
+
+def test_build_patch_marks_binary_new_file(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    name = "данные.bin"  # non-ascii on purpose
+    (repo / name).write_bytes(b"\x00\x01binary\x02")
+
+    patch, truncated = build_patch(repo, [name])
+
+    assert truncated is False
+    assert patch == f"binary file {name}\n"
+
+
+def test_build_patch_marks_unreadable_new_file(tmp_path: Path, monkeypatch) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    name = "закрытый.txt"  # non-ascii on purpose
+    (repo / name).write_text("содержимое\n", encoding="utf-8")  # non-ascii on purpose
+
+    def refused(path: Path) -> bytes:
+        raise PermissionError(13, "permission denied")
+
+    monkeypatch.setattr("agent_router.worktree._read_file_bytes", refused)
+
+    patch, truncated = build_patch(repo, [name])
+
+    assert truncated is False
+    assert patch == f"unreadable file {name}\n"
+
+
+def test_build_patch_without_files_captures_nothing(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+
+    assert build_patch(repo, []) == (None, False)
+
+
+def test_build_patch_from_subdirectory_reads_root_relative_files(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    cwd = repo / "nested" / "inner"
+    cwd.mkdir(parents=True)
+    name = "nested/inner/новый.txt"  # non-ascii on purpose
+    (repo / name).write_text("содержимое\n", encoding="utf-8")  # non-ascii on purpose
+
+    patch, truncated = build_patch(cwd, [name])
+
+    assert truncated is False
+    assert patch is not None
+    assert f"+++ b/{name}" in patch and "+содержимое" in patch  # non-ascii on purpose
+
+
+def test_build_patch_truncates_at_the_cap(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    name = "большой.txt"  # non-ascii on purpose
+    (repo / name).write_text("строка паттерна\n" * 40_000, encoding="utf-8")  # non-ascii on purpose
+
+    patch, truncated = build_patch(repo, [name])
+
+    assert truncated is True
+    assert len(patch.encode("utf-8")) <= PATCH_MAX_BYTES
+    assert patch.startswith(f"diff --git a/{name} b/{name}\n")
+
+
+def test_build_patch_outside_git_raises(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    with pytest.raises(WorktreeError):
+        build_patch(outside, ["a.txt"])

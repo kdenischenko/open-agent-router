@@ -7,6 +7,7 @@ import os
 import posixpath
 import re
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from agent_router.config import home_dir
@@ -14,6 +15,8 @@ from agent_router.config import home_dir
 TreeSnapshot = dict[str, tuple[str, int, int]]
 
 _TIMEOUT_S = 30
+# a stored patch never exceeds this many bytes; a longer one is cut and flagged
+PATCH_MAX_BYTES = 256 * 1024
 # git replies that reliably mean "not in a working tree" (text as printed with LC_ALL=C)
 _NOT_A_WORKTREE = ("not a git repository", "must be run in a work tree")
 # a `file://` address is an on-disk path: we do not protect it, the path rule will replace it
@@ -344,3 +347,123 @@ def committed_files(cwd: Path, head_before: str | None, head_after: str) -> list
         args = ("diff", "--name-only", "-z", head_before, head_after)
     output = _git(root, *args, errors="surrogateescape")
     return [_shown_name(path) for path in output.split("\0") if path]
+
+
+# --- attempt patch ---------------------------------------------------------------------------
+
+
+def _literal(path: str) -> str:
+    """A pathspec that matches the path itself, never a glob pattern inside it."""
+    return f":(literal){path}"
+
+
+def _status_records(root: Path, files: Sequence[str]) -> dict[str, tuple[str, str]]:
+    """Status of exactly the given files: shown name → (status, raw path).
+
+    Files missing from the output are clean, gone, or renamed; they are treated as
+    tracked and left to `git diff`.
+    """
+    if not files:
+        return {}
+    output = _git(
+        root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        *(_literal(name) for name in files),
+        errors="surrogateescape",
+    )
+    records: dict[str, tuple[str, str]] = {}
+    parts = output.split("\0")
+    index = 0
+    while index < len(parts):
+        record = parts[index]
+        index += 1
+        if len(record) < 4:
+            continue
+        status = record[:2]
+        raw = record[3:]
+        if ("R" in status or "C" in status) and index < len(parts):
+            index += 1  # the original path of a rename or copy is not the changed file
+        records[_shown_name(raw)] = (status, raw)
+    return records
+
+
+def _read_file_bytes(path: Path) -> bytes:
+    return path.read_bytes()
+
+
+def _new_file_patch(name: str, data: bytes) -> str:
+    """A synthetic new-file unified diff built from the file content, without git.
+
+    Binary content becomes a one-line marker instead of raw bytes.
+    """
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"binary file {name}\n"
+    if "\x00" in text:
+        return f"binary file {name}\n"
+    lines = text.split("\n")
+    if lines == [""]:
+        return f"diff --git a/{name} b/{name}\nnew file mode 100644\n"
+    ends_with_newline = lines[-1] == ""
+    shown = lines[:-1] if ends_with_newline else lines
+    body = "".join(f"+{line}\n" for line in shown)
+    if not ends_with_newline:
+        body += "\\ No newline at end of file\n"
+    return (
+        f"diff --git a/{name} b/{name}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{name}\n"
+        f"@@ -0,0 +1,{len(shown)} @@\n"
+        f"{body}"
+    )
+
+
+def _tracked_diff(root: Path, paths: Sequence[str]) -> str:
+    """`git diff` of the given tracked paths against HEAD, or against the index in a
+    repository without commits. The index is only ever read."""
+    if not paths:
+        return ""
+    base = ("HEAD",) if head(root) is not None else ()
+    return _git(root, "diff", *base, "--", *(_literal(path) for path in paths))
+
+
+def build_patch(cwd: Path, files: Sequence[str]) -> tuple[str | None, bool]:
+    """Unified diff of exactly `files`, for the attempt that changed them.
+
+    Tracked modifications come from `git diff`; untracked new files get a synthetic
+    new-file diff built from their content; binary or unreadable files become one-line
+    markers. The git index is never touched. Returns the patch and whether it was cut
+    at PATCH_MAX_BYTES; None when there is nothing to show.
+    """
+    if not files:
+        return None, False
+    root = _require_root(cwd, "diff")
+    records = _status_records(root, files)
+    tracked: list[str] = []
+    sections: list[str] = []
+    for name in files:
+        record = records.get(name)
+        if record is not None and record[0] == "??":
+            try:
+                data = _read_file_bytes(root / record[1])
+            except OSError:
+                sections.append(f"unreadable file {name}\n")
+                continue
+            sections.append(_new_file_patch(name, data))
+        else:
+            # not in the status output, or tracked: the raw name is unknown only for
+            # non-UTF-8 paths, where the shown name is the best available pathspec
+            tracked.append(record[1] if record is not None else name)
+    patch = _tracked_diff(root, tracked) + "".join(sections)
+    encoded = patch.encode("utf-8")
+    if not encoded:
+        return None, False
+    if len(encoded) <= PATCH_MAX_BYTES:
+        return patch, False
+    return encoded[:PATCH_MAX_BYTES].decode("utf-8", "ignore"), True

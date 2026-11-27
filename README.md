@@ -208,7 +208,9 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
   view can be bookmarked.
 - **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
   totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
-  in expandable blocks with copy buttons; lets you rate a finished job.
+  in expandable blocks with copy buttons; a writing attempt also shows the diff of the files it
+  changed, with added and removed lines coloured, in a collapsible block (the diff is capped at
+  256 KiB and says so when truncated); lets you rate a finished job.
 - **Stats** — router usage for business review over the last 24 hours, 7 or 30 days: summary
   cards (jobs, outcomes, attempts, tokens, spend, ratings), then tokens per route over time,
   job duration per route (average bar with p50 and p95 marks), completed/partial/failed counts

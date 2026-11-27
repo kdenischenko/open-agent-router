@@ -852,6 +852,8 @@ class Dispatcher(RecoveryMixin):
                 except Exception as exc:  # measurement failed: changes are unknown, not "none"
                     result = replace(result, changed=(), changes_unknown=True)
                     tail = _measurement_tail(tail, exc)
+                else:
+                    self._capture_patch(job, attempt, cwd, changed)
         return result, duration, tail, tokens
 
     def _launch(
@@ -950,6 +952,19 @@ class Dispatcher(RecoveryMixin):
             files.update(worktree.committed_files(cwd, attempt.head_before, head_after))
         return tuple(sorted(files)), moved
 
+    def _capture_patch(
+        self, job: Job, attempt: Attempt, cwd: Path, changed: tuple[str, ...]
+    ) -> None:
+        """A writing attempt keeps a diff of exactly the files it changed; read mode and
+        attempts with no changes keep none. A capture failure leaves the attempt without
+        a patch — the measured outcome is what matters."""
+        if job.request.mode != "write" or not changed:
+            return
+        try:
+            attempt.patch, attempt.patch_truncated = worktree.build_patch(cwd, changed)
+        except Exception:
+            log.exception("patch not captured: job %s attempt %s", attempt.job_id, attempt.n)
+
     # --- collecting attempt outcomes ---------------------------------------------------
 
     def _collect(self) -> None:
@@ -995,6 +1010,8 @@ class Dispatcher(RecoveryMixin):
                     last.tokens_out = measured.tokens_out
                     last.cost_usd = measured.cost_usd
                     last.cost_estimated = measured.cost_estimated
+                    last.patch = measured.patch
+                    last.patch_truncated = measured.patch_truncated
                 last.finished_at = self.clock.now()
                 last.outcome = "error"
                 last.log_tail = result.error

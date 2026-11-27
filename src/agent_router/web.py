@@ -23,11 +23,14 @@ from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 from agent_router.stats import stats_view
 from agent_router.usage_reader import UnknownPoolError
+from agent_router.worktree import PATCH_MAX_BYTES
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
 TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
+# the truncation notice on the job page names the cap the dispatcher actually applies
+TEMPLATES.env.globals["PATCH_MAX_KIB"] = PATCH_MAX_BYTES // 1024
 
 JOBS_PAGE_SIZE = 50
 JOB_SORTS = ("newest", "oldest", "duration")
@@ -54,6 +57,24 @@ def _countdown(moment: str, now: datetime) -> str:
 
 
 TEMPLATES.env.filters["countdown"] = _countdown
+
+
+def diff_line_kinds(patch: str) -> list[tuple[str, str]]:
+    """Diff lines with their colour class: added lines are green, removed red, the rest
+    plain. The line text keeps its newline, so the template renders one span per line."""
+    marked: list[tuple[str, str]] = []
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("+") and not line.startswith("+++"):
+            kind = "add"
+        elif line.startswith("-") and not line.startswith("---"):
+            kind = "del"
+        else:
+            kind = "ctx"
+        marked.append((kind, line))
+    return marked
+
+
+TEMPLATES.env.filters["diff_lines"] = diff_line_kinds
 
 
 def job_totals(job: Job, attempts: list[Attempt]) -> dict:

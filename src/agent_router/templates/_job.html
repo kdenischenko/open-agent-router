@@ -113,6 +113,16 @@
         <button type="button" class="copy-button" data-copy-target="attempt-{{ attempt.n }}-tail" hidden>Copy</button>
       </details>
       {% endif %}
+      {% if attempt.patch %}
+      <details>
+        <summary>Diff</summary>
+        {% if attempt.patch_truncated %}
+        <p>diff truncated at {{ PATCH_MAX_KIB }} KiB</p>
+        {% endif %}
+        <pre class="diff wrap" id="attempt-{{ attempt.n }}-patch">{% for kind, line in attempt.patch|diff_lines %}<span class="diff-line diff-line--{{ kind }}">{{ line }}</span>{% endfor %}</pre>
+        <button type="button" class="copy-button" data-copy-target="attempt-{{ attempt.n }}-patch" hidden>Copy</button>
+      </details>
+      {% endif %}
     </li>
     {% endfor %}
   </ol>

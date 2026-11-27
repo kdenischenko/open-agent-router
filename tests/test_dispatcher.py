@@ -1673,6 +1673,79 @@ def test_first_commit_in_empty_repo_is_reported(make_rig) -> None:
     assert done.violations == ("head_moved",)
 
 
+# --- attempt patches -------------------------------------------------------------------
+
+
+def test_write_attempt_stores_patch(make_rig) -> None:
+    rig = make_rig()
+    rig.runner.add(Step(action=new_file()))
+    job = rig.submit(rig.repo("патч"), "write")  # non-ascii on purpose
+    rig.tick(2)
+
+    (attempt,) = rig.attempts(job)
+    assert attempt.patch_truncated is False
+    assert attempt.patch is not None
+    assert "diff --git a/новый файл.txt b/новый файл.txt" in attempt.patch  # non-ascii on purpose
+    assert "+изменение" in attempt.patch  # non-ascii on purpose
+
+
+def test_read_attempt_stores_no_patch(make_rig) -> None:
+    rig = make_rig()
+    rig.runner.add(Step(action=new_file()))
+    job = rig.submit(rig.repo("чтение"), "read")  # non-ascii on purpose
+    rig.tick(2)
+
+    (attempt,) = rig.attempts(job)
+    assert attempt.patch is None and attempt.patch_truncated is False
+
+
+def test_write_attempt_without_changes_stores_no_patch(make_rig) -> None:
+    rig = make_rig()
+    job = rig.submit(rig.repo("чистый"), "write")  # non-ascii on purpose
+    rig.tick(2)
+
+    (attempt,) = rig.attempts(job)
+    assert attempt.patch is None and attempt.patch_truncated is False
+
+
+def test_attempt_patch_over_the_cap_is_truncated(make_rig) -> None:
+    rig = make_rig()
+
+    def big_file(cwd: Path) -> None:
+        (cwd / "большой.txt").write_text(  # non-ascii on purpose
+            "строка паттерна\n" * 40_000,  # non-ascii on purpose
+            encoding="utf-8",
+        )
+
+    rig.runner.add(Step(action=big_file))
+    job = rig.submit(rig.repo("большой"), "write")  # non-ascii on purpose
+    rig.tick(2)
+
+    (attempt,) = rig.attempts(job)
+    assert attempt.patch_truncated is True
+    assert attempt.patch is not None
+    assert len(attempt.patch.encode("utf-8")) <= worktree.PATCH_MAX_BYTES
+
+
+def test_patch_capture_failure_keeps_the_attempt(make_rig, monkeypatch) -> None:
+    def refused(cwd: Path, files) -> tuple[str | None, bool]:
+        raise worktree.WorktreeError("git diff: no response within 30 s")
+
+    monkeypatch.setattr(worktree, "build_patch", refused)
+    rig = make_rig()
+    rig.runner.add(Step(action=new_file()))
+    job = rig.submit(rig.repo("отказ"), "write")  # non-ascii on purpose
+    rig.tick(2)
+
+    done = rig.job(job)
+    (attempt,) = rig.attempts(job)
+    assert (done.status, done.changed_files) == (
+        "completed",
+        ("новый файл.txt",),  # non-ascii on purpose
+    )
+    assert attempt.patch is None and attempt.patch_truncated is False
+
+
 # --- recovery after restart -------------------------------------------------------------
 
 
@@ -2394,6 +2467,25 @@ def test_unrecorded_attempt_keeps_job_running(make_rig, monkeypatch) -> None:
     done = rig.job(job)
     assert (done.status, done.error_code) == ("failed", "executor_error")
     assert rig.attempts(job)[0].finished_at is not None
+
+
+def test_unrecorded_attempt_keeps_its_patch(make_rig, monkeypatch) -> None:
+    # the worker thread measured the tree and captured the patch but could not record the
+    # outcome: the rewrite from the step must not lose what was already measured
+    rig = make_rig()
+    rig.runner.add(Step(action=new_file()))
+    job = rig.submit(rig.repo("патч и отказ записи"), "write")  # non-ascii on purpose
+    broken = attempt_writes_fail(monkeypatch, rig, {job.id})
+    rig.tick()
+    rig.tick()
+    assert rig.status(job) == "running"
+    broken[0] = False
+    rig.tick()  # store is back: outcome recorded and applied
+    done = rig.job(job)
+    assert (done.status, done.error_code) == ("partial", "executor_error")
+    attempt = rig.attempts(job)[0]
+    assert attempt.patch is not None
+    assert "+изменение" in attempt.patch  # non-ascii on purpose
 
 
 def test_shutdown_leaves_unrecorded_attempt_to_recover(make_rig, monkeypatch) -> None:
