@@ -21,6 +21,7 @@ from agent_router.config import TIERS
 from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
 from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
+from agent_router.stats import stats_view
 from agent_router.usage_reader import UnknownPoolError
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -525,6 +526,37 @@ def web_router(deps: Gateway) -> APIRouter:
             return PlainTextResponse("job not found", status_code=404)
         context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
         return render_page(request, "_job.html", context, sid=sid)
+
+    def stats_context(request: Request) -> dict:
+        """Stats of what the gateway stored; unknown range values fall back to 24 hours."""
+        if deps.jobs is None:
+            return {"jobs_available": False}
+        return stats_view(deps.jobs, deps.clock.now(), request.query_params.get("range", ""), local)
+
+    def stats_page(
+        request: Request, sid: str, context: dict, *, fragment: bool = False
+    ) -> HTMLResponse:
+        template = "_stats.html" if fragment else "stats.html"
+        page_context = dict(context)
+        if not fragment:
+            page_context["title"] = "Stats"
+        return render_page(
+            request, template, page_context, sid=sid, nav=None if fragment else "stats"
+        )
+
+    @router.get("/stats")
+    def get_stats(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return stats_page(request, sid, stats_context(request))
+
+    @router.get("/fragments/stats")
+    def get_stats_fragment(request: Request) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        return stats_page(request, sid, stats_context(request), fragment=True)
 
     CONFIRM_ACTIONS = {
         "deny": {

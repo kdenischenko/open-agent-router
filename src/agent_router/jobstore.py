@@ -40,6 +40,47 @@ class GatewayUsage:
     proxy_tokens: int = 0
 
 
+@dataclass(frozen=True)
+class AttemptStat:
+    """Read-only attempt facts for the stats page: no prompt text, logs or process state."""
+
+    route: str
+    started_at: datetime
+    finished_at: datetime | None
+    duration_s: float | None
+    tokens_in: int | None
+    tokens_out: int | None
+    cost_usd: float | None
+    cost_estimated: bool = False
+
+
+@dataclass(frozen=True)
+class JobStat:
+    """Read-only job facts for the stats page, with the job's latest rating."""
+
+    id: str
+    route: str | None
+    status: str
+    created_at: datetime
+    finished_at: datetime | None
+    rating_value: str | None
+    rating_should_tier: str | None
+
+
+@dataclass(frozen=True)
+class SpendStat:
+    """Read-only spend-ledger row for the stats page."""
+
+    pool: str
+    at: datetime
+    source: str
+    route: str
+    tokens_in: int | None
+    tokens_out: int | None
+    cost_usd: float | None
+    estimated: bool
+
+
 class JobStore(Protocol):
     """The core knows only this protocol."""
 
@@ -129,6 +170,18 @@ class JobStore(Protocol):
     def add_spend(self, e: SpendEntry) -> bool: ...
 
     def spend_since(self, pool: str, since: datetime | None) -> SpendTotal: ...
+
+    def attempt_stats_since(self, since: datetime) -> builtins.list[AttemptStat]:
+        """Attempts started at or after `since`, oldest first; facts only."""
+        ...
+
+    def job_stats_since(self, since: datetime) -> builtins.list[JobStat]:
+        """Jobs created at or after `since` with their latest rating, oldest first."""
+        ...
+
+    def spend_stats_since(self, since: datetime) -> builtins.list[SpendStat]:
+        """Spend rows recorded after `since`, oldest first."""
+        ...
 
     def limit_hits_in_row(self, pool: str) -> int:
         """Limit-hit attempts finished after the pool's last successful attempt."""
@@ -942,6 +995,72 @@ class SqliteJobStore:
             cost_usd=float(row[3]),
             estimated=bool(row[4]),
         )
+
+    # --- stats -------------------------------------------------------------------
+
+    def attempt_stats_since(self, since: datetime) -> builtins.list[AttemptStat]:
+        rows = self._store.connection().execute(
+            "SELECT route, started_at, finished_at, duration_s, tokens_in, tokens_out,"
+            " cost_usd, cost_estimated FROM attempts WHERE started_at >= ?"
+            " ORDER BY started_at, id",
+            (to_us(since),),
+        )
+        return [
+            AttemptStat(
+                route=row[0],
+                started_at=from_us(row[1]),
+                finished_at=_moment(row[2]),
+                duration_s=row[3],
+                tokens_in=row[4],
+                tokens_out=row[5],
+                cost_usd=row[6],
+                cost_estimated=bool(row[7]),
+            )
+            for row in rows.fetchall()
+        ]
+
+    def job_stats_since(self, since: datetime) -> builtins.list[JobStat]:
+        # the route that served the job: `route` once chosen, `approved_route` on old rows
+        rows = self._store.connection().execute(
+            "SELECT id, COALESCE(json_extract(data, '$.route'),"
+            " json_extract(data, '$.approved_route')), status, created_at, finished_at,"
+            " (SELECT value FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1),"
+            " (SELECT should_tier FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1)"
+            " FROM jobs WHERE created_at >= ? ORDER BY created_at, seq",
+            (to_us(since),),
+        )
+        return [
+            JobStat(
+                id=row[0],
+                route=row[1],
+                status=row[2],
+                created_at=from_us(row[3]),
+                finished_at=_moment(row[4]),
+                rating_value=row[5],
+                rating_should_tier=row[6],
+            )
+            for row in rows.fetchall()
+        ]
+
+    def spend_stats_since(self, since: datetime) -> builtins.list[SpendStat]:
+        rows = self._store.connection().execute(
+            "SELECT pool, at, source, route, tokens_in, tokens_out, cost_usd, estimated"
+            " FROM spend WHERE at > ? ORDER BY at, id",
+            (to_us(since),),
+        )
+        return [
+            SpendStat(
+                pool=row[0],
+                at=from_us(row[1]),
+                source=row[2],
+                route=row[3],
+                tokens_in=row[4],
+                tokens_out=row[5],
+                cost_usd=row[6],
+                estimated=bool(row[7]),
+            )
+            for row in rows.fetchall()
+        ]
 
     def limit_hits_in_row(self, pool: str) -> int:
         # Order the streak by finish time: a pool's attempts run in parallel, so a row

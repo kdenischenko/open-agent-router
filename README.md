@@ -207,6 +207,12 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
 - **Job page** — refreshes itself while the job runs; shows attempt, token, cost and duration
   totals, a per-attempt timeline, the error, and the prompt, final text and per-attempt output
   in expandable blocks with copy buttons; lets you rate a finished job.
+- **Stats** — router usage for business review over the last 24 hours, 7 or 30 days: summary
+  cards (jobs, outcomes, attempts, tokens, spend, ratings), then tokens per route over time,
+  job duration per route (average bar with p50 and p95 marks), completed/partial/failed counts
+  per route and rating outcomes with should-tier corrections per route. The charts are inline
+  SVG drawn by the server from what the gateway already stored — jobs, attempts and the spend
+  ledger — and the page refreshes itself.
 - **Calibrate** — record what your subscription page shows. Errors are shown per field and,
   with scripts on, the form previews the pace and the local reset time; after saving, the
   updated pool card is highlighted.

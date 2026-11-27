@@ -159,7 +159,7 @@ def test_mobile_layout_and_unique_ids(context, live_server, rig, config) -> None
     page = log_in(context, live_server, rig.tokens.admin)
     page.set_viewport_size({"width": 375, "height": 812})
 
-    for path in ("/", "/jobs", f"/jobs/{job.id}", "/calibrate"):
+    for path in ("/", "/jobs", "/stats", f"/jobs/{job.id}", "/calibrate"):
         page.goto(f"{live_server}{path}")
         fits_viewport = page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         duplicate_ids = page.evaluate(

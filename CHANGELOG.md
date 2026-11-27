@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- The dashboard gains a **Stats** page (`/stats`, refreshed like the other fragments) with a
+  24-hour, 7-day and 30-day range selector: summary cards for jobs, outcomes, attempts,
+  tokens, spend and ratings, then tokens per route over time, job duration per route with
+  average, p50 and p95, completed/partial/failed counts per route, and rating outcomes with
+  should-tier corrections per route. The charts are inline SVG drawn by the server from the
+  jobs, attempts and spend the gateway already stores; nothing is recomputed or written.
 - Local model servers (LM Studio, Strata, any OpenAI-compatible endpoint) behind the gateway's
   own `/v1` API: `[upstreams]` entries and `kind = "api"` routes serve
   `POST /v1/chat/completions` and `GET /v1/models`, the route policy picks a server by priority
@@ -21,6 +27,10 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- The dashboard is restyled into a dark-first design: a deep navy theme with a cyan accent,
+  glowing cards, pill badges and a sticky translucent header, with a light theme that follows
+  `prefers-color-scheme`. Same pages, same fragments, same vanilla CSS/JS with no build step
+  and no external assets.
 - The `claude-cli/sonnet` route is enabled by default when Claude Code is installed.
 - Claude Code jobs use `stream-json`, so their output resets the idle timeout while the job runs.
   Write jobs use `bypassPermissions` instead of silently denying commands, and both modes load

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+{% if jobs_available %}
+<nav class="range-nav" aria-label="Stats time range">
+  {% for item in ranges %}
+  <a href="{{ item.href }}" class="range-link"{% if item.active %} aria-current="true"{% endif %}>{{ item.label }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+{% include "_stats.html" %}
+{% endblock %}

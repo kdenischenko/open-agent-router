@@ -9,18 +9,22 @@
 </head>
 <body>
   <header>
-    <strong>agent-router</strong>
+    <strong class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 8.5 16 10.75v4.5L12 17.5 8 15.25v-4.5z"/></svg>
+      agent-router
+    </strong>
     {% if csrf %}
     <nav aria-label="Main navigation">
       <a href="/" class="nav-link"{% if nav == 'limits' %} aria-current="page"{% endif %}>Limits</a>
       <a href="/jobs" class="nav-link"{% if nav == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
+      <a href="/stats" class="nav-link"{% if nav == 'stats' %} aria-current="page"{% endif %}>Stats</a>
       <a href="/calibrate" class="nav-link"{% if nav == 'calibrate' %} aria-current="page"{% endif %}>Calibrate</a>
       {% if awaiting_count|default(none) is not none and awaiting_count > 0 %}
       <a href="/jobs" class="approval-badge">{{ awaiting_display }} awaiting approval</a>
       {% endif %}
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit">Log out</button>
+        <button type="submit" class="button-ghost">Log out</button>
       </form>
     </nav>
     {% endif %}

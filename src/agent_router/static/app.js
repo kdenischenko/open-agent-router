@@ -38,6 +38,8 @@ setInterval(() => refresh('/fragments/advice', 'advice'), 30000);
 // the job list keeps its filters and page from the query string
 setInterval(() => refresh('/fragments/jobs' + location.search, 'jobs'), 5000);
 setInterval(() => refresh('/fragments/approvals', 'approvals'), 5000);
+// the stats page keeps its time range from the query string
+setInterval(() => refresh('/fragments/stats' + location.search, 'stats'), 30000);
 
 // limits cards enhance the server markup progressively: pace markers appear and
 // relative reset countdowns update only with scripts on

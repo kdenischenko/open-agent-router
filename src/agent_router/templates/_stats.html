@@ -1,0 +1,69 @@
+<div id="stats" data-range="{{ range|default('24h') }}">
+  {% if not jobs_available %}
+  <p class="empty">Jobs are disabled: the job dispatcher is not running.</p>
+  {% else %}
+  <div class="stat-cards">
+    {% for card in cards %}
+    <article class="stat-card">
+      <p class="stat-card__label">{{ card.label }}</p>
+      <p class="stat-card__value">{{ card.value }}</p>
+      {% if card.note %}<p class="stat-card__note">{{ card.note }}</p>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <section class="panel chart-card" aria-labelledby="tokens-chart-title">
+    <h2 id="tokens-chart-title">Tokens per route</h2>
+    {% if tokens_chart.svg %}
+    {{ tokens_chart.svg|safe }}
+    <p class="hint">{{ tokens_chart.note }}</p>
+    <ul class="chart-legend">
+      {% for item in tokens_chart.legend %}
+      <li><span class="chart-swatch {{ item.css }}" aria-hidden="true"></span><code>{{ item.route }}</code> — {{ item.text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No tokens were used in this range.</p>
+    {% endif %}
+  </section>
+  <section class="panel chart-card" aria-labelledby="duration-chart-title">
+    <h2 id="duration-chart-title">Job duration per route</h2>
+    {% if duration_chart.svg %}
+    {{ duration_chart.svg|safe }}
+    <p class="hint">Average per route; the marks show p50 and p95.</p>
+    <ul class="chart-legend">
+      {% for item in duration_chart.legend %}
+      <li><span class="chart-swatch chart-bar--avg" aria-hidden="true"></span><code>{{ item.route }}</code> — {{ item.text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No finished jobs in this range.</p>
+    {% endif %}
+  </section>
+  <section class="panel chart-card" aria-labelledby="status-chart-title">
+    <h2 id="status-chart-title">Job outcomes per route</h2>
+    {% if status_chart.svg %}
+    {{ status_chart.svg|safe }}
+    <ul class="chart-legend">
+      {% for item in status_chart.legend %}
+      <li><span class="chart-swatch chart-bar--ok" aria-hidden="true"></span><code>{{ item.route }}</code> — {{ item.text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No completed, partial or failed jobs in this range.</p>
+    {% endif %}
+  </section>
+  <section class="panel chart-card" aria-labelledby="rating-chart-title">
+    <h2 id="rating-chart-title">Ratings per route</h2>
+    {% if rating_chart.svg %}
+    {{ rating_chart.svg|safe }}
+    <ul class="chart-legend">
+      {% for item in rating_chart.legend %}
+      <li><span class="chart-swatch chart-bar--ok" aria-hidden="true"></span><code>{{ item.route }}</code> — {{ item.text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No ratings in this range.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>

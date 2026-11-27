@@ -15,7 +15,7 @@ from test_web_jobs import WebRig
 PACKAGE = Path(__file__).resolve().parent.parent / "src" / "agent_router"
 HEX_COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
-NAV_LINKS = ("/", "/jobs", "/calibrate")
+NAV_LINKS = ("/", "/jobs", "/stats", "/calibrate")
 
 
 @pytest.fixture
@@ -68,6 +68,7 @@ def approval_badge(text: str) -> re.Match[str] | None:
     [
         ("/", "/"),
         ("/jobs", "/jobs"),
+        ("/stats", "/stats"),
         ("/calibrate", "/calibrate"),
     ],
 )
@@ -233,16 +234,19 @@ def test_static_urls_carry_the_package_version(web: TestClient) -> None:
 
 
 def theme_tokens() -> dict[str, dict[str, str]]:
+    """Token colours per theme: the first :root block is the default, the media query
+    block named by its prefers-color-scheme value overrides it."""
     css = (PACKAGE / "static" / "app.css").read_text(encoding="utf-8")
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-    light_root = re.search(r":root\s*\{", css)
-    media = re.search(r"@media\s*\([^)]*prefers-color-scheme[^)]*\)\s*\{", css)
-    assert light_root is not None and media is not None
-    dark_root = re.search(r":root\s*\{", css[media.end() :])
-    assert dark_root is not None
+    default_root = re.search(r":root\s*\{", css)
+    media = re.search(r"@media\s*\(\s*prefers-color-scheme:\s*(light|dark)\s*\)\s*\{", css)
+    assert default_root is not None and media is not None
+    override_root = re.search(r":root\s*\{", css[media.end() :])
+    assert override_root is not None
+    default_theme = "dark" if media.group(1) == "light" else "light"
     blocks = {
-        "light": balanced_block(css, light_root.end() - 1),
-        "dark": balanced_block(css, media.end() + dark_root.end() - 1),
+        default_theme: balanced_block(css, default_root.end() - 1),
+        media.group(1): balanced_block(css, media.end() + override_root.end() - 1),
     }
     pattern = re.compile(r"(--color-[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\b")
     return {theme: dict(pattern.findall(block)) for theme, block in blocks.items()}

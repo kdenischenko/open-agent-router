@@ -411,6 +411,14 @@ a finished job.
 It shows the attempt, token, cost and duration totals, a per-attempt timeline, and the prompt,
 final text and per-attempt output in expandable blocks; copy buttons appear when clipboard
 scripting is available.
+The stats page (`/stats`, fragment `/fragments/stats`, `range` of `24h`/`7d`/`30d`, refreshed
+like the other fragments) is read-only analytics over what the gateway already stored:
+`JobStore.attempt_stats_since`, `job_stats_since` and `spend_stats_since` pull plain rows, and
+`stats.stats_view` aggregates them in Python — token totals per route per time bucket (attempt
+tokens plus `proxy` spend rows, which never overlap), job duration avg/p50/p95 per route,
+completed/partial/failed counts per route, and rating outcomes with should-tier corrections
+per route. Charts are inline SVG built server-side in `stats.py`; the markup carries geometry
+and CSS classes only, so every colour comes from the app.css theme tokens.
 
 ## Module map
 
@@ -456,6 +464,7 @@ scripting is available.
 | `settings_store.py` | Atomic key-value flags over the `settings` table |
 | `sinks.py` | Event sink protocol and the rotating JSONL sink |
 | `spend.py` | Spend records and attempt cost estimation |
+| `stats.py` | Dashboard stats: read-only aggregates and server-drawn SVG charts |
 | `statusline.py` | Claude Code status line script (posts rate limits to the gateway) |
 | `store.py` | SQLite storage for observations and counter samples |
 | `usage.py` | Usage source protocol and spec, mapping of source points to window observations, staleness rule (`is_stale`) |
