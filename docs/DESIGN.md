@@ -205,6 +205,10 @@ adds a warning instead of a failure reason. A non-synthetic assistant message me
 process and reports `malformed_response`. The source never reads the Claude Code credentials
 and never passes a token; the CLI uses the user's own `claude auth login`. The CLI path is
 `claude` from `PATH` unless the pool sets `[pools.usage] executable`.
+On `malformed_response`, both sources log a warning containing only the answer's redacted shape:
+raw byte length, JSON key names, value types, string and list lengths, and allowlisted event type
+names. Other strings and all numbers and ids are omitted; unparseable, empty or truncated output
+logs only its byte length and parse failure.
 
 **The usage reader** builds one source instance per pool with `usage.source` and reads it on a
 schedule and on demand. In auto mode a background thread (`usage-reader`) calls

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -189,21 +190,76 @@ def test_missing_usage_report_is_malformed() -> None:
     assert command.calls == [[str(CLI), *STATUS_ARGS]]
 
 
+def test_malformed_stream_logs_event_types_without_answer_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret_text = "cli-answer-text-sentinel-846291"
+    secret_id = "cli-answer-id-sentinel-375864"
+    secret_number = 726354819
+    raw = (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "type": "message",
+                    "model": "<synthetic>",
+                    "id": secret_id,
+                    "content": [{"type": "text", "text": secret_text}],
+                },
+                "local_command_run": {"command": "usage"},
+                "attempt": secret_number,
+            }
+        )
+        + "\n"
+    )
+
+    with caplog.at_level(logging.WARNING):
+        read = build(FakeStream([raw]), FakeCommand(SIGNED_IN)).read()
+
+    assert read.reason == "malformed_response"
+    message = caplog.records[-1].getMessage()
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert "claude-code" in message
+    assert f"bytes={len(raw.encode())}" in message
+    assert json.loads(message.split(" shape=", 1)[1]) == {
+        "type": "assistant",
+        "message": {
+            "type": "message",
+            "model": {"string_length": 11},
+            "id": {"string_length": len(secret_id)},
+            "content": {
+                "list_length": 1,
+                "items": [{"type": "text", "text": {"string_length": len(secret_text)}}],
+            },
+        },
+        "local_command_run": {"command": {"string_length": 5}},
+        "attempt": "number",
+    }
+    for secret in (secret_text, secret_id, str(secret_number), "<synthetic>"):
+        assert secret not in caplog.text
+
+
 def test_unusable_sign_in_status_is_malformed() -> None:
     read = build(FakeStream(fixture_lines("signed_out.jsonl")), FakeCommand(None)).read()
 
     assert read.reason == "malformed_response"
 
 
-def test_model_call_stops_the_process_and_is_malformed() -> None:
+def test_model_call_stops_the_process_and_is_malformed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     lines = fixture_lines("model_called.jsonl") + fixture_lines("signed_in.jsonl")[1:]
     stream = FakeStream(lines)
 
-    read = build(stream).read()
+    with caplog.at_level(logging.WARNING):
+        read = build(stream).read()
 
     assert read.reason == "malformed_response"
     assert stream.stopped
     assert stream.fed == 2  # the init line, then the model's message
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert '"type": "assistant"' in caplog.records[-1].getMessage()
+    assert "I can't open that path." not in caplog.text
 
 
 def test_model_call_after_the_usage_message_still_fails() -> None:

@@ -16,11 +16,12 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from agent_router.clock import to_utc
+from agent_router.collectors.response_shape import log_malformed_response
 from agent_router.config_model import PoolUsage
 from agent_router.runner import (
     KILL_WAIT_S,
@@ -197,9 +198,11 @@ class _Stream:
     report: object = None  # its usage_report, None when absent
     text: str = ""  # its text, plus the result text
     model_called: bool = False
+    raw: bytearray = field(default_factory=bytearray)
 
     def feed(self, line: str) -> bool:
         """Take one stream line; False stops the process."""
+        self.raw.extend(line.encode("utf-8"))
         try:
             event = json.loads(line)
         except ValueError:
@@ -282,6 +285,7 @@ class ClaudeCodeUsage:
         stream = _Stream()
         failure = self._run([cli, *USAGE_ARGS], self._env, self._timeout_s, stream.feed)
         if stream.model_called:
+            log_malformed_response(SOURCE.name, bytes(stream.raw), json_lines=True)
             return UsageRead(reason="malformed_response")
         report = stream.report if isinstance(stream.report, Mapping) else None
         if report is not None:
@@ -300,6 +304,7 @@ class ClaudeCodeUsage:
             status = self._command([cli, *STATUS_ARGS], self._env, self._timeout_s)
             if _signed_in(status) is False or "not logged in" in lowered:
                 return UsageRead(reason="unauthorized")
+        log_malformed_response(SOURCE.name, bytes(stream.raw), json_lines=True)
         return UsageRead(reason="malformed_response")
 
 
