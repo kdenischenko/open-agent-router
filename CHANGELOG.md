@@ -35,6 +35,12 @@ All notable changes are documented here. The format follows
   working directory as activity, so a harness that stays silent while it works is no longer
   stopped as idle. A job stopped as idle names the last sign of life it saw
   (`executor showed no progress for 600 s; last activity: files 640 s ago`).
+- `agent-router backup [PATH]` copies the gateway database with SQLite's online
+  backup API, so the backup is consistent even while the gateway writes; without a
+  path it writes `<home>/backups/agent-router-<UTC YYYYMMDD-HHMMSS>.sqlite`, and
+  `--keep N` prunes older timestamp-named backups in the target directory after a
+  successful backup, keeping the newest N and leaving unrelated files alone.
+  Restore steps and scheduled-backup examples are in `docs/INSTALL.md`.
 
 ### Changed
 
