@@ -115,7 +115,7 @@ long answer or a subagent works. For kimi jobs the CPU time of the harness proce
 files changed in the working directory count as activity too, and a job that is stopped as idle
 says which sign of life was seen last. The hard cap applies either way.
 
-The full guide — harness sign-in, limit calibration, Windows autostart, the web dashboard
+The full guide — harness sign-in, limit calibration, autostart on Windows and Linux, the web dashboard
 and the delegation skills for orchestrators — is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
 
 ## Use from your agent
@@ -241,7 +241,7 @@ and remote classifiers read their own configured keys.
 
 Windows is supported and tested in CI and live. Linux and macOS are experimental:
 the test suite runs on them in CI, but the gateway has not been run live there,
-and autostart is Windows-only. Help wanted — see
+and autostart is documented for Windows and for Linux with `systemd --user`. Help wanted — see
 [ROADMAP](https://github.com/kdenischenko/open-agent-router/blob/main/ROADMAP.md).
 
 ## Commands

@@ -466,6 +466,53 @@ wscript.exe $src
 Gateway output is written to `serve.log` next to the config. To stop the gateway, end the
 `agent-router.exe` process. To remove autostart, delete `agent-router.vbs` from the Startup folder.
 
+**Start automatically on Linux with a `systemd --user` unit.** Root is not required. Create
+`~/.config/systemd/user/agent-router.service`:
+
+```ini
+[Unit]
+Description=agent-router gateway
+After=network-online.target
+
+[Service]
+Environment=AGENT_ROUTER_HOME=%h/.config/agent-router
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=%h/.local/bin/agent-router serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+`%h` is your home directory. Set `AGENT_ROUTER_HOME` to the path printed by `init` and
+`ExecStart` to the `agent-router` that `uv tool dir --bin` points to. The user manager does not
+read your shell profile, so `PATH` must contain the directories of the harness CLIs; if
+`command -v claude opencode kimi` prints other directories, add them, or set
+`[backends.<name>] executable`.
+
+Enable and start it, then check it:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now agent-router.service
+systemctl --user status agent-router.service
+agent-router status
+```
+
+Gateway output goes to the journal: `journalctl --user -u agent-router -f`. After a crash the
+unit restarts the gateway in 5 s. Without lingering, the user manager runs the gateway only
+while you are signed in; `loginctl enable-linger` keeps it running after you sign out and starts
+it at boot.
+
+To remove autostart:
+
+```bash
+systemctl --user disable --now agent-router.service
+rm ~/.config/systemd/user/agent-router.service
+systemctl --user daemon-reload
+```
+
 ## 6. Verify
 
 Run `doctor` first. `doctor --live` is optional: a fresh setup has `confirm = true` on every route,
