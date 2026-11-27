@@ -128,9 +128,9 @@ def run_stream(
             return "timeout"
         return None
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            if proc.poll() is None:
+                _stop(proc)
 
 
 def run_command(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -> str | None:
@@ -155,9 +155,9 @@ def run_command(argv: Sequence[str], env: Mapping[str, str], timeout_s: float) -
             return None
         return stdout.decode("utf-8", "replace")
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            if proc.poll() is None:
+                _stop(proc)
 
 
 def _reset_time(value: object) -> datetime | None:

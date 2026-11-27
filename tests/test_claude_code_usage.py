@@ -455,11 +455,13 @@ class _RunningProcess:
         raise RuntimeError("command failed")
 
 
-def test_run_stream_callback_error_kills_and_waits(
+def test_run_stream_callback_error_kills_process_tree_and_waits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     proc = _RunningProcess()
+    killed: list[int] = []
     monkeypatch.setattr(claude_code_usage.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(claude_code_usage, "kill_tree", killed.append)
 
     def fail(_line: str) -> bool:
         raise RuntimeError("line failed")
@@ -467,21 +469,41 @@ def test_run_stream_callback_error_kills_and_waits(
     with pytest.raises(RuntimeError, match="line failed"):
         run_stream(["claude"], {}, 30, fail)
 
-    assert proc.killed is True
-    assert proc.wait_timeouts == [None]
+    assert killed == [4242]
+    assert proc.killed is False
+    assert proc.wait_timeouts == [claude_code_usage.KILL_WAIT_S]
 
 
-def test_run_command_unexpected_error_kills_and_waits(
+def test_run_command_unexpected_error_kills_process_tree_and_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proc = _RunningProcess()
+    killed: list[int] = []
+    monkeypatch.setattr(claude_code_usage.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(claude_code_usage, "kill_tree", killed.append)
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        run_command(["claude"], {}, 30)
+
+    assert killed == [4242]
+    assert proc.killed is False
+    assert proc.wait_timeouts == [claude_code_usage.KILL_WAIT_S]
+
+
+def test_run_command_cleanup_error_preserves_original_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     proc = _RunningProcess()
     monkeypatch.setattr(claude_code_usage.subprocess, "Popen", lambda *args, **kwargs: proc)
 
+    def cleanup_fails(*_args) -> None:
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(claude_code_usage, "kill_tree", cleanup_fails)
+    monkeypatch.setattr(proc, "kill", cleanup_fails)
+
     with pytest.raises(RuntimeError, match="command failed"):
         run_command(["claude"], {}, 30)
-
-    assert proc.killed is True
-    assert proc.wait_timeouts == [None]
 
 
 def test_module_never_reads_claude_credentials() -> None:
