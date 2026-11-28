@@ -14,11 +14,8 @@ class SqliteSettings:
         self._store = store
 
     def get(self, key: str) -> str | None:
-        row = (
-            self._store.connection()
-            .execute("SELECT value FROM settings WHERE key = ?", (key,))
-            .fetchone()
-        )
+        with self._store.connection() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return None if row is None else row[0]
 
     def set(self, key: str, value: str) -> None:

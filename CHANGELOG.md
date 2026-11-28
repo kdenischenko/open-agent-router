@@ -55,6 +55,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The gateway no longer leaks SQLite connections: the web framework serves requests on
+  worker threads that are retired after a while, and each retired worker left its store
+  connection open, so a long-running `agent-router serve` ran out of file descriptors and
+  job intake failed with `git_unavailable: git rev-parse: failed to start (OSError)`. One
+  shared connection now serves every thread under the store lock, and the open file count
+  no longer grows with served requests.
 - Claude Code plan limits are detected from result errors and rejected rate-limit events, including
   the reset time. Input token usage now includes cache creation and cache reads.
 

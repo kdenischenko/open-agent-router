@@ -647,11 +647,10 @@ class SqliteJobStore:
             )
 
     def get(self, job_id: str) -> Job | None:
-        row = (
-            self._store.connection()
-            .execute(f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE id = ?", (job_id,))
-            .fetchone()
-        )
+        with self._store.connection() as conn:
+            row = conn.execute(
+                f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
         return None if row is None else _job(row)
 
     def update(self, job: Job) -> None:
@@ -664,19 +663,20 @@ class SqliteJobStore:
                 raise KeyError(job.id)
 
     def list(self, status: Status | None = None, limit: int = 50) -> builtins.list[Job]:
-        conn = self._store.connection()
-        if status is None:
-            rows = conn.execute(
-                f"SELECT {self._JOB_COLUMNS} FROM jobs ORDER BY created_at DESC, seq DESC LIMIT ?",
-                (int(limit),),
-            )
-        else:
-            rows = conn.execute(
-                f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = ?"
-                " ORDER BY created_at DESC, seq DESC LIMIT ?",
-                (status, int(limit)),
-            )
-        return [_job(row) for row in rows.fetchall()]
+        with self._store.connection() as conn:
+            if status is None:
+                rows = conn.execute(
+                    f"SELECT {self._JOB_COLUMNS} FROM jobs"
+                    " ORDER BY created_at DESC, seq DESC LIMIT ?",
+                    (int(limit),),
+                )
+            else:
+                rows = conn.execute(
+                    f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = ?"
+                    " ORDER BY created_at DESC, seq DESC LIMIT ?",
+                    (status, int(limit)),
+                )
+            return [_job(row) for row in rows.fetchall()]
 
     def search(
         self,
@@ -717,13 +717,13 @@ class SqliteJobStore:
                 " created_at DESC, seq DESC"
             ),
         }.get(sort, "created_at DESC, seq DESC")
-        conn = self._store.connection()
-        total = int(conn.execute(f"SELECT COUNT(*) FROM jobs{where}", params).fetchone()[0])
-        rows = conn.execute(
-            f"SELECT {self._JOB_COLUMNS} FROM jobs{where} ORDER BY {order} LIMIT ? OFFSET ?",
-            (*params, int(limit), int(offset)),
-        )
-        return [_job(row) for row in rows.fetchall()], total
+        with self._store.connection() as conn:
+            total = int(conn.execute(f"SELECT COUNT(*) FROM jobs{where}", params).fetchone()[0])
+            rows = conn.execute(
+                f"SELECT {self._JOB_COLUMNS} FROM jobs{where} ORDER BY {order} LIMIT ? OFFSET ?",
+                (*params, int(limit), int(offset)),
+            )
+            return [_job(row) for row in rows.fetchall()], total
 
     def purge(
         self, before: datetime, jobs_dir: Path, dry_run: bool = False
@@ -735,7 +735,8 @@ class SqliteJobStore:
         )
         query = f"SELECT id FROM jobs WHERE {condition} ORDER BY created_at, seq"
         if dry_run:
-            rows = self._store.connection().execute(query, (moment,)).fetchall()
+            with self._store.connection() as conn:
+                rows = conn.execute(query, (moment,)).fetchall()
             return [row[0] for row in rows], []
         with self._store.transaction() as conn:
             rows = conn.execute(query, (moment,)).fetchall()
@@ -757,31 +758,30 @@ class SqliteJobStore:
         return job_ids, failed_dirs
 
     def queued(self, limit: int, after: str | None = None) -> builtins.list[Job]:
-        conn = self._store.connection()
-        place = None
-        if after is not None:
-            place = conn.execute(
-                "SELECT created_at, seq FROM jobs WHERE id = ?", (after,)
-            ).fetchone()
-        if place is None:
-            rows = conn.execute(
-                f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = 'queued'"
-                " ORDER BY created_at, seq LIMIT ?",
-                (int(limit),),
-            )
-        else:
-            rows = conn.execute(
-                f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = 'queued'"
-                " AND (created_at > ? OR (created_at = ? AND seq > ?))"
-                " ORDER BY created_at, seq LIMIT ?",
-                (place[0], place[0], place[1], int(limit)),
-            )
-        return [_job(row) for row in rows.fetchall()]
+        with self._store.connection() as conn:
+            place = None
+            if after is not None:
+                place = conn.execute(
+                    "SELECT created_at, seq FROM jobs WHERE id = ?", (after,)
+                ).fetchone()
+            if place is None:
+                rows = conn.execute(
+                    f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = 'queued'"
+                    " ORDER BY created_at, seq LIMIT ?",
+                    (int(limit),),
+                )
+            else:
+                rows = conn.execute(
+                    f"SELECT {self._JOB_COLUMNS} FROM jobs WHERE status = 'queued'"
+                    " AND (created_at > ? OR (created_at = ? AND seq > ?))"
+                    " ORDER BY created_at, seq LIMIT ?",
+                    (place[0], place[0], place[1], int(limit)),
+                )
+            return [_job(row) for row in rows.fetchall()]
 
     def classifier_agreement(self, limit: int = 500) -> tuple[int, int]:
-        row = (
-            self._store.connection()
-            .execute(
+        with self._store.connection() as conn:
+            row = conn.execute(
                 "SELECT"
                 " COALESCE(SUM(json_extract(data, '$.classifier_tier') ="
                 " json_extract(data, '$.tier')), 0), COUNT(*)"
@@ -792,17 +792,14 @@ class SqliteJobStore:
                 " ORDER BY created_at DESC, seq DESC LIMIT ?"
                 ")",
                 (int(limit),),
-            )
-            .fetchone()
-        )
+            ).fetchone()
         return int(row[0]), int(row[1])
 
     def count_waiting(self) -> int:
-        row = (
-            self._store.connection()
-            .execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued', 'awaiting_approval')")
-            .fetchone()
-        )
+        with self._store.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('queued', 'awaiting_approval')"
+            ).fetchone()
         return int(row[0])
 
     # --- attempts --------------------------------------------------------------
@@ -857,10 +854,11 @@ class SqliteJobStore:
         return inserted
 
     def attempts(self, job_id: str) -> builtins.list[Attempt]:
-        rows = self._store.connection().execute(
-            f"SELECT {_ATTEMPT_COLUMNS} FROM attempts WHERE job_id = ? ORDER BY n", (job_id,)
-        )
-        return [_attempt(row) for row in rows.fetchall()]
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                f"SELECT {_ATTEMPT_COLUMNS} FROM attempts WHERE job_id = ? ORDER BY n", (job_id,)
+            ).fetchall()
+        return [_attempt(row) for row in rows]
 
     # --- ratings ----------------------------------------------------------------
 
@@ -872,14 +870,11 @@ class SqliteJobStore:
             )
 
     def last_rating(self, job_id: str) -> Rating | None:
-        row = (
-            self._store.connection()
-            .execute(
+        with self._store.connection() as conn:
+            row = conn.execute(
                 f"SELECT {_RATING_COLUMNS} FROM ratings WHERE job_id = ? ORDER BY id DESC LIMIT 1",
                 (job_id,),
-            )
-            .fetchone()
-        )
+            ).fetchone()
         return None if row is None else _rating(row)
 
     # --- classifier votes --------------------------------------------------------
@@ -904,11 +899,12 @@ class SqliteJobStore:
             )
 
     def votes(self, job_id: str) -> builtins.list[Vote]:
-        rows = self._store.connection().execute(
-            f"SELECT {_VOTE_COLUMNS} FROM classifier_votes WHERE job_id = ? ORDER BY id",
-            (job_id,),
-        )
-        return [_vote(row) for row in rows.fetchall()]
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                f"SELECT {_VOTE_COLUMNS} FROM classifier_votes WHERE job_id = ? ORDER BY id",
+                (job_id,),
+            ).fetchall()
+        return [_vote(row) for row in rows]
 
     def votes_since(self, since: datetime, offline: bool | None = None) -> builtins.list[VoteRow]:
         query = (
@@ -926,9 +922,10 @@ class SqliteJobStore:
             query += " AND v.offline = ?"
             params.append(int(offline))
         query += " ORDER BY v.at, v.id"
-        rows = self._store.connection().execute(query, params)
+        with self._store.connection() as conn:
+            rows = conn.execute(query, params).fetchall()
         result: list[VoteRow] = []
-        for row in rows.fetchall():
+        for row in rows:
             data = json.loads(row[9])
             request = data["request"]
             result.append(
@@ -953,26 +950,27 @@ class SqliteJobStore:
         return result
 
     def prompts_since(self, since: datetime) -> builtins.list[tuple[str, str]]:
-        rows = self._store.connection().execute(
-            "SELECT id, data FROM jobs WHERE created_at >= ? ORDER BY created_at, seq",
-            (to_us(since),),
-        )
-        return [(job_id, json.loads(raw)["request"]["prompt"]) for job_id, raw in rows.fetchall()]
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                "SELECT id, data FROM jobs WHERE created_at >= ? ORDER BY created_at, seq",
+                (to_us(since),),
+            ).fetchall()
+        return [(job_id, json.loads(raw)["request"]["prompt"]) for job_id, raw in rows]
 
     def usage_since(self, pool: str, since: datetime | None) -> GatewayUsage:
         floor = -(2**62) if since is None else to_us(since)
-        conn = self._store.connection()
-        row = conn.execute(
-            "SELECT COUNT(DISTINCT job_id), COALESCE(SUM(duration_s), 0),"
-            " COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0)"
-            " FROM attempts WHERE pool = ? AND started_at >= ?",
-            (pool, floor),
-        ).fetchone()
-        proxy = conn.execute(
-            "SELECT COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0)"
-            " FROM spend WHERE pool = ? AND source = 'proxy' AND at > ?",
-            (pool, floor),
-        ).fetchone()
+        with self._store.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT job_id), COALESCE(SUM(duration_s), 0),"
+                " COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0)"
+                " FROM attempts WHERE pool = ? AND started_at >= ?",
+                (pool, floor),
+            ).fetchone()
+            proxy = conn.execute(
+                "SELECT COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0)"
+                " FROM spend WHERE pool = ? AND source = 'proxy' AND at > ?",
+                (pool, floor),
+            ).fetchone()
         return GatewayUsage(
             jobs=int(row[0]),
             seconds=float(row[1]),
@@ -986,18 +984,15 @@ class SqliteJobStore:
 
     def spend_since(self, pool: str, since: datetime | None) -> SpendTotal:
         floor = -(2**62) if since is None else to_us(since)
-        row = (
-            self._store.connection()
-            .execute(
+        with self._store.connection() as conn:
+            row = conn.execute(
                 "SELECT COALESCE(SUM(source = 'job'), 0),"
                 " COALESCE(SUM(source = 'proxy'), 0),"
                 " COALESCE(SUM(COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)), 0),"
                 " COALESCE(SUM(cost_usd), 0), COALESCE(MAX(estimated), 0)"
                 " FROM spend WHERE pool = ? AND at > ?",
                 (pool, floor),
-            )
-            .fetchone()
-        )
+            ).fetchone()
         return SpendTotal(
             jobs=int(row[0]),
             requests=int(row[1]),
@@ -1009,12 +1004,13 @@ class SqliteJobStore:
     # --- stats -------------------------------------------------------------------
 
     def attempt_stats_since(self, since: datetime) -> builtins.list[AttemptStat]:
-        rows = self._store.connection().execute(
-            "SELECT route, started_at, finished_at, duration_s, tokens_in, tokens_out,"
-            " cost_usd, cost_estimated FROM attempts WHERE started_at >= ?"
-            " ORDER BY started_at, id",
-            (to_us(since),),
-        )
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                "SELECT route, started_at, finished_at, duration_s, tokens_in, tokens_out,"
+                " cost_usd, cost_estimated FROM attempts WHERE started_at >= ?"
+                " ORDER BY started_at, id",
+                (to_us(since),),
+            ).fetchall()
         return [
             AttemptStat(
                 route=row[0],
@@ -1026,19 +1022,20 @@ class SqliteJobStore:
                 cost_usd=row[6],
                 cost_estimated=bool(row[7]),
             )
-            for row in rows.fetchall()
+            for row in rows
         ]
 
     def job_stats_since(self, since: datetime) -> builtins.list[JobStat]:
         # the route that served the job: `route` once chosen, `approved_route` on old rows
-        rows = self._store.connection().execute(
-            "SELECT id, COALESCE(json_extract(data, '$.route'),"
-            " json_extract(data, '$.approved_route')), status, created_at, finished_at,"
-            " (SELECT value FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1),"
-            " (SELECT should_tier FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1)"
-            " FROM jobs WHERE created_at >= ? ORDER BY created_at, seq",
-            (to_us(since),),
-        )
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                "SELECT id, COALESCE(json_extract(data, '$.route'),"
+                " json_extract(data, '$.approved_route')), status, created_at, finished_at,"
+                " (SELECT value FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1),"
+                " (SELECT should_tier FROM ratings WHERE job_id = jobs.id ORDER BY id DESC LIMIT 1)"
+                " FROM jobs WHERE created_at >= ? ORDER BY created_at, seq",
+                (to_us(since),),
+            ).fetchall()
         return [
             JobStat(
                 id=row[0],
@@ -1049,15 +1046,16 @@ class SqliteJobStore:
                 rating_value=row[5],
                 rating_should_tier=row[6],
             )
-            for row in rows.fetchall()
+            for row in rows
         ]
 
     def spend_stats_since(self, since: datetime) -> builtins.list[SpendStat]:
-        rows = self._store.connection().execute(
-            "SELECT pool, at, source, route, tokens_in, tokens_out, cost_usd, estimated"
-            " FROM spend WHERE at > ? ORDER BY at, id",
-            (to_us(since),),
-        )
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                "SELECT pool, at, source, route, tokens_in, tokens_out, cost_usd, estimated"
+                " FROM spend WHERE at > ? ORDER BY at, id",
+                (to_us(since),),
+            ).fetchall()
         return [
             SpendStat(
                 pool=row[0],
@@ -1069,55 +1067,55 @@ class SqliteJobStore:
                 cost_usd=row[6],
                 estimated=bool(row[7]),
             )
-            for row in rows.fetchall()
+            for row in rows
         ]
 
     def limit_hits_in_row(self, pool: str) -> int:
         # Order the streak by finish time: a pool's attempts run in parallel, so a row
         # inserted earlier may finish later. The id breaks ties.
-        conn = self._store.connection()
-        last_ok = conn.execute(
-            "SELECT finished_at, id FROM attempts"
-            " WHERE pool = ? AND outcome = 'ok' AND finished_at IS NOT NULL"
-            " ORDER BY finished_at DESC, id DESC LIMIT 1",
-            (pool,),
-        ).fetchone()
-        if last_ok is None:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM attempts"
-                " WHERE pool = ? AND outcome = 'limit' AND finished_at IS NOT NULL",
+        with self._store.connection() as conn:
+            last_ok = conn.execute(
+                "SELECT finished_at, id FROM attempts"
+                " WHERE pool = ? AND outcome = 'ok' AND finished_at IS NOT NULL"
+                " ORDER BY finished_at DESC, id DESC LIMIT 1",
                 (pool,),
             ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM attempts"
-                " WHERE pool = ? AND outcome = 'limit' AND finished_at IS NOT NULL"
-                " AND (finished_at > ? OR (finished_at = ? AND id > ?))",
-                (pool, last_ok[0], last_ok[0], last_ok[1]),
-            ).fetchone()
+            if last_ok is None:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM attempts"
+                    " WHERE pool = ? AND outcome = 'limit' AND finished_at IS NOT NULL",
+                    (pool,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM attempts"
+                    " WHERE pool = ? AND outcome = 'limit' AND finished_at IS NOT NULL"
+                    " AND (finished_at > ? OR (finished_at = ? AND id > ?))",
+                    (pool, last_ok[0], last_ok[0], last_ok[1]),
+                ).fetchone()
         return int(row[0])
 
     def route_errors_in_row(self, route: str) -> tuple[int, datetime | None]:
         # Order the streak by finish time: a row inserted earlier may finish later. The id
         # breaks ties.
-        conn = self._store.connection()
-        last_ok = conn.execute(
-            "SELECT finished_at, id FROM attempts"
-            " WHERE route = ? AND outcome = 'ok' AND finished_at IS NOT NULL"
-            " ORDER BY finished_at DESC, id DESC LIMIT 1",
-            (route,),
-        ).fetchone()
-        query = (
-            "SELECT COUNT(*), MAX(finished_at) FROM attempts"
-            " WHERE route = ? AND outcome = 'error' AND finished_at IS NOT NULL"
-        )
-        if last_ok is None:
-            row = conn.execute(query, (route,)).fetchone()
-        else:
-            row = conn.execute(
-                query + " AND (finished_at > ? OR (finished_at = ? AND id > ?))",
-                (route, last_ok[0], last_ok[0], last_ok[1]),
+        with self._store.connection() as conn:
+            last_ok = conn.execute(
+                "SELECT finished_at, id FROM attempts"
+                " WHERE route = ? AND outcome = 'ok' AND finished_at IS NOT NULL"
+                " ORDER BY finished_at DESC, id DESC LIMIT 1",
+                (route,),
             ).fetchone()
+            query = (
+                "SELECT COUNT(*), MAX(finished_at) FROM attempts"
+                " WHERE route = ? AND outcome = 'error' AND finished_at IS NOT NULL"
+            )
+            if last_ok is None:
+                row = conn.execute(query, (route,)).fetchone()
+            else:
+                row = conn.execute(
+                    query + " AND (finished_at > ? OR (finished_at = ? AND id > ?))",
+                    (route, last_ok[0], last_ok[0], last_ok[1]),
+                ).fetchone()
         count = int(row[0])
         return count, None if count == 0 else from_us(row[1])
 
@@ -1139,11 +1137,12 @@ class SqliteJobStore:
         return block
 
     def active_blocks(self, now: datetime) -> dict[str, PoolBlock]:
-        rows = self._store.connection().execute(
-            "SELECT pool, until, reason FROM pool_blocks WHERE until > ? ORDER BY pool",
-            (to_us(now),),
-        )
-        return {row[0]: PoolBlock(row[0], from_us(row[1]), row[2]) for row in rows.fetchall()}
+        with self._store.connection() as conn:
+            rows = conn.execute(
+                "SELECT pool, until, reason FROM pool_blocks WHERE until > ? ORDER BY pool",
+                (to_us(now),),
+            ).fetchall()
+        return {row[0]: PoolBlock(row[0], from_us(row[1]), row[2]) for row in rows}
 
     def clear_block(self, pool: str) -> None:
         with self._store.transaction() as conn:

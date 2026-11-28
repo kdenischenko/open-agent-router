@@ -396,7 +396,8 @@ def weighted_rig(tmp_path, home, store, jobstore, clock, register_harness):
 
 
 def spend_versions(rig: SpendRig) -> list[str | None]:
-    rows = rig.jobs._store.connection().execute("SELECT prices_version FROM spend").fetchall()
+    with rig.jobs._store.connection() as conn:
+        rows = conn.execute("SELECT prices_version FROM spend").fetchall()
     return [row[0] for row in rows]
 
 

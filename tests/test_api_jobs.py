@@ -496,11 +496,10 @@ def test_rate_note_not_in_db_and_event_has_no_note(api, rig) -> None:
     response = rate(api, rig, job_id, value="partial", should_tier="standard", note=secret)
 
     assert response.status_code == 200
-    rows = (
-        rig.store.connection()
-        .execute("SELECT job_id, value, should_tier, by, note_sha256, note_chars, at FROM ratings")
-        .fetchall()
-    )
+    with rig.store.connection() as conn:
+        rows = conn.execute(
+            "SELECT job_id, value, should_tier, by, note_sha256, note_chars, at FROM ratings"
+        ).fetchall()
     assert rows
     assert secret not in " ".join(str(part) for row in rows for part in row)
     rated = [data for kind, data in seen if kind == "job.rated"]
