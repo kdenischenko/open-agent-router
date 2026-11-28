@@ -309,7 +309,24 @@ def test_init_without_harnesses_says_what_to_install(
     output = _init_with(runner, monkeypatch, [])
 
     assert "no harness found" in output
+    assert "codex" in next(
+        line for line in output.splitlines() if line.startswith("no harness found")
+    )
     assert "run:" not in output
+
+
+def test_template_maps_codex_caller_to_chatgpt_pool(
+    home: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = _init_with(runner, monkeypatch, ["codex"])
+
+    config = load_config(home / "config.toml")
+    assert config.callers["codex"] == "chatgpt-plus"
+    routes = [route for route in config.routes if route.backend == "codex"]
+    assert len(routes) == 4 and all(not route.enabled for route in routes)
+    line = next(line for line in output.splitlines() if "harness codex" in line)
+    assert "routes are disabled" in line
+    assert all(route.id in line for route in routes)
 
 
 def test_init_names_disabled_routes_of_found_harness(

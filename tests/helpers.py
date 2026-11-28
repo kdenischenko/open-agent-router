@@ -92,7 +92,7 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-ALL_HARNESSES = ("claude", "cline", "kimi", "opencode")
+ALL_HARNESSES = ("claude", "cline", "codex", "kimi", "opencode")
 
 
 # test limits of the usd pool windows (5h, week, month) in place of the template placeholders

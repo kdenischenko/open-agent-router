@@ -52,11 +52,14 @@ def route(route_id: str, backend: str) -> str:
 
 def test_builtin_harnesses_registered() -> None:
     names = {entry.name for entry in metadata.entry_points(group=HARNESS_GROUP)}
-    assert names >= {"kimi", "opencode", "claude", "cline"}
+    assert names >= {"kimi", "opencode", "claude", "cline", "codex"}
     assert load_harness("opencode").spend == "counter"
     assert load_harness("kimi").spend == "journal"
     assert load_harness("claude").spend == "journal"
+    assert load_harness("codex").spend == "journal"
     assert load_harness("opencode").executables == ("opencode",)
+    assert load_harness("codex").executables == ("codex",)
+    assert load_harness("codex").min_version == "0.172.0"
     assert load_harness("kimi").adapter.name == "kimi"
 
 
@@ -66,7 +69,7 @@ def test_unknown_harness_is_config_error(home: Path) -> None:
         write_config(home, text)
     message = str(caught.value)
     assert '"nope"' in message
-    assert "available: claude, cline, kimi, opencode" in message
+    assert "available: claude, cline, codex, kimi, opencode" in message
 
 
 def test_unknown_counter_is_config_error(home: Path) -> None:

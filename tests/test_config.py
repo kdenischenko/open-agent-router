@@ -55,9 +55,10 @@ def default_config(tmp_path: Path, config_module):
     return load_text(tmp_path, config_module, text)
 
 
-def test_default_template_loads_three_pools(default_config) -> None:
-    assert len(default_config.pools) == 3
+def test_default_template_loads_four_pools(default_config) -> None:
+    assert len(default_config.pools) == 4
     assert {pool.id for pool in default_config.pools} == {
+        "chatgpt-plus",
         "claude-pro",
         "kimi-code",
         "opencode-go",
@@ -552,10 +553,20 @@ def test_default_template_has_placeholder_limits(default_config) -> None:
         ("month", "fixed", "pace", 10.0),
     ]
     assert [w.block_at for w in go.windows] == [0.9, 0.9, 1.0]
+    chatgpt = pools["chatgpt-plus"]
+    assert chatgpt.title == "ChatGPT Plus" and chatgpt.unit == "percent"
+    assert [(w.id, str(w.duration), w.kind, w.role) for w in chatgpt.windows] == [
+        ("5h", "5h", "fixed", "guard"),
+        ("week", "7d", "fixed", "pace"),
+    ]
     routes = {route.id: route for route in default_config.routes}
     assert set(routes) == {
         "claude-cli/sonnet",
         "cline/glm-5.3",
+        "codex/gpt-6-luna",
+        "codex/gpt-6.1-terra",
+        "codex/gpt-6.2-astra",
+        "codex/gpt-6.2-sol",
         "kimi-cli/k3.1-pro",
         "kimi-cli/kimi-for-coding",
         "opencode-cli/glm-5.3",
@@ -564,7 +575,7 @@ def test_default_template_has_placeholder_limits(default_config) -> None:
     assert routes["kimi-cli/k3.1-pro"].tiers == frozenset({"standard", "strong"})
     assert routes["kimi-cli/k3.1-pro"].model == "kimi-code/k3.1-pro"
     assert routes["opencode-cli/glm-5.3-flash"].tiers == frozenset({"cheap"})
-    assert [routes[name].quality for name in sorted(routes)] == [5, 4, 4, 3, 4, 2]
+    assert [routes[name].quality for name in sorted(routes)] == [5, 4, 3, 3, 5, 4, 4, 3, 4, 2]
     assert all(route.modes == frozenset({"read", "write"}) for route in routes.values())
     assert default_config.port == 8787 and default_config.classifier.kind == "none"
     assert default_config.tasks.allowed_roots == ()
@@ -730,10 +741,37 @@ def test_init_template_has_routing_keys(default_config) -> None:
     assert cline.model == "opencode-go/glm-5.3" and cline.model_key == "glm-5.3"
     assert cline.tiers == frozenset({"standard"}) and cline.quality == 4
     assert routes["kimi-cli/k3.1-pro"].model_key == "kimi-k3.1-pro"
+    sol = routes["codex/gpt-6.2-sol"]
+    astra = routes["codex/gpt-6.2-astra"]
+    assert (sol.enabled, sol.backend, sol.pool, sol.model) == (
+        False,
+        "codex",
+        "chatgpt-plus",
+        "gpt-6.2-sol",
+    )
+    assert sol.tiers == frozenset({"standard"})
+    codex = {route.id: route for route in default_config.routes if route.backend == "codex"}
+    assert {
+        route_id: (route.model, route.tiers, route.enabled) for route_id, route in codex.items()
+    } == {
+        "codex/gpt-6-luna": ("gpt-6-luna", frozenset({"cheap"}), False),
+        "codex/gpt-6.2-sol": ("gpt-6.2-sol", frozenset({"standard"}), False),
+        "codex/gpt-6.1-terra": ("gpt-6.1-terra", frozenset({"standard"}), False),
+        "codex/gpt-6.2-astra": ("gpt-6.2-astra", frozenset({"strong"}), False),
+    }
+    assert (astra.enabled, astra.backend, astra.pool, astra.model) == (
+        False,
+        "codex",
+        "chatgpt-plus",
+        "gpt-6.2-astra",
+    )
+    assert astra.tiers == frozenset({"strong"})
+    assert default_config.callers["codex"] == "chatgpt-plus"
     assert default_config.callers["cline"] == "opencode-go"
     assert default_config.callers["opencode"] == "opencode-go"
     assert default_config.callers["claude-code"] == "claude-pro"
     assert default_config.route_spend(cline) == "journal"
+    assert default_config.route_spend(sol) == "journal"
 
 
 def _usage_text(root: str = "", pool: str = "") -> str:

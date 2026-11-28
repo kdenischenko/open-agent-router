@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":1,"result":{}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"authentication required: run codex login"}}

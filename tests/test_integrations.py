@@ -11,6 +11,7 @@ SKILLS = (
     ROOT / "integrations/kimi-code/agent-router-delegate/SKILL.md",
     ROOT / "integrations/cline/agent-router-delegate/SKILL.md",
     ROOT / "integrations/opencode/agent-router-delegate/SKILL.md",
+    ROOT / "integrations/codex/agent-router-delegate/SKILL.md",
 )
 
 
@@ -66,10 +67,11 @@ def test_skill_hands_approval_to_human(path: Path) -> None:
 
 
 EXPECTED_TARGETS = [
-    ("claude-code", ".claude/skills"),
-    ("kimi-code", ".kimi-code/skills"),
-    ("opencode", ".config/opencode/skills"),
-    ("cline", ".cline/skills"),
+    ("claude-code", "$HOME/.claude/skills"),
+    ("kimi-code", "$HOME/.kimi-code/skills"),
+    ("opencode", "$HOME/.config/opencode/skills"),
+    ("cline", "$HOME/.cline/skills"),
+    ("codex", "$HOME/.agents/skills"),
 ]
 
 
@@ -84,7 +86,7 @@ def test_install_powershell_block_targets_all_harnesses() -> None:
     block = re.search(r"```powershell\n(.*?)```", section, flags=re.DOTALL)
     assert block, "section 9 must keep the PowerShell install block"
 
-    pairs = re.findall(r'"\s*(\S+?)\s*"\s*=\s*"\$HOME/(\S+?)\s*"', block[1])
+    pairs = re.findall(r'"\s*(\S+?)\s*"\s*=\s*"([^"]+)"', block[1])
     assert pairs == EXPECTED_TARGETS
 
 
@@ -93,7 +95,9 @@ def test_install_bash_block_targets_all_harnesses() -> None:
     block = re.search(r"```bash\n(.*?)```", section, flags=re.DOTALL)
     assert block, "section 9 must keep the bash install block"
 
-    pairs = re.findall(r"^(\S+)\s+\$HOME/(\S+)$", block[1], flags=re.MULTILINE)
+    pairs = re.findall(
+        r"^(\S+)\s+(\$HOME/\S+|[A-Za-z]:\\Users\\\S+)$", block[1], flags=re.MULTILINE
+    )
     assert pairs == EXPECTED_TARGETS
     assert "mkdir -p" in block[1]
     assert "read -r" in block[1]

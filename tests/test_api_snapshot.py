@@ -115,10 +115,15 @@ def test_unknown_path_is_json_404(client, tokens):
 # --- snapshot ---------------------------------------------------------------------
 
 
-def test_snapshot_has_three_pools_and_fields(client, tokens, clock):
+def test_snapshot_has_four_pools_and_fields(client, tokens, clock):
     body = client.get("/api/v1/snapshot", headers=bearer(tokens.client)).json()
     assert body["now"] == clock.now().isoformat()
-    assert [pool["id"] for pool in body["pools"]] == ["claude-pro", "kimi-code", "opencode-go"]
+    assert [pool["id"] for pool in body["pools"]] == [
+        "claude-pro",
+        "kimi-code",
+        "chatgpt-plus",
+        "opencode-go",
+    ]
     for pool in body["pools"]:
         assert set(pool) == POOL_FIELDS
         assert pool["known"] is False and pool["lag"] is None
@@ -126,7 +131,7 @@ def test_snapshot_has_three_pools_and_fields(client, tokens, clock):
         for window in pool["windows"]:
             assert set(window) == WINDOW_FIELDS
             assert window["known"] is False and window["note"]
-    assert [window["id"] for window in body["pools"][2]["windows"]] == ["5h", "week", "month"]
+    assert [window["id"] for window in body["pools"][3]["windows"]] == ["5h", "week", "month"]
 
 
 def test_snapshot_usage_has_exact_fields_and_drift_state(config, store, clock):
@@ -242,6 +247,10 @@ def test_advise_and_decision_json(config, store, clock):
     excluded = {item["route"]: item["reason"] for item in body["excluded"]}
     assert excluded == {
         "cline/glm-5.3": "route disabled",
+        "codex/gpt-6-luna": "route disabled",
+        "codex/gpt-6.2-sol": "route disabled",
+        "codex/gpt-6.1-terra": "route disabled",
+        "codex/gpt-6.2-astra": "route disabled",
         "opencode-cli/glm-5.3-flash": "does not serve tier standard",
     }
     from_kimi = advise(config, snapshot, "standard", "kimi-code")

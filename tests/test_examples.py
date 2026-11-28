@@ -153,8 +153,8 @@ def skill_callers() -> set[str]:
     return names
 
 
-def test_skill_callers_are_the_four_harnesses() -> None:
-    assert skill_callers() == {"claude-code", "kimi-code", "opencode", "cline"}
+def test_skill_callers_are_the_five_harnesses() -> None:
+    assert skill_callers() == {"claude-code", "kimi-code", "opencode", "cline", "codex"}
 
 
 @pytest.mark.parametrize("path", [TEMPLATE, *EXAMPLES], ids=lambda path: path.name)

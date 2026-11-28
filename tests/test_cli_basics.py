@@ -50,7 +50,7 @@ def test_distribution_name_and_entry_points() -> None:
     scripts = {entry.name for entry in dist.entry_points.select(group="console_scripts")}
     assert {"agent-router", "agent-router-statusline"} <= scripts
     harnesses = {entry.name for entry in dist.entry_points.select(group="agent_router.harnesses")}
-    assert harnesses == {"kimi", "opencode", "claude", "cline"}
+    assert harnesses == {"kimi", "opencode", "claude", "cline", "codex"}
 
 
 def test_release_workflow_uses_trusted_publishing() -> None:
@@ -166,7 +166,7 @@ def test_init_enables_only_found(
     ]
     text = (home / "config.toml").read_text(encoding="utf-8")
     assert text.count("\n[[routes]]") == 2
-    assert text.count("# [[routes]]") == 4
+    assert text.count("# [[routes]]") == 8
 
 
 def test_init_skips_broken_harness_plugin(
@@ -186,7 +186,7 @@ def test_init_skips_broken_harness_plugin(
 
     assert result.exit_code == 0
     assert "harness kimi failed to load: broken plugin" in result.output
-    assert "Harnesses found: claude, cline, opencode" in result.output
+    assert "Harnesses found: claude, cline, codex, opencode" in result.output
 
 
 def test_init_prints_paths(home: Path, runner: CliRunner) -> None:
