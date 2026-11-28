@@ -163,6 +163,7 @@ came from (`figure:` in `agent-router status`, the pool card on the dashboard):
 | OpenCode Go usage API | OpenCode Go | read every `[usage].interval` in `auto` mode, or now with `agent-router usage refresh` |
 | Claude Code `/usage` | Claude | the signed-in Claude Code CLI, read like the OpenCode Go usage API |
 | Codex app-server | ChatGPT Plus | 5-hour and weekly limits read from the signed-in Codex CLI like the OpenCode Go usage API |
+| Kimi Code local server | Kimi Code | 5-hour and monthly quotas read from the signed-in Kimi Code CLI like the OpenCode Go usage API |
 | `opencode stats` counter | `usd` pools | cumulative cost sampled from OpenCode |
 | Harness journal | `usd` pools | cost each job reports or is estimated at, added on top of the last figure |
 

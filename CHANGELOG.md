@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `kimi-code` usage source reads the Kimi Code plan's 5-hour and monthly quotas from the local
+  server of the signed-in Kimi Code CLI, so the pool no longer needs manual calibration.
+
 ## [0.4.0] - 2026-11-28
 
 ### Added

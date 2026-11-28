@@ -192,7 +192,7 @@ def test_unknown_usage_source_is_config_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as caught:
         load_text(tmp_path, text)
     messages = caught.value.messages
-    expected = 'unknown usage source "nope"; available: claude-code, codex, opencode-go'
+    expected = 'unknown usage source "nope"; available: claude-code, codex, kimi-code, opencode-go'
     assert f"pools[0].usage.source: {expected}" in messages
 
 

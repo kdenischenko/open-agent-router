@@ -80,6 +80,7 @@ opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
 [project.entry-points."agent_router.usage_sources"]
 claude-code = "agent_router.collectors.claude_code_usage:SOURCE"
 codex = "agent_router.collectors.codex_usage:SOURCE"
+kimi-code = "agent_router.collectors.kimi_code_usage:SOURCE"
 opencode-go = "agent_router.collectors.opencode_go_usage:SOURCE"
 
 [dependency-groups]

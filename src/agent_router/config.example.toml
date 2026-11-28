@@ -119,6 +119,10 @@ unit = "percent"
   kind = "fixed"
   role = "pace"
 
+  # [pools.usage]
+  # source = "kimi-code"  # read the Kimi Code plan's usage from the Kimi Code CLI (2.8.1+)
+  # windows = { limit5h = "5h", monthTotal = "month" }
+
 [[pools]]
 id = "chatgpt-plus"
 title = "ChatGPT Plus"
