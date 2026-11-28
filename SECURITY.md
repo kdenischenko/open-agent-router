@@ -2,7 +2,7 @@
 
 agent-router is a **single-user, local tool**, built and tested on Windows (Linux and macOS
 are experimental). It runs AI coding harnesses (OpenCode,
-Kimi Code, Cline, Claude Code) on your machine with your accounts. This page describes what it
+Kimi Code, Cline, Claude Code, Codex) on your machine with your accounts. This page describes what it
 protects against, what it does not, and how to report a vulnerability.
 
 ## Threat model
@@ -42,9 +42,11 @@ protects against, what it does not, and how to report a vulnerability.
   does not limit *what* the harness does there.
 - **`--mode write` auto-approves tools.** To run unattended, the harness is started with its
   auto-approve option: `opencode --auto`, `cline --auto-approve true`,
-  `claude --permission-mode bypassPermissions`; Kimi Code runs non-interactively (`kimi -p`) with
-  no one to ask. The harness can edit any file your user can edit and run commands, not only inside
-  the job directory. See "Keeping writes inside the job directory" in
+  `claude --permission-mode bypassPermissions`; Codex uses `approval_policy=never` with
+  `read-only` and `workspace-write` sandboxes for read and write jobs; Kimi Code runs
+  non-interactively (`kimi -p`) with no one to ask. Except where a harness sandbox restricts it
+  (Codex's `workspace-write`), the harness can edit any file your user can edit and run commands,
+  not only inside the job directory. See "Keeping writes inside the job directory" in
   [the installation guide](docs/INSTALL.md) for the settings each harness offers.
 - **`--mode read` is a request, not a guarantee.** Where the harness has a read-only or plan mode,
   it is used; otherwise the prompt tells the executor not to change files. In a git repository the

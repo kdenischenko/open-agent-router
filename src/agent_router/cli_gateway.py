@@ -107,7 +107,7 @@ def _init_hints(config: Config, found: list[str], on_path: set[str]) -> list[str
     hints = []
     if not found:
         hints.append(
-            "no harness found: install and sign in to kimi, opencode, cline or claude, "
+            "no harness found: install and sign in to kimi, opencode, codex, cline or claude, "
             "then add or uncomment the [[routes]] blocks of that harness in config.toml "
             "and set enabled = true where it is false"
         )

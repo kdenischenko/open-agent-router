@@ -102,7 +102,7 @@ def fake_harnesses(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
 
 
-def test_doctor_table_lists_three_harnesses_with_details(
+def test_doctor_table_lists_five_harnesses_with_details(
     runner: CliRunner, gateway: FakeGateway, fake_harnesses: None
 ) -> None:
     result = runner.invoke(cli.app, ["doctor"])
@@ -150,6 +150,17 @@ def test_doctor_does_not_warn_about_supported_or_unknown_opencode(
 
     assert result.exit_code == 0
     assert "is older than" not in result.stdout
+
+
+def test_doctor_accepts_codex_cli_version(
+    runner: CliRunner, gateway: FakeGateway, fake_harnesses: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_harness_version", lambda exe: "codex-cli 0.172.0", raising=False)
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Warning: harness codex" not in result.stdout
 
 
 def test_doctor_warns_about_empty_allowed_roots(
@@ -210,7 +221,7 @@ def test_doctor_version_uses_closed_stdin_timeout_and_no_console_window(
     result = runner.invoke(cli.app, ["doctor"])
 
     assert result.exit_code == 0
-    assert len(calls) == 4  # claude, cline, kimi, opencode
+    assert len(calls) == 5  # claude, cline, codex, kimi, opencode
     for argv, kwargs in calls:
         assert argv[1:] == ["--version"]
         assert kwargs["stdin"] == subprocess.DEVNULL
@@ -241,6 +252,7 @@ def test_doctor_live_submits_one_read_job_per_harness_and_waits(
     assert result.exit_code == 1
     posts = [call for call in gateway.calls if call[:2] == ("POST", "/api/v1/jobs")]
     assert [call[2]["route"] for call in posts] == [
+        "codex/gpt-6-luna",
         "kimi-cli/k3.1-pro",
         "opencode-cli/glm-5.3-flash",
         "cline/glm-5.3",
@@ -250,6 +262,7 @@ def test_doctor_live_submits_one_read_job_per_harness_and_waits(
     assert all(call[2]["prompt"] for call in posts)
     waits = [call for call in gateway.calls if call[0] == "GET" and call[1].endswith("/wait")]
     assert [call[1] for call in waits] == [
+        "/api/v1/jobs/codex/gpt-6-luna/wait",
         "/api/v1/jobs/kimi-cli/k3.1-pro/wait",
         "/api/v1/jobs/opencode-cli/glm-5.3-flash/wait",
         "/api/v1/jobs/cline/glm-5.3/wait",
@@ -939,6 +952,7 @@ def test_doctor_warns_for_every_pool_when_usage_table_is_present(
     assert [line.split(":")[1].strip() for line in mode_warnings] == [
         "pool claude-pro",
         "pool kimi-code",
+        "pool chatgpt-plus",
         "pool opencode-go",
     ]
 

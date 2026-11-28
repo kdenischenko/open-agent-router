@@ -15,6 +15,7 @@ denied_roots = []
 claude-code = ""
 kimi-code = ""
 opencode = ""
+codex = ""
 cline = ""
 
 [backends.kimi]

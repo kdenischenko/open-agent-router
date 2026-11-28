@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a22185-8844-7150-a4e6-772eb9e9af4d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Создаю `result.txt`."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath result.txt -Value done -NoNewline -ErrorAction Stop\nif ((Get-Content -LiteralPath result.txt -Raw) -cne 'done') { throw 'Unexpected file contents' }\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath result.txt -Value done -NoNewline -ErrorAction Stop\nif ((Get-Content -LiteralPath result.txt -Raw) -cne 'done') { throw 'Unexpected file contents' }\"","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"ok"}}
+{"type":"turn.completed","usage":{"input_tokens":46507,"cached_input_tokens":23168,"cache_write_input_tokens":0,"output_tokens":86,"reasoning_output_tokens":0}}

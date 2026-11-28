@@ -6,8 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
 ### Added
 
+- A `codex` usage source reads the ChatGPT plan's 5-hour and weekly limits from the Codex CLI app-server.
+- OpenAI Codex CLI harness with ChatGPT Plus pool, read/write sandbox modes and JSONL usage parsing.
 - `agent-router purge` applies `storage.retention_days` to old observations and counter samples,
   reports their counts, keeps the newest observation and usable reset per pool window, and protects
   counter samples for twice the longest configured pool window duration.
@@ -222,7 +226,8 @@ Alpha for Windows.
 - Experimental Linux and macOS support; Windows-only autostart.
 - Troubleshooting guide for common gateway, harness, limit and approval failures.
 
-[Unreleased]: https://github.com/kdenischenko/open-agent-router/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kdenischenko/open-agent-router/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kdenischenko/open-agent-router/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kdenischenko/open-agent-router/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kdenischenko/open-agent-router/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kdenischenko/open-agent-router/releases/tag/v0.1.0

@@ -27,6 +27,7 @@ exit_grace_s = 60
 
 [callers]
 claude-code = "claude-pro"
+codex = "chatgpt-plus"
 kimi-code = "kimi-code"
 opencode = "opencode-go"
 # cline runs on the opencode go plan, so its jobs skip that pool
@@ -36,6 +37,9 @@ cline = "opencode-go"
 executable = ""
 
 [backends.cline]
+executable = ""
+
+[backends.codex]
 executable = ""
 
 [backends.kimi]
@@ -116,6 +120,27 @@ unit = "percent"
   role = "pace"
 
 [[pools]]
+id = "chatgpt-plus"
+title = "ChatGPT Plus"
+unit = "percent"
+
+  [[pools.windows]]
+  id = "5h"
+  duration = "5h"
+  kind = "fixed"
+  role = "guard"
+
+  [[pools.windows]]
+  id = "week"
+  duration = "7d"
+  kind = "fixed"
+  role = "pace"
+
+  # [pools.usage]
+  # source = "codex"  # read the ChatGPT plan's usage from the Codex CLI
+  # windows = { primary = "5h", secondary = "week" }
+
+[[pools]]
 id = "opencode-go"
 title = "OpenCode Go"
 unit = "usd"
@@ -158,6 +183,54 @@ quality = 5
 modes = ["read", "write"]
 confirm = true
 enabled = true
+
+# Codex on the ChatGPT plan: fast and affordable model for easier jobs
+[[routes]]
+id = "codex/gpt-6-luna"
+pool = "chatgpt-plus"
+backend = "codex"
+model = "gpt-6-luna"
+tiers = ["cheap"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = false
+
+# Codex default model for coding and everyday work
+[[routes]]
+id = "codex/gpt-6.2-sol"
+pool = "chatgpt-plus"
+backend = "codex"
+model = "gpt-6.2-sol"
+tiers = ["standard"]
+quality = 4
+modes = ["read", "write"]
+confirm = true
+enabled = false
+
+# efficient model, strongest at visual understanding and computer use
+[[routes]]
+id = "codex/gpt-6.1-terra"
+pool = "chatgpt-plus"
+backend = "codex"
+model = "gpt-6.1-terra"
+tiers = ["standard"]
+quality = 3
+modes = ["read", "write"]
+confirm = true
+enabled = false
+
+# most capable model for complex coding
+[[routes]]
+id = "codex/gpt-6.2-astra"
+pool = "chatgpt-plus"
+backend = "codex"
+model = "gpt-6.2-astra"
+tiers = ["strong"]
+quality = 5
+modes = ["read", "write"]
+confirm = true
+enabled = false
 
 [[routes]]
 id = "kimi-cli/k3.1-pro"

@@ -1,6 +1,6 @@
 [project]
 name = "open-agent-router"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local gateway that routes coding-agent jobs between AI subscriptions by remaining quota"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,6 +16,7 @@ keywords = [
     "quota",
     "mcp",
     "claude-code",
+    "codex",
     "opencode",
     "kimi",
     "cline",
@@ -71,12 +72,14 @@ kimi = "agent_router.adapters.kimi:HARNESS"
 opencode = "agent_router.adapters.opencode:HARNESS"
 claude = "agent_router.adapters.claude:HARNESS"
 cline = "agent_router.adapters.cline:HARNESS"
+codex = "agent_router.adapters.codex:HARNESS"
 
 [project.entry-points."agent_router.counters"]
 opencode_stats = "agent_router.collectors.opencode_stats:COUNTER"
 
 [project.entry-points."agent_router.usage_sources"]
 claude-code = "agent_router.collectors.claude_code_usage:SOURCE"
+codex = "agent_router.collectors.codex_usage:SOURCE"
 opencode-go = "agent_router.collectors.opencode_go_usage:SOURCE"
 
 [dependency-groups]

@@ -20,6 +20,9 @@ been checked live there.
 | OpenCode 2.2.6 or newer | `opencode` | `opencode auth login`, OpenCode Go provider | `opencode-go` |
 | Cline CLI | `cline` or `cline-cli` | `cline auth <provider>` sets the provider (OpenCode Go here), key and model; see the [official Cline CLI documentation](https://docs.cline.bot/usage/cli-overview) | `opencode-go` |
 | Claude Code | `claude` | Sign in with a subscription | `claude-pro` |
+| OpenAI Codex 0.172.0 or newer | `codex` | `codex login` with a ChatGPT plan | `chatgpt-plus` |
+
+Install Codex with `npm i -g @openai/codex`, then run `codex login` and choose ChatGPT sign-in.
 
 Check that each command responds to `--version`. Harness jobs need no provider keys in the
 gateway: it starts harnesses, and they access models using their own authentication. Optional
@@ -63,7 +66,7 @@ and open a new terminal. `agent-router <command> --help` describes a command and
 agent-router init --allowed-root C:/work/projects
 ```
 
-Install and sign in to at least one harness CLI (Kimi Code, OpenCode, Cline or Claude Code)
+Install and sign in to at least one harness CLI (Kimi Code, OpenCode, Codex, Cline or Claude Code)
 before running `init`. The `opencode-go` limits in the template are placeholders; replace them
 with your plan limits. After `agent-router serve`, run `agent-router advice --tier standard` to
 see which routes can take a job. `agent-router wait <job-id>` exits 4 while the job is still
@@ -113,9 +116,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
 2. **Routes.** `init` leaves active only the `[[routes]]` whose harness it found in PATH; the
    others are commented out. Uncomment a route after you install its harness, and set
-   `enabled = true` on the routes you want to use (`cline/glm-5.3` starts disabled, while
-   `claude-cli/sonnet` starts enabled). Write the route model as the harness understands it:
-   `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline. Every route that allows `write` has
+   `enabled = true` on the routes you want to use (`cline/glm-5.3` and all four `codex/...` routes
+   start disabled, while `claude-cli/sonnet` starts enabled). Write the route model as the harness
+   understands it: `kimi-code/k3.1-pro` for Kimi, `opencode-go/<model>` for OpenCode and Cline, and
+   `gpt-6-luna`, `gpt-6.2-sol`, `gpt-6.1-terra` or `gpt-6.2-astra` for Codex. Every route that allows `write` has
    `confirm = true`: its jobs wait for `agent-router approve`. Turn it off per route once you trust
    the setup; see [SECURITY](../SECURITY.md). Every harness route needs a non-empty `pool`,
    `backend` and `model`; a route with any of them missing or empty is a config error.
@@ -251,9 +255,10 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
    show the route as excluded with `model unavailable, retry after <local time>`, and a route the
    caller pinned still runs.
 
-   Kimi Code is silent while it writes a long answer or waits for a subagent, so for kimi jobs
-   the CPU time of the harness process tree and the files changed in the working directory count
-   as activity as well; the job is then not stopped as idle while it is still doing something.
+   Kimi Code is silent while it writes a long answer or waits for a subagent; Codex is silent
+   while the model reasons. Both adapters declare `quiet_while_working`, so for kimi and codex
+   jobs the CPU time of the harness process tree and the files changed in the working directory
+   count as activity as well; the job is then not stopped as idle while it is still doing something.
    The hard cap applies either way.
 
    ```toml
@@ -313,7 +318,7 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     Every key of `windows` is a field the source reports; its value is a window id of that pool.
     An unmapped field is ignored, two fields cannot map to the same window, and a `source` needs
     at least one mapped window. An unknown `source` still fails with `unknown usage source`. The
-    package ships two usage sources: `opencode-go` and `claude-code`.
+    package ships three usage sources: `opencode-go`, `claude-code` and `codex`.
 
     To enable it for the OpenCode Go pool:
 
@@ -351,6 +356,24 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     failure after a valid report keeps the points and is shown as a warning by `agent-router
     status`, `doctor` and the dashboard pool card instead.
 
+    The `codex` source reads the ChatGPT plan's 5-hour and weekly limits from the OpenAI Codex
+    CLI app-server, so the `chatgpt-plus` pool gets fresh figures automatically. It needs no API
+    key. Install the Codex CLI and sign in once with `codex login` as the user that runs the
+    gateway, then add the sub-table to the ChatGPT pool:
+
+    ```toml
+    [pools.usage]
+    source = "codex"
+    windows = { primary = "5h", secondary = "week" }
+    # executable = "C:/path/to/codex.cmd"  # optional; default: codex from PATH
+    ```
+
+    OpenAI marks the app-server as experimental. Each read starts it without calling the model,
+    so a read costs no tokens; the gateway never reads the CLI's credentials and never passes a
+    token. If the protocol changes, the source reports a reason such as `malformed_response` and
+    the pool falls back to the journal and manual calibration. `agent-router doctor` checks that
+    the CLI can be found and that `codex login status` reports a signed-in account.
+
     **When sources are read.** With `mode = "auto"` the gateway reads every pool's source on its
     own schedule: about once per `interval`, and never more than once a minute per pool. You can
     also force a read at any time:
@@ -381,8 +404,8 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
 
     `doctor` adds its own warnings for usage sources: a pool whose `api_key_env` (or the source's
     default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
-    the terminal that runs `doctor`; for `claude-code`, a CLI that cannot be found or is not
-    signed in; a pool whose last read failed or returned a non-fatal warning; stale data; and
+    the terminal that runs `doctor`; for `claude-code` or `codex`, a CLI that cannot be found or
+    is not signed in; a pool whose last read failed or returned a non-fatal warning; stale data; and
     `auto` mode without a `source` on a pool that has one. Two more warnings cover usage-source
     drift: one per mapped field the source stopped returning (`usage source <source> no longer
     reports <field>; window <window> falls back to the journal; update agent-router or switch the
@@ -456,6 +479,12 @@ it refuses `bypassPermissions`, so it cannot be combined with the gateway's curr
 The gateway knows no documented setting that confines writes while `bypassPermissions` is in use;
 see the harness's documentation.
 
+**OpenAI Codex.** Jobs run `codex exec` with `--ignore-user-config`, so MCP servers and plugins
+from `~/.codex/config.toml` are not loaded; ChatGPT sign-in still applies. Interactive approvals
+are disabled with `approval_policy=never`. On Windows, jobs use the `unelevated` sandbox, which
+needs no administrator setup. Read jobs pass `-s read-only`; write jobs pass `-s workspace-write`
+and can change files in the working directory.
+
 ## 5. Start the gateway
 
 In a separate terminal that remains open:
@@ -519,7 +548,7 @@ WantedBy=default.target
 `%h` is your home directory. Set `AGENT_ROUTER_HOME` to the path printed by `init` and
 `ExecStart` to the `agent-router` that `uv tool dir --bin` points to. The user manager does not
 read your shell profile, so `PATH` must contain the directories of the harness CLIs; if
-`command -v claude opencode kimi` prints other directories, add them, or set
+`command -v claude opencode kimi codex` prints other directories, add them, or set
 `[backends.<name>] executable`.
 
 Enable and start it, then check it:
@@ -581,17 +610,23 @@ and record each pool window:
 ```powershell
 agent-router calibrate kimi-code 5h 20
 agent-router calibrate kimi-code month 35 --resets-in 12d
+agent-router calibrate chatgpt-plus 5h 20 --resets-in 4h
+agent-router calibrate chatgpt-plus week 25 --resets-in 6d
 agent-router calibrate opencode-go 5h 10
 agent-router calibrate opencode-go week 25
 agent-router calibrate opencode-go month 40 --resets-in 20d
 agent-router status
 ```
 
-- A `kind = "fixed"` window (month, Claude 5h and week) takes a reset time no further than one
-  window ahead: `--resets-in 12d` or `--resets-at 2026-12-01` (a date alone means midnight; add a
-  local time as `"2026-12-01 14:00"`; `01.12.2026` also works). A reset more than five minutes
-  past that is rejected. Specify it once: later calibrations without a reset time keep the last
-  one, moved forward by the window length. With no reset time ever recorded, `status` shows
+With the `codex` usage source enabled, ChatGPT plan percentages refresh automatically. Without
+it, after jobs, check the percentages in the ChatGPT plan and record them with
+`agent-router calibrate chatgpt-plus ...` as above.
+
+- A `kind = "fixed"` window (month, Claude and ChatGPT 5h and week) takes a reset time no further
+  than one window ahead: `--resets-in 12d` or `--resets-at 2026-12-01` (a date alone means
+  midnight; add a local time as `"2026-12-01 14:00"`; `01.12.2026` also works). A reset more than
+  five minutes past that is rejected. Specify it once: later calibrations without a reset time keep
+  the last one, moved forward by the window length. With no reset time ever recorded, `status` shows
   `reset: unknown`, and the router ranks that pool after pools with a known pace. The
   dashboard's Calibrate page asks for the provider first, then its window and the reset date.
 - A `kind = "rolling"` window (`5h` and `week` for OpenCode Go, `5h` for Kimi Code) has no reset
@@ -607,7 +642,8 @@ gateway can see it:
 
 - a USD pool (`opencode-go`) adds the cost of gateway jobs and the counters above;
 - `claude-pro` follows the Claude Code status line while it is connected (section 10);
-- a percent pool without a feed (`kimi-code`) keeps the last recorded value.
+- `chatgpt-plus` follows the `codex` usage source when it is enabled (section 10);
+- a percent pool without a feed (for example `kimi-code`) keeps the last recorded value.
 
 `status` shows `via gateway since the last observation: <n> jobs, <min> min, <tokens> tokens`
 under a pool that ran gateway jobs after its last observation. That line means the stored
@@ -640,8 +676,10 @@ appear when clipboard scripting is available.
 ## 9. Delegation skill for orchestrators
 
 To let an agent delegate jobs through the gateway, copy your harness's skill into its skills
-directory. The skills are not part of the PyPI package: run this from the root of a clone of the
-repository (remove unused lines for harnesses you do not use). With PowerShell on Windows:
+directory. Codex reads user skills from `~/.agents/skills` (`~/.codex/skills` in older
+versions); the snippets use the skills directory of Codex, `$HOME/.agents/skills`. The skills
+are not part of the PyPI package: run this from the root of a clone of the repository (remove
+unused lines for harnesses you do not use). With PowerShell on Windows:
 
 ```powershell
 $targets = @{
@@ -649,6 +687,7 @@ $targets = @{
   "kimi-code"   = "$HOME/.kimi-code/skills"
   "opencode"    = "$HOME/.config/opencode/skills"
   "cline"       = "$HOME/.cline/skills"
+  "codex"       = "$HOME/.agents/skills"
 }
 foreach ($h in $targets.Keys) {
   New-Item -ItemType Directory -Force $targets[$h] | Out-Null
@@ -667,6 +706,7 @@ claude-code $HOME/.claude/skills
 kimi-code $HOME/.kimi-code/skills
 opencode $HOME/.config/opencode/skills
 cline $HOME/.cline/skills
+codex $HOME/.agents/skills
 EOF
 ```
 

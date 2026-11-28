@@ -6,7 +6,7 @@ This document describes how the code works today. It reflects the implementation
 ## Overview
 
 agent-router is a local gateway that distributes coding jobs between AI subscription harnesses
-(Claude Code, Kimi Code, OpenCode, Cline). An orchestrator (typically one of these same harnesses
+(Claude Code, Kimi Code, OpenCode, Codex, Cline). An orchestrator (typically one of these same harnesses
 running the `agent-router-delegate` skill, or a human using the CLI) submits a job: a prompt, a
 working directory, a mode, and optional hints. The gateway classifies the job's difficulty,
 picks a route by a deterministic policy over the remaining subscription quotas, asks for human
@@ -36,7 +36,7 @@ delegated to a harness.
 - **Job** — a unit of work: prompt, working directory, mode, caller, optional pool exclusions,
   and resulting lifecycle.
 - **Harness** (also **executor**) — the agent CLI that runs a job: `claude`, `opencode`,
-  `cline` or `kimi`.
+  `codex`, `cline` or `kimi`.
 - **Attempt** — one execution of a job on one route. A job may have several attempts (fallback).
 - **Caller** — who submitted the job; `[callers]` maps a caller name to a pool, and that pool is
   excluded from routing (a caller uses its own subscription directly).
@@ -230,10 +230,19 @@ adds a warning instead of a failure reason. A non-synthetic assistant message me
 process and reports `malformed_response`. The source never reads the Claude Code credentials
 and never passes a token; the CLI uses the user's own `claude auth login`. The CLI path is
 `claude` from `PATH` unless the pool sets `[pools.usage] executable`.
-On `malformed_response`, both sources log a warning containing only the answer's redacted shape:
-raw byte length, JSON key names, value types, string and list lengths, and allowlisted event type
-names. Other strings and all numbers and ids are omitted; unparseable, empty or truncated output
-logs only its byte length and parse failure.
+The shipped `codex` source reads the ChatGPT plan meters (`primary`, `secondary`, normally mapped
+to `5h` and `week`) by initializing the experimental `codex app-server` JSON-RPC protocol and
+calling `account/rateLimits/read` without calling a model. `usedPercent / 100` is the fraction and
+the Unix timestamp `resetsAt` is the reset; invalid rows are skipped. Its reason codes are
+`not_found` (no CLI), `timeout`, `error`, `unauthorized` (not signed in) and
+`malformed_response` (no usable rate-limit response). A process failure after valid rate limits
+keeps the points and adds a warning. The source never reads Codex credentials and never passes a
+token; the CLI uses the user's own `codex login`, and `doctor` checks `codex login status`. The CLI
+path is `codex` from `PATH` unless the pool sets `[pools.usage] executable`.
+On `malformed_response`, all three sources log a warning containing only the answer's redacted
+shape: raw byte length, JSON key names, value types, string and list lengths, and allowlisted event
+type names. Other strings and all numbers and ids are omitted; unparseable, empty or truncated
+output logs only its byte length and parse failure.
 
 **The usage reader** builds one source instance per pool with `usage.source` and reads it on a
 schedule and on demand. In auto mode a background thread (`usage-reader`) calls
@@ -273,8 +282,8 @@ is a string or null. `stale` is true when the pool's effective mode is `auto` an
 read is fresher than `2 * [usage].interval_s`, including never; the threshold lives in one helper
 (`agent_router.usage.is_stale`) so the dashboard, `status` and `doctor` agree. `doctor` additionally
 warns when the variable named by `api_key_env` (or the source spec's `default_api_key_env`) is
-missing from the environment, prints the warning of the spec's own `check` (for `claude-code`: a
-missing CLI or a CLI that is not signed in), and when a pool is in auto mode without a `source` —
+missing from the environment, prints the warning of the spec's own `check` (for `claude-code` and
+`codex`: a missing CLI or a CLI that is not signed in), and when a pool is in auto mode without a `source` —
 but only when the pool's own `[pools.usage]` sets `mode = "auto"` or the config has a `[usage]`
 table, so configs that never mention usage stay quiet. The dashboard and `doctor` also warn on
 usage-source drift: one warning per missing mapped field — `usage source <source> no longer reports
@@ -371,10 +380,10 @@ Timeouts: per-job `timeout_s`, else `route.timeout_s`, else `tasks.default_timeo
 (14400 s, a hard cap). A harness that produces no stdout or stderr for `tasks.idle_timeout_s`
 (600 s) is stopped as idle; `0` disables the check. An explicit per-job or route `timeout_s`
 replaces the hard cap, but the idle limit still applies. Each adapter declares
-`reports_progress`: Claude Code, kimi, opencode and cline stream their output (`True`). An adapter
-may also declare
-which stdout lines count as progress; without that declaration, all output counts. OpenCode JSON
-events with type `retry` do not count as progress, while its other output does. After an
+`reports_progress`: Claude Code, kimi, opencode, codex and cline stream their output (`True`). An
+adapter may also declare which stdout lines count as progress; without that declaration, all output
+counts. OpenCode JSON events with type `retry` do not count as progress, while its other output
+does. For Codex, only item and turn events count. After an
 adapter-recognized final line a lingering process is killed within `tasks.exit_grace_s` (60 s).
 Long prompts or shim (`.cmd`/`.bat`) executables switch the prompt from argv to a prompt file with
 a "read the task from the file" instruction; shim arguments are validated against a safe
@@ -400,9 +409,9 @@ group), or a file under the working directory changed (the newest mtime of the t
 `.git`, `.venv`, `node_modules`, `__pycache__` and the attempt's own log directory; the walk
 stops after 20000 files). A signal that cannot be read is absent, not an error. The idle error
 then names the last sign of life (`executor showed no progress for 600 s; last activity: files
-640 s ago`). Only kimi declares it: it prints one JSON line per finished message, so a long answer
-or a running subagent looks like silence. The streaming adapters keep the old behavior — output
-is their sign of life. The hard cap applies either way.
+640 s ago`). Kimi and codex declare it: kimi prints one JSON line per finished message, so a long
+answer or a running subagent looks like silence, and Codex is silent while the model reasons. The
+other adapters use output as their sign of life. The hard cap applies either way.
 
 OpenCode runs with `--standalone` so its session uses a private server in the child process tree;
 without it, stopping the `opencode run` client would leave the session running in the background
@@ -420,6 +429,11 @@ Adapters (`adapters/`) build argv/stdin and parse output:
   `plan`, write to `bypassPermissions`. The isolation flags keep the user's settings, hooks,
   plugins and MCP servers out of the job. The NDJSON event with type `result` carries `result`,
   `usage` (including cache tokens) and `total_cost_usd`; spend source `journal`.
+- **codex** — `codex exec --json --skip-git-repo-check --ignore-user-config -c
+  windows.sandbox=unelevated -c approval_policy=never -m <model> -s <mode> -`, prompt via stdin;
+  read maps to `read-only`, write to `workspace-write`; JSONL item and turn events carry the final
+  agent message and token usage; spend source `journal`; `quiet_while_working`, so reasoning
+  without output is not automatically idle.
 - **opencode** — `opencode run --format json --archived --standalone --model <m>`, prompt via
   stdin; read maps to `--agent plan`, write to `--auto`; NDJSON `step_finish` events carry tokens
   and cost; spend source `counter`. `--archived` first shipped in OpenCode 2.2.6, the harness's
@@ -577,9 +591,10 @@ scripting is available.
 | `winjob.py` | Windows job objects: every process an attempt starts stops with the attempt |
 | `worktree.py` | Git snapshots, changed-file detection, path sanitizing |
 | `adapters/base.py` | Adapter protocol, preamble, outcome settling, limit hints |
-| `adapters/{kimi,claude,opencode,cline}.py` | Per-harness argv and output parsing |
+| `adapters/{kimi,claude,opencode,codex,cline}.py` | Per-harness argv and output parsing |
 | `collectors/claude_statusline.py` | Status-line JSON to observations |
 | `collectors/claude_code_usage.py` | `claude-code` usage source: `/usage` of the Claude Code CLI |
+| `collectors/codex_usage.py` | `codex` usage source: ChatGPT plan limits from the Codex CLI app-server |
 | `collectors/opencode_go_usage.py` | `opencode-go` usage source: OpenCode Go usage endpoint |
 | `collectors/opencode_stats.py` | `opencode stats` counter sampler |
 
@@ -590,4 +605,4 @@ scripting is available.
   rejected if they are used.
 - **Linux and macOS support**: the process, git, and CLI layers have POSIX branches and the test
   suite runs on Linux and macOS in CI (experimental, allowed to fail); the gateway has been run
-  live only on Windows, and autostart exists only there.
+  live only on Windows. Autostart is documented for Windows and for Linux with `systemd --user`.

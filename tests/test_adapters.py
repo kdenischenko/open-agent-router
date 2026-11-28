@@ -88,13 +88,12 @@ def test_looks_like_limit_ignores_other_errors(text: str) -> None:
 # --- command assembly -----------------------------------------------------------------
 
 
-def test_registry_has_three_adapters() -> None:
+def test_registry_has_five_adapters() -> None:
     names = {entry.name for entry in metadata.entry_points(group=HARNESS_GROUP)}
-    assert names >= {"kimi", "opencode", "claude"}
-    assert {name: load_harness(name).adapter.name for name in ("kimi", "opencode", "claude")} == {
-        "kimi": "kimi",
-        "opencode": "opencode",
-        "claude": "claude",
+    assert names >= {"kimi", "opencode", "claude", "cline", "codex"}
+    expected = {"kimi", "opencode", "claude", "cline", "codex"}
+    assert {name: load_harness(name).adapter.name for name in expected} == {
+        name: name for name in expected
     }
     assert MAX_ARG_CHARS == 20_000
 
@@ -174,7 +173,7 @@ def test_claude_argv_read_and_write() -> None:
     assert read.stdin_text == "TEXT" and write.stdin_text == "TEXT"
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 @pytest.mark.parametrize("mode", ["read", "write"])
 @pytest.mark.parametrize("exe", [EXE, SHIM], ids=["exe", "shim"])
 def test_prompt_is_never_a_separate_option(name: str, mode: str, exe: ResolvedExecutable) -> None:
@@ -187,7 +186,7 @@ def test_prompt_is_never_a_separate_option(name: str, mode: str, exe: ResolvedEx
         assert name == "kimi" and inv.argv[index - 1] == "-p" and index == 2
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 @pytest.mark.parametrize("mode", ["read", "write"])
 def test_shim_never_gets_prompt_text_in_argv(name: str, mode: str) -> None:
     text = with_preamble('dangerous & text "in quotes" %PATH%', mode)
@@ -200,7 +199,7 @@ def test_shim_never_gets_prompt_text_in_argv(name: str, mode: str) -> None:
         assert inv.stdin_text == text
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 def test_build_without_executable_fails(name: str) -> None:
     with pytest.raises(ValueError):
         load_harness(name).adapter.build(
@@ -210,7 +209,7 @@ def test_build_without_executable_fails(name: str) -> None:
 
 @pytest.mark.parametrize(
     ("name", "expected"),
-    [("claude", True), ("kimi", True), ("opencode", True), ("cline", True)],
+    [("claude", True), ("kimi", True), ("opencode", True), ("cline", True), ("codex", True)],
 )
 def test_adapters_declare_progress_reporting(name: str, expected: bool) -> None:
     assert load_harness(name).adapter.reports_progress is expected
@@ -644,13 +643,13 @@ def test_claude_stream_limit_detection(
 # --- shared cases ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 def test_empty_output_with_zero_code_is_error(name: str) -> None:
     outcome = load_harness(name).adapter.parse("", "", 0)
     assert outcome.status == "error" and outcome.error == "empty output"
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 def test_broken_output_is_skipped(name: str) -> None:
     broken = '{"role": "assist\nnot json at all\n[1, 2]\n{"type": "text", "part": 5}\n\n'
     outcome = load_harness(name).adapter.parse(broken, "", 0)
@@ -659,7 +658,7 @@ def test_broken_output_is_skipped(name: str) -> None:
     assert failed.status == "error" and failed.error
 
 
-@pytest.mark.parametrize("name", ["kimi", "opencode", "claude"])
+@pytest.mark.parametrize("name", ["kimi", "opencode", "claude", "codex"])
 def test_no_exit_code_is_error(name: str) -> None:
     outcome = load_harness(name).adapter.parse("", "", None)
     assert outcome.status == "error" and outcome.error == "process did not exit"

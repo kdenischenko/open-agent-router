@@ -65,6 +65,7 @@ def minimal_config_text() -> str:
     template = default_config_text(ALL_HARNESSES)
     text = template.split("\n# Cline CLI on the OpenCode Go pool")[0] + "\n"
     for line in (
+        'codex = "chatgpt-plus"\n',
         'cline = "opencode-go"\n',
         'opencode = "opencode-go"\n',
         '[backends.cline]\nexecutable = ""\n\n',
@@ -88,7 +89,12 @@ def test_minimal_config_still_loads(home: Path) -> None:
     assert config.upstreams == {}
     assert config.callers == {"claude-code": "claude-pro", "kimi-code": "kimi-code"}
     spend = {route.backend: config.route_spend(route) for route in config.routes}
-    assert spend == {"claude": "journal", "kimi": "journal", "opencode": "counter"}
+    assert spend == {
+        "claude": "journal",
+        "codex": "journal",
+        "kimi": "journal",
+        "opencode": "counter",
+    }
 
 
 def test_old_constructors_still_work() -> None:

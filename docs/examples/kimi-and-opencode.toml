@@ -10,8 +10,9 @@ allowed_roots = []
 denied_roots = []
 
 [callers]
-# no claude pool here, so the claude-code caller is not mapped
+# no claude or codex pool here, so those callers are not mapped
 claude-code = ""
+codex = ""
 kimi-code = "kimi-code"
 opencode = "opencode-go"
 # cline runs on the opencode go plan, so its jobs skip that pool

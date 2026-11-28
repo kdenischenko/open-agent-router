@@ -12,8 +12,9 @@ denied_roots = []
 [callers]
 claude-code = "claude-pro"
 kimi-code = "kimi-code"
-# no opencode or cline pool here, so those callers are not mapped
+# no opencode, codex or cline pool here, so those callers are not mapped
 opencode = ""
+codex = ""
 cline = ""
 
 [backends.claude]

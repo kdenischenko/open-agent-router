@@ -161,6 +161,68 @@ next to `command`:
 The server connects when OpenCode starts. See the
 [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) for other fields.
 
+### Codex
+
+Verified with Codex CLI 0.172.0 on Windows. Register the server for all projects:
+
+```bash
+codex mcp add agent-router -- agent-router mcp
+```
+
+With a non-default gateway home:
+
+```bash
+codex mcp add agent-router --env AGENT_ROUTER_HOME=<home> -- agent-router mcp
+```
+
+`codex mcp list` shows the server. The entry lands in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.agent-router]
+command = "agent-router"
+args = ["mcp"]
+```
+
+A Codex session started before the server was added does not see it: start a new session.
+
+Codex asks the user to approve every MCP tool call by default. In a non-interactive run
+(`codex exec`, or an approval policy of `never`), the call then fails with
+`MCP tool call requires approval, but approval policy is never`. To let Codex call the
+read-only tools without asking, approve them per tool:
+
+```toml
+[mcp_servers.agent-router.tools.status]
+approval_mode = "approve"
+
+[mcp_servers.agent-router.tools.advice]
+approval_mode = "approve"
+
+[mcp_servers.agent-router.tools.list_jobs]
+approval_mode = "approve"
+
+[mcp_servers.agent-router.tools.job_progress]
+approval_mode = "approve"
+
+[mcp_servers.agent-router.tools.job_result]
+approval_mode = "approve"
+
+[mcp_servers.agent-router.tools.wait_job]
+approval_mode = "approve"
+```
+
+Keep `submit_job`, `cancel_job` and `rate_job` on the default prompt. Setting
+`default_tools_approval_mode = "approve"` under `[mcp_servers.agent-router]` approves all tools
+at once. This is a choice for the user, since `submit_job` then starts jobs without asking.
+
+These Codex approvals are separate from job approvals on the gateway. Approving a job on the
+gateway is still a human action — the MCP server never approves; see
+[Approvals stay with the human](#approvals-stay-with-the-human).
+
+Tell Codex to pass `caller = "codex"` in `submit_job` and `advice`, so its jobs skip the
+`chatgpt-plus` pool through the `[callers]` mapping. The jobs Codex runs as a harness
+(`codex exec` started by the gateway) use `--ignore-user-config`, so they never load this MCP
+server — no recursion.
+
 ### Cline and Kimi Code
 
 Their agent-router integrations install a delegation skill, not an MCP config, so there

@@ -37,7 +37,7 @@ free port with `agent-router serve --port 9123` and set `AGENT_ROUTER_URL` as ab
 `harness unavailable: …`.
 
 - Check that the harness runs from the same shell: `kimi --version`, `opencode --version`,
-  `cline --version` or `cline-cli --version`, and `claude --version`.
+  `codex --version`, `cline --version` or `cline-cli --version`, and `claude --version`.
 - The gateway looks the harness up on its own `PATH`. If you installed the harness after starting
   `agent-router serve`, or the gateway starts from autostart with a shorter `PATH`, restart it.
 - Or set the full path in `config.toml`:
@@ -121,6 +121,17 @@ auth login`** (or `cannot find the Claude Code CLI …`)
 - Sign in once as the user that runs `agent-router serve`: `claude auth login`, then check with
   `claude auth status`. If `claude` is not on `PATH` for that user, set
   `[pools.usage] executable` to the full path of the CLI.
+
+**Codex (`source = "codex"`)**
+
+- If `doctor` says the Codex CLI is not signed in, run `codex login` as the user that runs
+  `agent-router serve`; `codex login status` should then report a signed-in account. For
+  `not_found` or a doctor warning that the CLI is missing, install it or set `[pools.usage]
+  executable` to its full path.
+- OpenAI marks the app-server protocol as experimental. If that protocol changes, reads report a
+  reason such as `malformed_response` or `no_data`, and the affected windows fall back to the
+  journal and manual calibration. Switch the pool to `mode = "manual"` in `[pools.usage]` and
+  calibrate it until agent-router supports the new response.
 
 **`Warning: pool <id>: last usage read failed: <reason>`**
 

@@ -324,10 +324,11 @@ def test_calibration_form_offers_only_real_pairs(client, tokens):
     assert options == {
         ("Claude Pro", "0"): [("0:0", "fixed", "5h"), ("0:1", "fixed", "week")],
         ("Kimi Code", "1"): [("1:0", "rolling", "5h"), ("1:1", "fixed", "month")],
-        ("OpenCode Go", "2"): [
-            ("2:0", "rolling", "5h"),
-            ("2:1", "rolling", "week"),
-            ("2:2", "fixed", "month"),
+        ("ChatGPT Plus", "2"): [("2:0", "fixed", "5h"), ("2:1", "fixed", "week")],
+        ("OpenCode Go", "3"): [
+            ("3:0", "rolling", "5h"),
+            ("3:1", "rolling", "week"),
+            ("3:2", "fixed", "month"),
         ],
     }
     provider = response.text[response.text.index('<select id="provider"') :]
@@ -335,7 +336,8 @@ def test_calibration_form_offers_only_real_pairs(client, tokens):
     assert re.findall(r'<option value="([^"]+)">([^<]+)</option>', provider) == [
         ("0", "Claude Pro"),
         ("1", "Kimi Code"),
-        ("2", "OpenCode Go"),
+        ("2", "ChatGPT Plus"),
+        ("3", "OpenCode Go"),
     ]
     assert 'name="target"' in response.text
     assert 'name="pool"' not in response.text
