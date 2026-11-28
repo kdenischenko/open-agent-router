@@ -318,7 +318,7 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     Every key of `windows` is a field the source reports; its value is a window id of that pool.
     An unmapped field is ignored, two fields cannot map to the same window, and a `source` needs
     at least one mapped window. An unknown `source` still fails with `unknown usage source`. The
-    package ships three usage sources: `opencode-go`, `claude-code` and `codex`.
+    package ships four usage sources: `opencode-go`, `claude-code`, `codex` and `kimi-code`.
 
     To enable it for the OpenCode Go pool:
 
@@ -374,6 +374,27 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     the pool falls back to the journal and manual calibration. `agent-router doctor` checks that
     the CLI can be found and that `codex login status` reports a signed-in account.
 
+    The `kimi-code` source reads the Kimi Code plan's 5-hour and monthly quotas from the local
+    server of the unmodified Kimi Code CLI, so the `kimi-code` pool gets fresh figures
+    automatically. It needs no API key; it needs Kimi Code 2.8.1 or newer, signed in once with
+    `kimi login` as the user that runs the gateway:
+
+    ```toml
+    [pools.usage]
+    source = "kimi-code"
+    windows = { limit5h = "5h", monthTotal = "month" }
+    # executable = "C:/path/to/kimi.cmd"  # optional; default: kimi from PATH
+    ```
+
+    Each read starts the CLI's local server (`kimi web --json`) and reads
+    `GET /api/v1/oauth/usage` from it — a route the server's own `/openapi.json` lists but
+    Kimi's public documentation does not describe. The gateway holds only the server's
+    ephemeral token for the duration of one read and never reads Kimi Code credentials; the
+    read does not call the model, so it costs no tokens. If the route changes, the source
+    reports a reason such as `malformed_response`, or `unsupported_version` when the CLI is
+    older than 2.8.1, and the pool falls back to the journal and manual calibration.
+    `agent-router doctor` checks that the CLI can be found and is new enough.
+
     **When sources are read.** With `mode = "auto"` the gateway reads every pool's source on its
     own schedule: about once per `interval`, and never more than once a minute per pool. You can
     also force a read at any time:
@@ -405,7 +426,8 @@ Open the file whose path was printed by `init`. At minimum, configure the follow
     `doctor` adds its own warnings for usage sources: a pool whose `api_key_env` (or the source's
     default variable, `OPENCODE_GO_API_KEY` for `opencode-go`) is not set in the environment of
     the terminal that runs `doctor`; for `claude-code` or `codex`, a CLI that cannot be found or
-    is not signed in; a pool whose last read failed or returned a non-fatal warning; stale data; and
+    is not signed in; for `kimi-code`, a CLI that cannot be found or is older than 2.8.1; a pool
+    whose last read failed or returned a non-fatal warning; stale data; and
     `auto` mode without a `source` on a pool that has one. Two more warnings cover usage-source
     drift: one per mapped field the source stopped returning (`usage source <source> no longer
     reports <field>; window <window> falls back to the journal; update agent-router or switch the
@@ -620,7 +642,8 @@ agent-router status
 
 With the `codex` usage source enabled, ChatGPT plan percentages refresh automatically. Without
 it, after jobs, check the percentages in the ChatGPT plan and record them with
-`agent-router calibrate chatgpt-plus ...` as above.
+`agent-router calibrate chatgpt-plus ...` as above. The same holds for the `kimi-code` usage
+source and `agent-router calibrate kimi-code ...`.
 
 - A `kind = "fixed"` window (month, Claude and ChatGPT 5h and week) takes a reset time no further
   than one window ahead: `--resets-in 12d` or `--resets-at 2026-12-01` (a date alone means
@@ -643,7 +666,8 @@ gateway can see it:
 - a USD pool (`opencode-go`) adds the cost of gateway jobs and the counters above;
 - `claude-pro` follows the Claude Code status line while it is connected (section 10);
 - `chatgpt-plus` follows the `codex` usage source when it is enabled (section 10);
-- a percent pool without a feed (for example `kimi-code`) keeps the last recorded value.
+- `kimi-code` follows the `kimi-code` usage source when it is enabled (section 10);
+- a percent pool without a feed keeps the last recorded value.
 
 `status` shows `via gateway since the last observation: <n> jobs, <min> min, <tokens> tokens`
 under a pool that ran gateway jobs after its last observation. That line means the stored

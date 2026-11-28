@@ -239,7 +239,23 @@ the Unix timestamp `resetsAt` is the reset; invalid rows are skipped. Its reason
 keeps the points and adds a warning. The source never reads Codex credentials and never passes a
 token; the CLI uses the user's own `codex login`, and `doctor` checks `codex login status`. The CLI
 path is `codex` from `PATH` unless the pool sets `[pools.usage] executable`.
-On `malformed_response`, all three sources log a warning containing only the answer's redacted
+The shipped `kimi-code` source reads the Kimi Code plan meters (`limit5h`, `limit7d`,
+`monthTotal`, `monthCode`, normally mapped to `5h` and `month`) from the local server of the
+unmodified Kimi Code CLI: it starts `kimi web --json --port 0 --log-level silent` (no shell, an
+argument list, a timeout, the process tree killed on Windows and POSIX on every path), takes the
+origin and the ephemeral bearer token from the single ready line on stdout and reads
+`GET /api/v1/oauth/usage` — a route the server's own `/openapi.json` lists but Kimi's public
+documentation does not describe. `usedRatio` is the fraction and the ISO 8601 `resetAt` the reset;
+meters with a bad ratio or reset are skipped. Its reason codes are `not_found` (no CLI or start
+failed), `timeout` (no ready line or no HTTP answer), `unsupported_version` (a CLI without
+`web --json`, which rejects the option), `unauthorized` (an account-side error with status 401,
+or the local server rejecting the token), `error` and `malformed_response` (no usable ready line
+or body). The token is a secret held in a local variable for one read: it never reaches a reason,
+a warning or a log, and a bad ready line is reported without the response-shape log; a malformed
+HTTP body is logged redacted. The source never reads Kimi Code credentials; the CLI uses the
+user's own `kimi login`. The CLI path is `kimi` from `PATH` unless the pool sets `[pools.usage]
+executable`; `doctor` warns when the CLI is missing or older than 2.8.1.
+On `malformed_response`, all four sources log a warning containing only the answer's redacted
 shape: raw byte length, JSON key names, value types, string and list lengths, and allowlisted event
 type names. Other strings and all numbers and ids are omitted; unparseable, empty or truncated
 output logs only its byte length and parse failure.
@@ -283,7 +299,8 @@ read is fresher than `2 * [usage].interval_s`, including never; the threshold li
 (`agent_router.usage.is_stale`) so the dashboard, `status` and `doctor` agree. `doctor` additionally
 warns when the variable named by `api_key_env` (or the source spec's `default_api_key_env`) is
 missing from the environment, prints the warning of the spec's own `check` (for `claude-code` and
-`codex`: a missing CLI or a CLI that is not signed in), and when a pool is in auto mode without a `source` —
+`codex`: a missing CLI or a CLI that is not signed in; for `kimi-code`: a missing CLI or one older
+than 2.8.1), and when a pool is in auto mode without a `source` —
 but only when the pool's own `[pools.usage]` sets `mode = "auto"` or the config has a `[usage]`
 table, so configs that never mention usage stay quiet. The dashboard and `doctor` also warn on
 usage-source drift: one warning per missing mapped field — `usage source <source> no longer reports
@@ -595,6 +612,7 @@ scripting is available.
 | `collectors/claude_statusline.py` | Status-line JSON to observations |
 | `collectors/claude_code_usage.py` | `claude-code` usage source: `/usage` of the Claude Code CLI |
 | `collectors/codex_usage.py` | `codex` usage source: ChatGPT plan limits from the Codex CLI app-server |
+| `collectors/kimi_code_usage.py` | `kimi-code` usage source: Kimi Code plan quotas from the CLI's local server |
 | `collectors/opencode_go_usage.py` | `opencode-go` usage source: OpenCode Go usage endpoint |
 | `collectors/opencode_stats.py` | `opencode stats` counter sampler |
 
