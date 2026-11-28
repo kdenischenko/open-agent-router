@@ -17,7 +17,7 @@ OpenCode, Codex, Cline — and let a local gateway pick the one with the most li
 [![Windows | Linux | macOS (experimental)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(experimental)-blue.svg)](https://github.com/kdenischenko/open-agent-router#platforms)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/kdenischenko/open-agent-router/blob/main/ROADMAP.md)
 
-This is an early alpha (v0.3.0); interfaces and configuration may change.
+This is an early alpha (v0.4.0); interfaces and configuration may change.
 
 ## Why
 

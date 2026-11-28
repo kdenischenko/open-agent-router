@@ -18,7 +18,7 @@ Claude Code, Kimi Code, OpenCode, Codex, Cline, — а локальный шлю
 [![Windows | Linux | macOS (experimental)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(experimental)-blue.svg)](https://github.com/kdenischenko/open-agent-router#platforms)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/kdenischenko/open-agent-router/blob/main/ROADMAP.md)
 
-Это ранняя альфа-версия (v0.3.0); интерфейсы и конфигурация могут меняться.
+Это ранняя альфа-версия (v0.4.0); интерфейсы и конфигурация могут меняться.
 
 ## Зачем
 
