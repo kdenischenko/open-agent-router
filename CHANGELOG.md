@@ -8,6 +8,8 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- A `codex` usage source reads the ChatGPT plan's 5-hour and weekly limits from the Codex CLI app-server.
+- OpenAI Codex CLI harness with ChatGPT Plus pool, read/write sandbox modes and JSONL usage parsing.
 - `agent-router purge` applies `storage.retention_days` to old observations and counter samples,
   reports their counts, keeps the newest observation and usable reset per pool window, and protects
   counter samples for twice the longest configured pool window duration.

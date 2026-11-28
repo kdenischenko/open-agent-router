@@ -9,15 +9,14 @@ place to start.
 ## Platforms
 
 - **Linux and macOS.** The test suite runs in CI on `ubuntu-latest` and `macos-latest`, and
-  the gateway home is created with `0700`. Still needed: a live check on a real system,
-  autostart with `launchd`, a bash variant of the skill install steps.
+  the gateway home is created with `0700`. Still needed: a live check on a real system and
+  autostart with `launchd`.
 
 ## Harnesses
 
-- **Live check of the Claude Code adapter.** It is covered by tests with recorded output only.
-- **More harnesses**, such as Codex CLI, and more pools, such as DeepSeek.
+- **More harnesses and pools**, such as DeepSeek.
 - **Automatic usage collection** for Kimi Code and Cline, so that pools need less manual
-  calibration. The OpenCode Go plan is already read from its usage endpoint.
+  calibration. The OpenCode Go, Claude Code and ChatGPT plans already have usage sources.
 
 ## Routing
 

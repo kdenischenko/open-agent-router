@@ -8,7 +8,7 @@
 # open-agent-router
 
 **Hand coding-agent jobs to the AI subscriptions you already pay for — Claude Code, Kimi Code,
-OpenCode, Cline — and let a local gateway pick the one with the most limit left.**
+OpenCode, Codex, Cline — and let a local gateway pick the one with the most limit left.**
 
 [![PyPI](https://img.shields.io/pypi/v/open-agent-router.svg)](https://pypi.org/project/open-agent-router/)
 [![CI](https://github.com/kdenischenko/open-agent-router/actions/workflows/ci.yml/badge.svg)](https://github.com/kdenischenko/open-agent-router/actions/workflows/ci.yml)
@@ -40,9 +40,9 @@ gateway that keeps your subscriptions busy without surprises:
   can assign the tier for you.
 
 It is for you if you have two or more subscriptions to agentic coding CLIs (such as Claude Code,
-Kimi Code, OpenCode or Cline) and an orchestrator agent that delegates jobs to others.
+Kimi Code, OpenCode, Codex or Cline) and an orchestrator agent that delegates jobs to others.
 
-![Terminal: agent-router advice ranks enabled OpenCode, Kimi Code and Claude Code routes by pace; agent-router status shows Claude Code and OpenCode Go windows filled automatically by scheduled usage sources and Kimi Code windows filled manually](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/demo.svg)
+![Terminal: agent-router advice ranks enabled OpenCode, Kimi Code, Codex and Claude Code routes by pace; agent-router status shows Claude Code, ChatGPT Plus and OpenCode Go windows filled automatically by scheduled usage sources and Kimi Code windows filled manually](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/demo.svg)
 
 ## How is this different from LiteLLM, OpenRouter or switching by hand?
 
@@ -61,7 +61,7 @@ Kimi Code, OpenCode or Cline) and an orchestrator agent that delegates jobs to o
 ## Quick start
 
 You need Python 3.12, [uv](https://docs.astral.sh/uv/), git, and at least one harness CLI
-(Kimi Code, OpenCode, Cline or Claude Code), installed and signed in.
+(Kimi Code, OpenCode, Codex, Cline or Claude Code), installed and signed in.
 
 ```bash
 uv tool install open-agent-router
@@ -81,9 +81,9 @@ The `open-agent-router` package installs the `agent-router` command. `init` crea
 gateway home directory with `config.toml` and two tokens, adds `<directory>` to
 `tasks.allowed_roots` (repeat `init --allowed-root` to allow more directories, also on an
 existing config, then restart a running `serve`) and prints the next steps. Routes are enabled
-for the harnesses `init` finds, including `claude-cli/sonnet`, except Cline: set
-`enabled = true` on the `cline/glm-5.3` route in `config.toml` to let jobs use it. Jobs run before
-you calibrate the pools; record your real usage later with `agent-router calibrate`. Ready-made configs for typical setups are
+for the harnesses `init` finds, including `claude-cli/sonnet`, except Cline and Codex: set
+`enabled = true` on `cline/glm-5.3` or the `codex/...` routes in `config.toml` to use them. Jobs run before you
+calibrate the pools; record your real usage later with `agent-router calibrate`. Ready-made configs for typical setups are
 in [`docs/examples/`](https://github.com/kdenischenko/open-agent-router/tree/main/docs/examples). Then submit a job from another terminal:
 
 ```bash
@@ -100,7 +100,7 @@ route, elapsed time, the last sign of life and the end of the attempt log — an
 keeps printing new lines until the job ends. The data comes from
 `GET /api/v1/jobs/{id}/progress`.
 
-![Terminal: a job on the opencode-cli/glm-5.3 route is submitted with run --no-wait, approved, awaited and rated; status then shows automatic Claude Code and OpenCode Go usage figures and manual Kimi Code figures](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/cycle.svg)
+![Terminal: a job on the opencode-cli/glm-5.3 route is submitted with run --no-wait, approved, awaited and rated; status then shows automatic Claude Code, ChatGPT Plus and OpenCode Go usage figures and manual Kimi Code figures](https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/cycle.svg)
 
 Every route in the `init` template has `confirm = true`, so a job waits until you approve it
 with `approve` or in the dashboard. Set `confirm = false` on a route to let its jobs start
@@ -115,16 +115,18 @@ the idle limit still applies. Claude Code emits JSON events while it runs, so th
 applies to its jobs too.
 
 Kimi Code prints one JSON line per finished message, so it is silent while the model writes a
-long answer or a subagent works. For kimi jobs the CPU time of the harness process tree and the
-files changed in the working directory count as activity too, and a job that is stopped as idle
-says which sign of life was seen last. The hard cap applies either way.
+long answer or a subagent works. Codex is also silent while the model reasons. For kimi and codex
+jobs the CPU time of the harness process tree and the files changed in the working directory count
+as activity too, and a job that is stopped as idle says which sign of life was seen last. The hard
+cap applies either way.
 
 The full guide — harness sign-in, limit calibration, autostart on Windows and Linux, the web dashboard
 and the delegation skills for orchestrators — is in [docs/INSTALL.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/INSTALL.md).
 
 ## Use from your agent
 
-An orchestrator agent can work through the gateway in two ways.
+An orchestrator agent can work through the gateway in two ways. Claude Code, OpenCode, Kimi Code,
+Cline and Codex can all delegate jobs through it.
 
 The first is the MCP server. Register it with your orchestrator, for example with
 `claude mcp add agent-router -- agent-router mcp`: it exposes job operations as MCP
@@ -139,13 +141,13 @@ repository and copy the `agent-router-delegate` folder of your harness into its 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-dark.svg">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator agent submits jobs through the agent-router CLI or the MCP server and you use the web dashboard; the gateway HTTP API checks tokens, the dispatcher gets a tier from the optional classifier (local or cloud models) and a route from the route policy, which ranks pools by pace urgency from the ledger; the runner starts a coding agent CLI in the job directory. Usage figures reach the ledger from manual calibration, the Claude Code status line, scheduled Claude Code /usage reads, the OpenCode Go usage API, the opencode stats counter and the harness journal">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/architecture-light.svg" alt="Architecture: an orchestrator agent submits jobs through the agent-router CLI or the MCP server and you use the web dashboard; the gateway HTTP API checks tokens, the dispatcher gets a tier from the optional classifier (local or cloud models) and a route from the route policy, which ranks pools by pace urgency from the ledger; the runner starts a coding agent CLI in the job directory. Usage figures reach the ledger from manual calibration, the Claude Code status line, scheduled Claude Code /usage reads, scheduled Codex usage reads, the OpenCode Go usage API, the opencode stats counter and the harness journal">
 </picture>
 
 You submit a job: a prompt, a directory, a mode and optional hints. The gateway estimates
 the tier, checks the remaining limits and pace of every pool, picks a route, queues the
 job and — for routes with `confirm = true` — waits until you approve it. It then runs the
-coding agent CLI (the *harness*: `claude`, `kimi`, `opencode` or `cline`) as a child process
+coding agent CLI (the *harness*: `claude`, `codex`, `kimi`, `opencode` or `cline`) as a child process
 in the job directory, records the spend and returns the result. See
 [docs/DESIGN.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/DESIGN.md) for the full architecture.
 
@@ -160,6 +162,7 @@ came from (`figure:` in `agent-router status`, the pool card on the dashboard):
 | Claude Code status line | Claude | the status line script posts rate limits to the gateway |
 | OpenCode Go usage API | OpenCode Go | read every `[usage].interval` in `auto` mode, or now with `agent-router usage refresh` |
 | Claude Code `/usage` | Claude | the signed-in Claude Code CLI, read like the OpenCode Go usage API |
+| Codex app-server | ChatGPT Plus | 5-hour and weekly limits read from the signed-in Codex CLI like the OpenCode Go usage API |
 | `opencode stats` counter | `usd` pools | cumulative cost sampled from OpenCode |
 | Harness journal | `usd` pools | cost each job reports or is estimated at, added on top of the last figure |
 
@@ -180,7 +183,7 @@ in [docs/CLASSIFIER.md](https://github.com/kdenischenko/open-agent-router/blob/m
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-dark.png">
-  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard Limits page with Settings navigation: a job awaiting approval, then pool cards showing automatic Claude Code /usage and OpenCode Go figures read two minutes ago, manual Kimi Code figures, usage bars, pace badges, reset countdowns, data age, and 24-hour and seven-day spend charts">
+  <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/dashboard-light.png" alt="Dashboard Limits page with Settings navigation: a job awaiting approval, then pool cards showing automatic Claude Code /usage, ChatGPT Plus Codex and OpenCode Go figures read two minutes ago, manual Kimi Code figures, usage bars, pace badges, reset countdowns, data age, and 24-hour and seven-day spend charts">
 </picture>
 
 The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
@@ -193,7 +196,8 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
   whose usable usage source is not in `manual` mode. Each card also charts journal spend over
   the last 24 hours and seven days, in USD or tokens, with the same numbers in accessible
   tables. The full limits table stays under a disclosure, followed by the routes each tier
-  would take right now.
+  would take right now. The **Routes** scorecard covers the last 30 days by route, tier and
+  mode: job and attempt outcomes, ratings, duration/token/cost medians and ranking.
 - **Jobs** — filter by status, route and caller, search by job id or prompt text, sort by
   creation time or duration, 50 jobs per page. The filters live in the address, so a filtered
   view can be bookmarked.
@@ -216,7 +220,7 @@ The gateway also serves a dashboard at `http://127.0.0.1:<port>/` (the port is
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-dark.png">
-        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with a Submit a job link, filters, one job awaiting approval and finished jobs on Claude Code, Kimi Code and OpenCode routes, with status badges, callers, creation times and durations">
+        <img src="https://raw.githubusercontent.com/kdenischenko/open-agent-router/main/docs/assets/jobs-light.png" alt="Job list with a Submit a job link, filters, one job awaiting approval and finished jobs on Claude Code, Codex, Kimi Code and OpenCode routes, with status badges, callers, creation times and durations">
       </picture>
     </td>
     <td width="50%">
@@ -240,6 +244,7 @@ and remote classifiers read their own configured keys.
 | OpenCode | `opencode` | counter (`opencode stats`) | tested live on Windows |
 | Cline | `cline` or `cline-cli` | journal | tested live on Windows |
 | Claude Code | `claude` | journal | tested live on Windows |
+| OpenAI Codex | `codex` | journal | tested live on Windows |
 
 ## Platforms
 
@@ -322,7 +327,8 @@ Common failures and their fixes are in [docs/TROUBLESHOOTING.md](https://github.
 1. **Pool.** Add a `[[pools]]` section with `[[pools.windows]]` for your plan:
    `unit = "percent"` for subscriptions that show a percentage, or `unit = "usd"` with
    `limit_usd` for subscriptions billed in dollars. Optional: `priority`, `weight` (a
-   nudge in percentage points of the pace score, `100 * lag / time left`) and `price_file` —
+   nudge in percentage points of the pace score,
+   `100 * lag / max(1 - expected, 0.02) + weight`) and `price_file` —
    a TOML table
    `"<model>" = [input, output]` (USD per 1M tokens) used when the harness does not
    report a cost.
