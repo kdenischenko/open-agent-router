@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- The MCP tools are also served over Streamable HTTP at `/mcp` on the gateway's own
+  server and port (loopback only, enabled by default): the same tool set and results as
+  the stdio server, authenticated with the client bearer token, behind the API's Host
+  check and an exact loopback `Origin` check. Set `server.mcp_http = false` to remove the
+  endpoint.
 - A `kimi-code` usage source reads the Kimi Code plan's 5-hour and monthly quotas from the local
   server of the signed-in Kimi Code CLI, so the pool no longer needs manual calibration.
 

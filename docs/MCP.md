@@ -239,6 +239,145 @@ is no ready-made config path to copy. Add this entry in the harness's MCP settin
 }
 ```
 
+## Connecting over HTTP
+
+The same 9 tools are also served over Streamable HTTP at `http://127.0.0.1:<port>/mcp`
+on the same server and port as the REST API (loopback only), enabled by default. HTTP
+and stdio expose the same tool set and return identical results. Choose per harness:
+
+- stdio (`agent-router mcp`) — the harness starts one `agent-router mcp` process of
+  its own; it works in harnesses without HTTP MCP support
+- HTTP — the harness talks to the running gateway, so there is no per-harness
+  `agent-router mcp` process; after a reinstall or upgrade (`uv tool install --force ...`)
+  HTTP clients only need a gateway restart, while stdio clients must be restarted or
+  reconfigured in each harness. The downside: every harness shares the one gateway
+  process, so when the gateway is down all MCP tools are gone for every harness at once
+
+Set `server.mcp_http = false` in `config.toml` to disable the endpoint; the `/mcp`
+route is then not served at all (404).
+
+### The token
+
+HTTP clients authenticate with `Authorization: Bearer <token>` using the client token:
+the `client.token` file in the gateway home directory (the path `agent-router init`
+prints; `AGENT_ROUTER_HOME` overrides the directory). The admin token is accepted too,
+as on the client API, but gives the tools nothing more: they always call the gateway
+with the client token, so keep the admin token out of harness configs. The dashboard
+session cookie gives no access to `/mcp`.
+
+Pass the token through an environment variable, never as a literal value in a config
+file. The token file ends with a newline, so trim it if a harness rejects the token.
+The examples use the home recommended for installs made through a desktop app
+(`setx AGENT_ROUTER_HOME "$HOME\.agent-router"`); replace the path when your gateway
+home is different.
+
+PowerShell, for the current terminal:
+
+```powershell
+$env:AGENT_ROUTER_TOKEN = (Get-Content "$HOME\.agent-router\client.token" -Raw).Trim()
+```
+
+persisted for the user:
+
+```powershell
+[Environment]::SetEnvironmentVariable("AGENT_ROUTER_TOKEN", $env:AGENT_ROUTER_TOKEN, "User")
+```
+
+bash:
+
+```bash
+export AGENT_ROUTER_TOKEN="$(tr -d '\n' < ~/.agent-router/client.token)"
+```
+
+### Claude Code
+
+```bash
+claude mcp add agent-router --transport http http://127.0.0.1:8787/mcp --header 'Authorization: Bearer ${AGENT_ROUTER_TOKEN}'
+```
+
+The single quotes keep `${AGENT_ROUTER_TOKEN}` literal in both bash and PowerShell;
+with double quotes bash writes the token value into `~/.claude.json`, and PowerShell
+substitutes an empty variable of its own. Run `claude mcp get agent-router` afterwards:
+if the header shows the token value instead of `${AGENT_ROUTER_TOKEN}`, remove the entry
+and use `.mcp.json` below, where variable expansion in headers is documented.
+
+Or in the project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-router": {
+      "type": "http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AGENT_ROUTER_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+`.mcp.json` expands `${VAR}` in header values itself (documented by Claude Code), so
+only the variable name is stored, never the token value.
+
+### Codex
+
+In `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.agent-router]
+url = "http://127.0.0.1:8787/mcp"
+bearer_token_env_var = "AGENT_ROUTER_TOKEN"
+```
+
+Start a new Codex session after adding the server; the tool approval settings described
+for stdio above apply unchanged.
+
+### OpenCode
+
+In `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "agent-router": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer {env:AGENT_ROUTER_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Cline
+
+In the Cline MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "agent-router": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:AGENT_ROUTER_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Cline writes the variable as `${env:NAME}`, unlike OpenCode's `{env:NAME}`. If your
+Cline version sends the placeholder as is (the gateway then answers 401), keep the
+stdio entry for Cline rather than writing the token value into its settings.
+
+### Kimi Code
+
+Not verified to support remote MCP servers with custom headers. Keep the stdio entry
+for Kimi Code.
+
 ## Non-default home or gateway address
 
 - `AGENT_ROUTER_HOME` — gateway home directory with `config.toml`, tokens and stores.

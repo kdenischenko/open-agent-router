@@ -732,7 +732,9 @@ _ROOT_KEYS = frozenset(
         "usage",
     }
 )
-_SERVER_KEYS = frozenset({"port", "counter_interval_s", "snapshot_ttl_s", "panel_session_days"})
+_SERVER_KEYS = frozenset(
+    {"port", "counter_interval_s", "snapshot_ttl_s", "panel_session_days", "mcp_http"}
+)
 
 _USAGE_KEYS = frozenset({"mode", "interval"})
 _MIN_USAGE_INTERVAL = timedelta(minutes=1)
@@ -794,6 +796,7 @@ def load_config(path: Path) -> Config:
     panel_session_days = _integer(
         server.get("panel_session_days", 30), "server.panel_session_days", errors, 30
     )
+    mcp_http = _boolean(server.get("mcp_http", True), "server.mcp_http", errors, True)
     if not 1 <= port <= 65535:
         errors.append("server.port: must be in the range 1..65535")
     if counter_interval_s < 1:
@@ -820,6 +823,7 @@ def load_config(path: Path) -> Config:
         models=models,
         upstreams=upstreams,
         panel_session_days=panel_session_days,
+        mcp_http=mcp_http,
         usage=usage,
     )
     from agent_router import registry

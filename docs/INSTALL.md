@@ -60,6 +60,13 @@ update the installed version immediately. If `agent-router` is not found, run `u
 and open a new terminal. `agent-router <command> --help` describes a command and its options; the
 “Commands” section in [README](../README.md) has examples.
 
+To upgrade or reinstall later, run `uv tool install --force open-agent-router`
+(with the same source you installed from) and restart `agent-router serve`: a running
+gateway keeps the old code until restarted. Harnesses that connect to the MCP server
+over HTTP at `/mcp` pick up the new version with the gateway restart alone; a stdio
+client keeps one `agent-router mcp` process per harness, and each harness must be
+restarted or reconfigured. Both transports are described in [MCP.md](MCP.md).
+
 ## 3. Create the config and tokens
 
 ```powershell
