@@ -49,13 +49,14 @@ class WebRig:
         tier="standard",
         tier_source="default",
         caller=None,
+        cwd=None,
         **fields,
     ) -> Job:
         self._number += 1
         awaiting = status == "awaiting_approval"
         job = Job(
             id=f"j_web_{self._number}",
-            request=JobRequest(prompt=prompt, cwd=self.home, caller=caller),
+            request=JobRequest(prompt=prompt, cwd=cwd or self.home, caller=caller),
             status=status,
             tier=tier,
             tier_source=tier_source,

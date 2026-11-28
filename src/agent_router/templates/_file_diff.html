@@ -1,0 +1,16 @@
+{% if selected %}
+<div id="job-file-diff">
+  {% if diff %}
+  <p><code>{{ selected }}</code>{% if diff_attempt is not none %} — from attempt #{{ diff_attempt }}{% endif %}</p>
+  {% if diff_truncated %}
+  <p>diff truncated at {{ PATCH_MAX_KIB }} KiB</p>
+  {% endif %}
+  <pre class="diff wrap" id="job-file-diff-text">{% for kind, line in diff|diff_lines %}<span class="diff-line diff-line--{{ kind }}">{{ line }}</span>{% endfor %}</pre>
+  <button type="button" class="copy-button" data-copy-target="job-file-diff-text" hidden>Copy</button>
+  {% else %}
+  <p>{{ diff_note }}</p>
+  {% endif %}
+</div>
+{% else %}
+<div id="job-file-diff" hidden></div>
+{% endif %}

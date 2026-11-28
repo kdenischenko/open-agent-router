@@ -467,3 +467,35 @@ def build_patch(cwd: Path, files: Sequence[str]) -> tuple[str | None, bool]:
     if len(encoded) <= PATCH_MAX_BYTES:
         return patch, False
     return encoded[:PATCH_MAX_BYTES].decode("utf-8", "ignore"), True
+
+
+def file_patch_section(patch: str, name: str) -> tuple[str, bool] | None:
+    """The part of a stored patch that belongs to one file, and whether it ends the patch.
+
+    build_patch output is a run of sections: a `diff --git a/<name> b/<name>` header
+    for each file diff and one-line `binary file`/`unreadable file` markers. The
+    second value says the section is the patch's last: the tail of a patch cut at
+    PATCH_MAX_BYTES may be incomplete mid-file. None when the file has no section;
+    a rename, whose header names two different paths, is left to a live diff.
+    """
+    headers = (
+        f"diff --git a/{name} b/{name}\n",
+        f"binary file {name}\n",
+        f"unreadable file {name}\n",
+    )
+    section: list[str] = []
+    found = False
+    for line in patch.splitlines(keepends=True):
+        boundary = line.startswith("diff --git ") or line.startswith(
+            ("binary file ", "unreadable file ")
+        )
+        if boundary:
+            if found:
+                return "".join(section), False
+            found = line in headers
+            section = []
+        if found:
+            section.append(line)
+    if not found:
+        return None
+    return "".join(section), True

@@ -15,6 +15,7 @@ from agent_router.worktree import (
     build_patch,
     changed_files,
     committed_files,
+    file_patch_section,
     head,
     repo_root,
     tree_snapshot,
@@ -830,3 +831,77 @@ def test_build_patch_outside_git_raises(tmp_path: Path) -> None:
 
     with pytest.raises(WorktreeError):
         build_patch(outside, ["a.txt"])
+
+
+# --- one file of a stored patch -------------------------------------------------------------
+
+
+def test_file_patch_section_returns_only_the_named_file(tmp_path: Path) -> None:
+    repo = make_git_repo(tmp_path / "repo")
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    name = "новый файл.txt"  # non-ascii on purpose
+    (repo / name).write_text("содержимое\n", encoding="utf-8")  # non-ascii on purpose
+    patch, truncated = build_patch(repo, ["README.md", name])
+
+    assert truncated is False
+    readme, readme_is_last = file_patch_section(patch, "README.md")
+    assert readme is not None
+    assert readme.startswith("diff --git a/README.md b/README.md\n")
+    assert "+changed" in readme
+    assert name not in readme
+    assert readme_is_last is False
+
+    new, new_is_last = file_patch_section(patch, name)
+    assert new is not None
+    assert "+содержимое" in new  # non-ascii on purpose
+    assert new_is_last is True
+
+
+def test_file_patch_section_matches_names_with_spaces() -> None:
+    name = "папка с пробелом/файл.txt"  # non-ascii on purpose
+    patch = f"diff --git a/{name} b/{name}\n@@ -1 +1 @@\n-a\n+b\n"
+
+    section, is_last = file_patch_section(patch, name)
+
+    assert section == patch
+    assert is_last is True
+
+
+def test_file_patch_section_finds_binary_and_unreadable_markers() -> None:
+    patch = (
+        "diff --git a/tracked.txt b/tracked.txt\n@@ -1 +1 @@\n-a\n+b\n"
+        "binary file файл.bin\n"  # non-ascii on purpose
+        "unreadable file другой.txt\n"  # non-ascii on purpose
+    )
+
+    binary, binary_is_last = file_patch_section(patch, "файл.bin")  # non-ascii on purpose
+    assert binary == "binary file файл.bin\n"  # non-ascii on purpose
+    assert binary_is_last is False
+
+    unreadable, unreadable_is_last = file_patch_section(patch, "другой.txt")  # non-ascii on purpose
+    assert unreadable == "unreadable file другой.txt\n"  # non-ascii on purpose
+    assert unreadable_is_last is True
+
+
+def test_file_patch_section_missing_name_is_none() -> None:
+    patch = "diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-a\n+b\n"
+
+    assert file_patch_section(patch, "b.txt") is None
+    assert file_patch_section("", "a.txt") is None
+
+
+def test_file_patch_section_tells_a_cut_tail_from_a_complete_section() -> None:
+    # a tail cut mid-line at PATCH_MAX_BYTES: the last section may be incomplete
+    patch = (
+        "diff --git a/first.txt b/first.txt\n@@ -1 +1 @@\n-one\n+two\n"
+        "diff --git a/second.txt b/second.txt\n@@ -1 +1 @@\n-x\n+y\npart of a lin"
+    )
+
+    first, first_is_last = file_patch_section(patch, "first.txt")
+    assert first is not None
+    assert first_is_last is False
+
+    second, second_is_last = file_patch_section(patch, "second.txt")
+    assert second is not None
+    assert second.endswith("part of a lin")
+    assert second_is_last is True

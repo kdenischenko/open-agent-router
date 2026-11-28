@@ -1071,6 +1071,12 @@ pre.wrap {
   color: var(--color-danger);
 }
 
+/* the Files panel marks the file whose diff is shown */
+
+.file-list a[aria-current="true"] {
+  color: var(--color-accent);
+}
+
 .copy-button {
   background: none;
   border-color: var(--color-control-border);

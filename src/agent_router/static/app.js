@@ -111,6 +111,52 @@ function setupJobRefresh() {
 
 setupJobRefresh();
 
+// the Files panel of a job page polls its own fragment: a running job's list is
+// measured live from its working directory, and the selected file rides along in
+// the same answer; the next request starts only after the previous one is done,
+// and none after the job reaches a terminal status
+function setupFilesRefresh() {
+  const panel = document.getElementById('job-files');
+  if (!panel || panel.dataset.terminal === 'true') return;
+  const url = () => {
+    const selected = panel.dataset.path ? '?path=' + encodeURIComponent(panel.dataset.path) : '';
+    return '/fragments/jobs/' + panel.dataset.jobId + '/files' + selected;
+  };
+  const poll = async () => {
+    await refresh(url(), 'job-files');
+    if (panel.dataset.terminal !== 'true') setTimeout(poll, 5000);
+  };
+  setTimeout(poll, 5000);
+}
+
+setupFilesRefresh();
+
+// clicking a file loads just that file's diff into the panel's diff area; the panel
+// keeps the choice in data-path, so the next refresh of the list carries it along
+function setupFileDiff() {
+  const panel = document.getElementById('job-files');
+  if (!panel) return;
+  panel.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-file-path]');
+    if (!link) return;
+    event.preventDefault();
+    panel.dataset.path = link.dataset.filePath;
+    panel.querySelectorAll('a[data-file-path]').forEach((item) => {
+      if (item === link) item.setAttribute('aria-current', 'true');
+      else item.removeAttribute('aria-current');
+    });
+    // a clicked link keeps focus in most browsers, and a refresh is skipped while
+    // focus is inside the swapped element — the selection already lives in
+    // aria-current and data-path, so the focus goes back to the page and the live
+    // refreshes of the list continue
+    link.blur();
+    const query = '/diff?path=' + encodeURIComponent(link.dataset.filePath);
+    refresh('/fragments/jobs/' + panel.dataset.jobId + query, 'job-file-diff');
+  });
+}
+
+setupFileDiff();
+
 // with scripts on, the calibration form asks for the provider first and lists only its windows;
 // the window stays unset until the visitor picks one, and a rolling window takes no reset time
 function setupCalibration() {
@@ -470,6 +516,12 @@ function setupHotkeys() {
       });
       const job = document.getElementById('job');
       if (job) refresh('/fragments/jobs/' + job.dataset.jobId, 'job');
+      const files = document.getElementById('job-files');
+      if (files) {
+        const selected = files.dataset.path
+          ? '?path=' + encodeURIComponent(files.dataset.path) : '';
+        refresh('/fragments/jobs/' + files.dataset.jobId + '/files' + selected, 'job-files');
+      }
       return;
     }
     if (event.key === '/') {

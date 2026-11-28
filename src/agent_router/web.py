@@ -15,7 +15,7 @@ from starlette.datastructures import FormData
 from starlette.responses import HTMLResponse, PlainTextResponse, Response
 from starlette.templating import Jinja2Templates
 
-from agent_router import __version__, api
+from agent_router import __version__, api, worktree
 from agent_router.clock import format_age, format_local
 from agent_router.config import TIERS
 from agent_router.jobs import STATUSES, TERMINAL, Attempt, Job
@@ -23,14 +23,13 @@ from agent_router.periods import parse_moment
 from agent_router.service import Gateway, decision_json
 from agent_router.stats import stats_view
 from agent_router.usage_reader import UnknownPoolError
-from agent_router.worktree import PATCH_MAX_BYTES
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # static URLs carry the package version, so a browser does not keep old assets after an upgrade
 TEMPLATES.env.globals["asset_version"] = __version__
 TEMPLATES.env.filters["age"] = format_age
 # the truncation notice on the job page names the cap the dispatcher actually applies
-TEMPLATES.env.globals["PATCH_MAX_KIB"] = PATCH_MAX_BYTES // 1024
+TEMPLATES.env.globals["PATCH_MAX_KIB"] = worktree.PATCH_MAX_BYTES // 1024
 
 JOBS_PAGE_SIZE = 50
 JOB_SORTS = ("newest", "oldest", "duration")
@@ -100,6 +99,147 @@ def _sum_field(attempts: list[Attempt], name: str) -> int | float | None:
     values = [getattr(attempt, name) for attempt in attempts]
     values = [value for value in values if value is not None]
     return sum(values) if values else None
+
+
+# --- the Files panel of the job page -----------------------------------------------------------
+
+
+def live_changed_files(job: Job, attempts: list[Attempt]) -> list[str] | None:
+    """Files a running job has changed so far, measured from its working directory.
+
+    The baseline is the running attempt's stored tree and HEAD snapshot, recorded
+    before the harness launch; files of new commits are added when HEAD moved. None
+    when the measurement is impossible — no attempt snapshot, the directory gone,
+    outside git, or a git failure — and the caller shows the recorded files instead.
+    """
+    attempt = attempts[-1] if attempts else None
+    cwd = job.request.cwd
+    if attempt is None or attempt.tree_before is None or not cwd.is_dir():
+        return None
+    try:
+        head_after = worktree.head(cwd)
+        current = worktree.changed_files(attempt.tree_before, worktree.tree_snapshot(cwd))
+        if head_after != attempt.head_before and head_after is not None:
+            current += worktree.committed_files(cwd, attempt.head_before, head_after)
+    except worktree.WorktreeError:
+        return None
+    return sorted(set(job.changed_files or ()) | set(current))
+
+
+def job_files(job: Job, attempts: list[Attempt]) -> list[str] | None:
+    """The files the job affects: measured live while it runs inside a repository,
+    the recorded ones in every other state."""
+    if job.status == "running" and job.repo_root is not None:
+        live = live_changed_files(job, attempts)
+        if live is not None:
+            return live
+    stored = job.changed_files
+    return None if stored is None else list(stored)
+
+
+def stored_file_section(attempts: list[Attempt], path: str) -> tuple[str, bool, int] | None:
+    """The file's diff from the newest attempt patch that carries it completely.
+
+    The last section of a patch cut at the size cap may be incomplete mid-file, so it
+    is only a fallback, after every complete section was ruled out.
+    """
+    cut: tuple[str, bool, int] | None = None
+    for attempt in reversed(attempts):
+        if not attempt.patch:
+            continue
+        section = worktree.file_patch_section(attempt.patch, path)
+        if section is None:
+            continue
+        text, ends_patch = section
+        if attempt.patch_truncated and ends_patch:
+            cut = cut or (text, True, attempt.n)
+        else:
+            return text, False, attempt.n
+    return cut
+
+
+def live_file_diff(job: Job, path: str) -> tuple[str | None, bool] | None:
+    """The file's diff measured from the working directory now; None when git cannot
+    run there at all."""
+    cwd = job.request.cwd
+    if job.repo_root is None or not cwd.is_dir():
+        return None
+    try:
+        return worktree.build_patch(cwd, [path])
+    except (worktree.WorktreeError, ValueError):
+        # ValueError: a NUL byte or such in the argv, which no real file path contains
+        return None
+
+
+def _diff_answer(text: str, truncated: bool, attempt_n: int | None) -> dict:
+    return {"diff": text, "truncated": truncated, "attempt_n": attempt_n, "note": None}
+
+
+def file_diff(job: Job, attempts: list[Attempt], path: str) -> dict:
+    """The diff of one file the job affects: measured live while the job runs, taken
+    from the stored attempt patches once it is over, each the other's fallback.
+
+    The answer carries the patch text, its truncation flag, the attempt number when
+    the text came from a stored patch, or a note when there is no diff to show.
+    A section cut off at the size cap is the last resort, after the live tree.
+    """
+    stored = stored_file_section(attempts, path)
+    live: tuple[str | None, bool] | None = None
+    if job.status in TERMINAL:
+        if stored is not None and not stored[1]:
+            return _diff_answer(*stored)
+    else:
+        live = live_file_diff(job, path)
+        if live is not None and live[0] is not None:
+            return _diff_answer(live[0], live[1], None)
+        if stored is not None and not stored[1]:
+            return _diff_answer(*stored)
+    if live is None:
+        live = live_file_diff(job, path)
+    if live is not None and live[0] is not None:
+        return _diff_answer(live[0], live[1], None)
+    if stored is not None:
+        return _diff_answer(*stored)
+    if live is not None:
+        return {
+            "diff": None,
+            "truncated": False,
+            "attempt_n": None,
+            "note": "no diff for this file",
+        }
+    return {
+        "diff": None,
+        "truncated": False,
+        "attempt_n": None,
+        "note": "could not measure the diff for this file",
+    }
+
+
+def diff_context(job: Job, attempts: list[Attempt], path: str | None) -> dict:
+    """Context of the one-file diff fragment; without a path it renders an empty area."""
+    answer = (
+        file_diff(job, attempts, path)
+        if path
+        else {"diff": None, "truncated": False, "attempt_n": None, "note": None}
+    )
+    return {
+        "selected": path,
+        "diff": answer["diff"],
+        "diff_truncated": answer["truncated"],
+        "diff_attempt": answer["attempt_n"],
+        "diff_note": answer["note"],
+    }
+
+
+def files_context(job: Job, attempts: list[Attempt], path: str | None) -> dict:
+    """Context of the Files panel: the affected files, with the selected one's diff."""
+    return {
+        "job": job,
+        "terminal": job.status in TERMINAL,
+        "files": job_files(job, attempts),
+        "untracked": job.repo_root is None,
+        "changes_unknown": "changes_unknown" in job.violations,
+    } | diff_context(job, attempts, path)
 
 
 def _field(form: FormData, name: str) -> str:
@@ -523,6 +663,10 @@ def web_router(deps: Gateway) -> APIRouter:
             "terminal": job.status in TERMINAL,
         }
 
+    def selected_file(request: Request) -> str | None:
+        """The file whose diff the Files panel shows, from the `path` query parameter."""
+        return request.query_params.get("path") or None
+
     @router.get("/jobs/{job_id}")
     def get_job(request: Request, job_id: str) -> Response:
         sid = session_id(request)
@@ -533,7 +677,8 @@ def web_router(deps: Gateway) -> APIRouter:
         job = deps.dispatcher.jobs.get(job_id)
         if job is None:
             return PlainTextResponse("job not found", status_code=404)
-        context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
+        attempts = deps.dispatcher.jobs.attempts(job_id)
+        context = job_context(job, attempts) | files_context(job, attempts, selected_file(request))
         return render_page(request, "job.html", context, sid=sid, nav="jobs")
 
     @router.get("/fragments/jobs/{job_id}")
@@ -548,6 +693,34 @@ def web_router(deps: Gateway) -> APIRouter:
             return PlainTextResponse("job not found", status_code=404)
         context = job_context(job, deps.dispatcher.jobs.attempts(job_id))
         return render_page(request, "_job.html", context, sid=sid)
+
+    @router.get("/fragments/jobs/{job_id}/files")
+    def get_job_files_fragment(request: Request, job_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        attempts = deps.dispatcher.jobs.attempts(job_id)
+        context = files_context(job, attempts, selected_file(request))
+        return render_page(request, "_files.html", context, sid=sid)
+
+    @router.get("/fragments/jobs/{job_id}/diff")
+    def get_job_file_diff(request: Request, job_id: str) -> Response:
+        sid = session_id(request)
+        if sid is None:
+            return login_redirect()
+        if deps.dispatcher is None:
+            return jobs_page(request, sid, None)
+        job = deps.dispatcher.jobs.get(job_id)
+        if job is None:
+            return PlainTextResponse("job not found", status_code=404)
+        attempts = deps.dispatcher.jobs.attempts(job_id)
+        context = diff_context(job, attempts, selected_file(request))
+        return render_page(request, "_file_diff.html", context, sid=sid)
 
     def stats_context(request: Request) -> dict:
         """Stats of what the gateway stored; unknown range values fall back to 24 hours."""

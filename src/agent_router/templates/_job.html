@@ -134,21 +134,6 @@
   {% endif %}
 </section>
 <section class="panel">
-  <h2>Changed files</h2>
-  {% if 'changes_unknown' in job.violations %}
-  <p>Could not measure the changed files.</p>
-  {% endif %}
-  {% if job.changed_files is none and job.repo_root is none %}
-  <p>Not tracked: the directory is outside git.</p>
-  {% elif job.changed_files is none %}
-  <p>Not measured yet.</p>
-  {% elif job.changed_files %}
-  <ul>{% for path in job.changed_files %}<li>{{ path }}</li>{% endfor %}</ul>
-  {% elif 'changes_unknown' not in job.violations %}
-  <p>No files changed.</p>
-  {% endif %}
-</section>
-<section class="panel">
   <h2>Violations</h2>
   {% if job.violations %}
   <ul>{% for violation in job.violations %}<li>{{ violation }}</li>{% endfor %}</ul>

@@ -553,6 +553,8 @@ def test_assets_have_no_external_urls(directory):
             "job.html",
             "_job.html",
             "_jobs.html",
+            "_files.html",
+            "_file_diff.html",
             "stats.html",
             "_stats.html",
             "message.html",

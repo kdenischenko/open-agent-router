@@ -418,6 +418,19 @@ changed (`git diff` for tracked modifications, a synthetic new-file diff for unt
 one-line markers for binary or unreadable ones, the git index never touched), capped at 256 KiB
 with a truncation notice; added lines are green and removed lines red from the theme tokens, and
 the job's API JSON exposes the same patch fields (`patch`, `patch_truncated` per attempt).
+Below the job block, the Files panel lists the files the job affects: for a running job inside a
+repository the list is measured live from the working directory — the running attempt's stored
+tree and HEAD snapshot as the baseline, files of new commits added when HEAD moved, merged with
+the recorded ones — and in every other state it is the recorded `changed_files`; a live
+measurement that is impossible (outside git, a git failure, the directory gone) falls back to
+the recorded answer. The panel's fragment is `/fragments/jobs/{id}/files` (optional `path` query
+parameter), polled every 5 s while the job runs. Clicking a file loads just that file's diff
+from `/fragments/jobs/{id}/diff?path=...` into the panel: measured live while the job runs
+(`worktree.build_patch` for that single path), or extracted from the stored attempt patches
+once the job is over (`worktree.file_patch_section` picks the newest complete section; one cut
+off at the cap loses to a live re-read), each the other's fallback; a single file's diff is
+capped at the same 256 KiB with a truncation notice. Without scripting, the file entries link
+to the job page with `?path=`, so the same diff renders server-side.
 The stats page (`/stats`, fragment `/fragments/stats`, `range` of `24h`/`7d`/`30d`, refreshed
 like the other fragments) is read-only analytics over what the gateway already stored:
 `JobStore.attempt_stats_since`, `job_stats_since` and `spend_stats_since` pull plain rows, and

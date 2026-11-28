@@ -1,0 +1,20 @@
+<div id="job-files" data-job-id="{{ job.id }}" data-terminal="{{ 'true' if terminal else 'false' }}"{% if selected %} data-path="{{ selected }}"{% endif %}>
+<section class="panel">
+  <h2>Files</h2>
+  {% if changes_unknown %}
+  <p>Could not measure the changed files.</p>
+  {% endif %}
+  {% if files is none %}
+  <p>{% if untracked %}Not tracked: the directory is outside git.{% else %}Not measured yet.{% endif %}</p>
+  {% elif files %}
+  <ul class="file-list">
+    {% for path in files %}
+    <li><a href="/jobs/{{ job.id }}?path={{ path|urlencode }}#job-files" data-file-path="{{ path }}"{% if path == selected %} aria-current="true"{% endif %}><code>{{ path }}</code></a></li>
+    {% endfor %}
+  </ul>
+  {% elif not changes_unknown %}
+  <p>No files changed.</p>
+  {% endif %}
+  {% include "_file_diff.html" %}
+</section>
+</div>
