@@ -580,12 +580,11 @@ def test_schema_5_database_opens_as_10(tmp_path: Path) -> None:
         assert store.schema_version() == 5
         jobstore = SqliteJobStore(store)
         assert store.schema_version() == 10
-        tables = {
-            row[0]
-            for row in store.connection().execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
+        with store.connection() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
         assert "settings" in tables
         jobstore.close()
         SqliteJobStore(store)  # reopening does not touch the schema
@@ -646,12 +645,11 @@ def test_schema_7_database_opens_as_10(tmp_path: Path) -> None:
             )
         jobstore = SqliteJobStore(store)
         assert store.schema_version() == 10
-        tables = {
-            row[0]
-            for row in store.connection().execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
+        with store.connection() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
         assert "ratings" in tables
         assert jobstore.last_rating("j_a") is None
         jobstore.close()
@@ -891,14 +889,11 @@ def test_rating_note_text_is_not_stored(tmp_path: Path) -> None:
                 at=T0,
             )
         )
-        row = (
-            store.connection()
-            .execute(
+        with store.connection() as conn:
+            row = conn.execute(
                 "SELECT job_id, value, should_tier, by, note_sha256, note_chars, at"
                 " FROM ratings WHERE job_id = 'j_a'"
-            )
-            .fetchone()
-        )
+            ).fetchone()
         assert row is not None
         assert secret not in " ".join(str(part) for part in row)
     finally:

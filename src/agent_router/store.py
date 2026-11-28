@@ -118,52 +118,64 @@ _SCHEMA_V1 = (
 
 
 class SqliteStore:
-    """SQLite: WAL, synchronous=NORMAL, 5 s busy_timeout, one connection per thread."""
+    """SQLite: WAL, synchronous=NORMAL, 5 s busy_timeout, one connection shared by all threads.
+
+    The gateway serves HTTP on worker threads that are retired and replaced as traffic
+    comes and goes; per-thread connections would accumulate without ever being closed.
+    One connection (check_same_thread=False) serves every thread instead, and the store
+    lock is held for the whole of every statement sequence, so operations on it never
+    interleave.
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._local = threading.local()
-        self._lock = threading.Lock()
-        self._connections: list[sqlite3.Connection] = []
+        # Reentrant: a transaction holds the lock while its body calls back into the store.
+        self._lock = threading.RLock()
+        self._conn: sqlite3.Connection | None = None
         self._closed = False
         self._scale_hash_column: bool | None = None  # caches a positive answer
         self.migrate(1, _SCHEMA_V1)
 
-    # --- connections and schema -------------------------------------------------
+    # --- connection and schema ----------------------------------------------------
 
-    def connection(self) -> sqlite3.Connection:
-        """The current thread's connection; created on first use."""
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            with self._lock:
-                if self._closed:
-                    raise RuntimeError("store is closed")
-                conn = sqlite3.connect(
-                    self.path, timeout=5, isolation_level=None, check_same_thread=False
-                )
-                conn.execute("PRAGMA busy_timeout = 5000")
-                conn.execute("PRAGMA journal_mode = WAL")
-                conn.execute("PRAGMA synchronous = NORMAL")
-                self._connections.append(conn)
-            self._local.conn = conn
-        return conn
+    def _connect(self) -> sqlite3.Connection:
+        """The shared connection; created on first use. Callers hold the store lock."""
+        if self._conn is None:
+            if self._closed:
+                raise RuntimeError("store is closed")
+            self._conn = sqlite3.connect(
+                self.path, timeout=5, isolation_level=None, check_same_thread=False
+            )
+            self._conn.execute("PRAGMA busy_timeout = 5000")
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = NORMAL")
+        return self._conn
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """The shared connection; the store lock is held while the block is open."""
+        with self._lock:
+            yield self._connect()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        """Write transaction: takes the database lock first; reads and writes are atomic."""
-        conn = self.connection()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            yield conn
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
-        else:
-            conn.execute("COMMIT")
+        """Write transaction: takes the store lock, then the SQLite write lock; reads and
+        writes inside are atomic."""
+        with self._lock:
+            conn = self._connect()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            else:
+                conn.execute("COMMIT")
 
     def schema_version(self) -> int:
-        return int(self.connection().execute("PRAGMA user_version").fetchone()[0])
+        with self.connection() as conn:
+            return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
     def migrate(self, version: int, statements: Sequence[str]) -> None:
         """Migrate schema to `version` (from `version - 1`); a completed migration is skipped."""
@@ -182,9 +194,9 @@ class SqliteStore:
     def close(self) -> None:
         with self._lock:
             self._closed = True
-            connections, self._connections = self._connections, []
-        for conn in connections:
-            conn.close()
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     # --- observations ---------------------------------------------------------
 
@@ -233,12 +245,13 @@ class SqliteStore:
         return found[0] if found else None
 
     def observations(self, pool: str, window: str, limit: int = 100) -> list[Observation]:
-        rows = self.connection().execute(
-            f"SELECT {self._OBS_COLUMNS} FROM observations WHERE pool = ? AND window = ?"
-            " ORDER BY observed_at DESC, id DESC LIMIT ?",
-            (pool, window, int(limit)),
-        )
-        return [self._observation(row) for row in rows.fetchall()]
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"SELECT {self._OBS_COLUMNS} FROM observations WHERE pool = ? AND window = ?"
+                " ORDER BY observed_at DESC, id DESC LIMIT ?",
+                (pool, window, int(limit)),
+            ).fetchall()
+        return [self._observation(row) for row in rows]
 
     # --- counter ------------------------------------------------------------
 
@@ -246,7 +259,8 @@ class SqliteStore:
         """Whether counter_samples.scale_hash exists; older databases may not have it yet."""
         if self._scale_hash_column:
             return True
-        rows = self.connection().execute("PRAGMA table_info(counter_samples)").fetchall()
+        with self.connection() as conn:
+            rows = conn.execute("PRAGMA table_info(counter_samples)").fetchall()
         present = any(row[1] == "scale_hash" for row in rows)
         if present:
             self._scale_hash_column = True
@@ -289,17 +303,17 @@ class SqliteStore:
         moment = to_utc(moment)
         at = to_us(moment)
         columns = self._counter_columns()
-        conn = self.connection()
-        past = conn.execute(
-            f"SELECT {columns} FROM counter_samples"
-            " WHERE pool = ? AND sampled_at <= ? ORDER BY sampled_at DESC, id DESC LIMIT 1",
-            (pool, at),
-        ).fetchone()
-        future = conn.execute(
-            f"SELECT {columns} FROM counter_samples"
-            " WHERE pool = ? AND sampled_at > ? ORDER BY sampled_at ASC, id ASC LIMIT 1",
-            (pool, at),
-        ).fetchone()
+        with self.connection() as conn:
+            past = conn.execute(
+                f"SELECT {columns} FROM counter_samples"
+                " WHERE pool = ? AND sampled_at <= ? ORDER BY sampled_at DESC, id DESC LIMIT 1",
+                (pool, at),
+            ).fetchone()
+            future = conn.execute(
+                f"SELECT {columns} FROM counter_samples"
+                " WHERE pool = ? AND sampled_at > ? ORDER BY sampled_at ASC, id ASC LIMIT 1",
+                (pool, at),
+            ).fetchone()
         candidates = [s for s in (self._sample(past), self._sample(future)) if s is not None]
         sample = min(
             candidates, key=lambda s: (abs(s.sampled_at - moment), s.sampled_at), default=None
@@ -309,24 +323,22 @@ class SqliteStore:
         return sample
 
     def last_counter(self, pool: str) -> CounterSample | None:
-        row = (
-            self.connection()
-            .execute(
+        with self.connection() as conn:
+            row = conn.execute(
                 f"SELECT {self._counter_columns()} FROM counter_samples"
                 " WHERE pool = ? ORDER BY sampled_at DESC, id DESC LIMIT 1",
                 (pool,),
-            )
-            .fetchone()
-        )
+            ).fetchone()
         return self._sample(row)
 
     def counter_samples_since(self, pool: str, since: datetime) -> list[CounterSample]:
-        rows = self.connection().execute(
-            f"SELECT {self._counter_columns()} FROM counter_samples"
-            " WHERE pool = ? AND sampled_at >= ? ORDER BY sampled_at, id",
-            (pool, to_us(since)),
-        )
-        return [self._sample(row) for row in rows.fetchall()]
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"SELECT {self._counter_columns()} FROM counter_samples"
+                " WHERE pool = ? AND sampled_at >= ? ORDER BY sampled_at, id",
+                (pool, to_us(since)),
+            ).fetchall()
+        return [self._sample(row) for row in rows]
 
 
 def plugin_call(group: str, name: str, function: str, *args: Any) -> Any:

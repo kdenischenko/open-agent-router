@@ -38,6 +38,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- The gateway no longer leaks SQLite connections: the web framework serves requests on
+  worker threads that are retired after a while, and each retired worker left its store
+  connection open, so a long-running `agent-router serve` ran out of file descriptors and
+  job intake failed with `git_unavailable: git rev-parse: failed to start (OSError)`. One
+  shared connection now serves every thread under the store lock, and the open file count
+  no longer grows with served requests.
 - The result text of an OpenCode job keeps every answer that ended a turn, so a short follow-up
   after a background command no longer replaces the main answer.
 - SystemOne classifier requests keep the Ollama model loaded for 30 minutes, matching Ollama chat

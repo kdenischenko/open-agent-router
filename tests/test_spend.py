@@ -98,12 +98,13 @@ class SpendRig(Rig):
         return dispatcher
 
     def rows(self) -> list[dict]:
-        cursor = self.jobs._store.connection().execute(
-            "SELECT pool, source, route, tokens_in, tokens_out, cost_usd, estimated, ref_id, ref_n"
-            " FROM spend ORDER BY ref_id, ref_n"
-        )
-        names = [column[0] for column in cursor.description]
-        return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+        with self.jobs._store.connection() as conn:
+            cursor = conn.execute(
+                "SELECT pool, source, route, tokens_in, tokens_out, cost_usd, estimated, ref_id,"
+                " ref_n FROM spend ORDER BY ref_id, ref_n"
+            )
+            names = [column[0] for column in cursor.description]
+            return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
 
     def calibrate(self, fraction: float, at: datetime) -> None:
         self.store.add_observation(

@@ -177,18 +177,56 @@ def test_sqlite_reopen_keeps_data(tmp_path):
 def test_sqlite_settings(tmp_path):
     store = SqliteStore(tmp_path / "a.sqlite")
     try:
-        conn = store.connection()
-        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
-        assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
-        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+        with store.connection() as conn:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+            assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
+            assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
         seen = []
-        thread = threading.Thread(target=lambda: seen.append(store.connection()))
-        thread.start()
-        thread.join()
-        assert seen[0] is not conn  # one connection per thread
+
+        def probe():
+            with store.connection() as worker_conn:
+                seen.append(worker_conn)
+
+        worker = threading.Thread(target=probe)
+        worker.start()
+        worker.join()
+        assert seen[0] is conn  # one shared connection for every thread
     finally:
         store.close()
     store.close()  # closing twice does not raise
+    with pytest.raises(RuntimeError), store.connection():
+        pass
+
+
+def test_sqlite_connections_do_not_accumulate_for_retired_threads(tmp_path, monkeypatch):
+    """The gateway serves requests on worker threads that are retired after a while;
+    retired workers must not leave open connections behind."""
+    created: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def counting_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        created.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", counting_connect)
+    store = SqliteStore(tmp_path / "churn.sqlite")
+    try:
+        for _ in range(25):
+            seen: list[CounterSample | None] = []
+
+            def worker(out: list[CounterSample | None]) -> None:
+                store.add_counter_sample(CounterSample("p", 1.0, T0))
+                out.append(store.last_counter("p"))
+
+            thread = threading.Thread(target=worker, args=(seen,))
+            thread.start()
+            thread.join(timeout=10)
+            assert seen == [CounterSample("p", 1.0, T0)]  # the retired worker could read
+        assert len(created) == 1  # one connection for all workers, not one per worker
+        assert store.last_counter("p") == CounterSample("p", 1.0, T0)
+    finally:
+        store.close()
 
 
 def test_sqlite_migrate_is_ordered_and_idempotent(tmp_path):
