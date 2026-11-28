@@ -554,6 +554,33 @@ It shows the attempt, token, cost and duration totals, a per-attempt timeline, a
 final text and per-attempt output in expandable blocks; copy buttons appear when clipboard
 scripting is available.
 
+## MCP over HTTP
+
+Besides stdio, the MCP tools are served over Streamable HTTP at `/mcp` on the same
+FastAPI server and port as the REST API (`server.port`), loopback only — one process
+serves the API, the dashboard and the MCP endpoint. The transport is stateless and
+answers with JSON: every request carries its own context, so there is no session state
+to lose on a gateway restart. `server.mcp_http` (default `true`) turns the endpoint
+off; a non-boolean value is a config error.
+
+Auth is `Authorization: Bearer` with the client or admin token through the same role
+check as the API routes; the dashboard session cookie is not accepted on `/mcp`. The
+Host header check that guards the API applies unchanged. The gateway's own `/mcp` gate
+then checks `Origin`: when present it must be exactly `http://127.0.0.1:<port>` or
+`http://localhost:<port>` of the receiving port, otherwise the request is rejected with
+403 and the code `forbidden_origin`; an absent Origin is allowed. The SDK's
+`TransportSecuritySettings` repeats a looser loopback Host/Origin check behind it. No new
+tools are added: approving jobs stays a human action.
+
+Each tool handler calls the gateway's own loopback API with the client token through a
+`GatewayClient` whose port comes from the incoming request via a context variable, so an
+HTTP answer is byte-identical to what the stdio server returns for the same call. The
+stateless transport is what makes this work: each request's handler starts from the
+request task and inherits its context. Tools run in the process-wide worker thread pool
+(40 threads by default) that the API also uses for its blocking routes, so a few dozen
+concurrent `wait_job` calls held for their full 100 s can delay those routes until a
+wait returns.
+
 ## Module map
 
 | Module | Responsibility |
@@ -585,7 +612,7 @@ scripting is available.
 | `ledger.py` | Window state from observations, counters, and spend |
 | `lifecycle.py` | One `serve` process per gateway home: an OS lock on `serve.lock` |
 | `liveness.py` | Liveness of a running harness: the idle limit on silent output and the hard time cap |
-| `mcp_server.py` | MCP tools over stdio for orchestrators; gateway client API, no admin actions |
+| `mcp_server.py` | MCP tools over stdio and HTTP (`/mcp`) for orchestrators; gateway client API, no admin actions |
 | `pacing.py` | Expected vs used usage, lag, reserve and block computation |
 | `periods.py` | Window durations and boundary arithmetic |
 | `plugins.py` | Entry-point loading for harnesses, counters, storage, sinks |

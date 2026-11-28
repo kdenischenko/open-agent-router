@@ -132,6 +132,10 @@ The first is the MCP server. Register it with your orchestrator, for example wit
 `claude mcp add agent-router -- agent-router mcp`: it exposes job operations as MCP
 tools, and it needs the running gateway. Setup for every supported harness is in
 [docs/MCP.md](https://github.com/kdenischenko/open-agent-router/blob/main/docs/MCP.md).
+The same tools are also served over HTTP at `http://127.0.0.1:<port>/mcp` (enabled by
+default; `server.mcp_http = false` turns it off): HTTP clients share the one gateway
+process, so after a reinstall or upgrade they only need a gateway restart, while stdio
+clients must be restarted per harness.
 
 The second way is a delegation skill: ready-made delegation instructions for
 orchestrators live in [`integrations/`](https://github.com/kdenischenko/open-agent-router/tree/main/integrations): clone or download the

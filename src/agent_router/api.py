@@ -25,9 +25,10 @@ from pydantic import (
     StrictStr,
 )
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
 
-from agent_router import __version__
+from agent_router import __version__, mcp_server
 from agent_router.auth import Role, Tokens, host_allowed, role_for
 from agent_router.clock import Clock, to_utc
 from agent_router.collectors.claude_statusline import (
@@ -100,6 +101,55 @@ class HostCheck:
         await self.app(scope, receive, send)
 
 
+class McpGate:
+    """Bearer auth and strict origin check for the MCP endpoint, plus the request port.
+
+    The SDK transport accepts any loopback port in the Origin header, so the gateway
+    checks the origin itself: only the exact receiving loopback origin passes. The
+    receiving port is pinned into a contextvar that the MCP tools read to self-call
+    the gateway. Pure ASGI for the same reason as HostCheck.
+    """
+
+    def __init__(self, app: Any, tokens: Tokens) -> None:
+        self.app = app
+        self.tokens = tokens
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        server = scope.get("server")
+        port = server[1] if server is not None else None
+        raw_origin = next((value for name, value in scope["headers"] if name == b"origin"), None)
+        if raw_origin is not None:
+            allowed = isinstance(port, int) and raw_origin.decode("latin-1") in (
+                f"http://127.0.0.1:{port}",
+                f"http://localhost:{port}",
+            )
+            if not allowed:
+                response = error_response(403, "forbidden_origin", "origin not accepted")
+                await response(scope, receive, send)
+                return
+        raw_auth = next(
+            (value for name, value in scope["headers"] if name == b"authorization"), None
+        )
+        scheme, _, value = (raw_auth.decode("latin-1") if raw_auth is not None else "").partition(
+            " "
+        )
+        if scheme.lower() != "bearer" or role_for(value.strip(), self.tokens) is None:
+            response = error_response(401, "unauthorized", "missing or invalid token")
+            await response(scope, receive, send)
+            return
+        if not isinstance(port, int):
+            await self.app(scope, receive, send)
+            return
+        reset = mcp_server.request_port.set(port)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            mcp_server.request_port.reset(reset)
+
+
 SECURITY_HEADERS = (
     (b"cache-control", b"no-store"),
     (b"x-content-type-options", b"nosniff"),
@@ -150,7 +200,7 @@ FORM_BODY_MAX_BYTES = 64 * 1024  # dashboard forms carry a token and a few short
 
 
 def api_body_limit(config: Config) -> int:
-    """Largest accepted body under /api/: room for the longest prompt the gateway accepts."""
+    """Largest accepted body under /api/ and /mcp: room for the longest prompt accepted."""
     return config.tasks.max_prompt_chars * JSON_BYTES_PER_CHAR + API_BODY_OVERHEAD_BYTES
 
 
@@ -175,7 +225,11 @@ class BodyLimit:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        limit = self.api_limit if scope["path"].startswith("/api/") else FORM_BODY_MAX_BYTES
+        limit = (
+            self.api_limit
+            if scope["path"] == "/mcp" or scope["path"].startswith("/api/")
+            else FORM_BODY_MAX_BYTES
+        )
         declared = next(
             (value for name, value in scope["headers"] if name == b"content-length"), None
         )
@@ -786,6 +840,7 @@ def create_app(
 
     threads = Background()
     sinks: list[EventSink] = []
+    mcp_sessions = None
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -799,7 +854,12 @@ def create_app(
                 if dispatcher is not None:
                     await run_in_threadpool(dispatcher.recover)
                     threads.start("job-worker", lambda stop: worker_loop(dispatcher, bus, stop))
-            yield
+            if mcp_sessions is not None:
+                # the MCP session manager must be running while /mcp requests are served
+                async with mcp_sessions.run():
+                    yield
+            else:
+                yield
         finally:
             # shutdown order: worker threads, dispatcher, event bus, sinks, store
             threads.shutdown()
@@ -860,6 +920,12 @@ def create_app(
     from agent_router.web import web_router
 
     app.include_router(web_router(gateway))
+    if config.mcp_http:
+        mcp_asgi, mcp_sessions = mcp_server.http_app(tokens)
+        # the sub-app's own Route already sits at /mcp: wrap, do not mount
+        app.routes.append(
+            Route("/mcp", endpoint=McpGate(mcp_asgi, tokens), include_in_schema=False)
+        )
     app.mount(
         "/static",
         StaticFiles(directory=Path(__file__).parent / "static"),

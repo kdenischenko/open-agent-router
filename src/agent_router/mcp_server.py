@@ -5,13 +5,21 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
+from starlette.applications import Starlette
 
+from agent_router.auth import Tokens
 from agent_router.client import GatewayClient, GatewayError, GatewayUnavailable
+
+# port of the MCP request currently being served; tools read it to self-call the gateway
+request_port: ContextVar[int | None] = ContextVar("request_port", default=None)
 
 retry_pause = time.sleep  # pause between submit retries; tests monkeypatch it
 
@@ -314,6 +322,53 @@ def build_server(gateway: GatewayClient) -> MCPServer:
         return run(lambda: gateway.get("/api/v1/snapshot"))
 
     return server
+
+
+class LoopbackClient(GatewayClient):
+    """Tools self-call the gateway over loopback so results match stdio byte for byte.
+
+    The port comes from the request, not the config, because the configured port can
+    be overridden (serve --port, tests bind port 0); the contextvar makes this
+    race-free across threads. Without a request port the call fails as unavailable
+    rather than guessing a port.
+    """
+
+    def __init__(self, token: str) -> None:
+        super().__init__("http://127.0.0.1", token)
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> dict:
+        if request_port.get() is None:
+            raise GatewayUnavailable("no request port for the loopback call")
+        return super()._request(method, path, **kwargs)
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{request_port.get()}"
+
+    @base_url.setter
+    def base_url(self, value: str) -> None:
+        # GatewayClient.__init__ assigns base_url; the effective url always follows the
+        # request port instead
+        pass
+
+
+def http_app(tokens: Tokens) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Build the MCP-over-HTTP app and its session manager for the gateway lifespan."""
+    server = build_server(LoopbackClient(tokens.client))
+    sub = server.streamable_http_app(
+        streamable_http_path="/mcp",
+        # stateless mode starts each request's handler from the request task, so the
+        # request_port contextvar reaches the tools; a stateful session task would keep
+        # the port of the request that opened it
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(
+            # HostCheck accepts a loopback name with or without a port, so does this
+            allowed_hosts=["127.0.0.1", "localhost", "127.0.0.1:*", "localhost:*"],
+            allowed_origins=["http://127.0.0.1:*", "http://localhost:*"],
+        ),
+    )
+    return sub, server.session_manager
 
 
 def serve(gateway: GatewayClient) -> None:

@@ -2,6 +2,8 @@
 
 [server]
 port = 8787
+# serves the MCP tools over HTTP at /mcp on the same port
+mcp_http = true
 
 # [usage]
 # mode = "auto"    # "auto" reads usage sources; "manual" is calibration only

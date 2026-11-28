@@ -302,6 +302,7 @@ class Config:
     models: Mapping[str, ModelSettings] = field(default_factory=dict)
     upstreams: Mapping[str, UpstreamSettings] = field(default_factory=dict)
     panel_session_days: int = 30
+    mcp_http: bool = True
     usage: UsageSettings = field(default_factory=UsageSettings)
 
     def __post_init__(self) -> None:
